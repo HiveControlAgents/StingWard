@@ -1,0 +1,16 @@
+{
+  "name": "stingward",
+  "owner": {
+    "name": "HiveControlAgents"
+  },
+  "metadata": {
+    "description": "Stingward: security check for AI-built projects, Claude Code skills and MCP servers."
+  },
+  "plugins": [
+    {
+      "name": "stingward",
+      "source": "./",
+      "description": "Security check for AI-built projects, skills and MCP servers."
+    }
+  ]
+}
