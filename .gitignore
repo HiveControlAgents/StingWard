@@ -1,0 +1,7 @@
+npm/stingward/
+npm/README.md
+npm/LICENSE
+dist/
+build/
+*.egg-info/
+__pycache__/

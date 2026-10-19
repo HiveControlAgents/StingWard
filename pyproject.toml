@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stingward"
+version = "0.1.0"
+description = "Security check for AI-built projects, Claude Code skills and MCP servers"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [{name = "Isaque Moutta"}]
+keywords = ["security", "vulnerability", "cve", "osv", "mcp", "claude-code", "supabase", "vibe-coding"]
+classifiers = ["Programming Language :: Python :: 3", "Topic :: Security", "Environment :: Console"]
+dependencies = []
+
+[project.scripts]
+stingward = "stingward.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/HiveControlAgents/StingWard"
+
+[tool.setuptools]
+packages = ["stingward", "stingward.checks"]
