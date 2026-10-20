@@ -63,6 +63,15 @@ class HostileInput(Case):
         self.assertFast(secrets._mask_flags, "--token " + "-key" * 6000)
         self.assertFast(secrets._mask_flags, "a-" * 10000)
 
+    def test_many_generic_findings_in_one_file_are_linear(self):
+        # Each assignment looked through every finding of the file so far to skip a second one on the same line.
+        text = "\n".join(f'  token_{i}: "Ab3{i:06d}xYz9Qw"' for i in range(15000))
+        found = self.assertFast(secrets.scan_text, text, "src/gen.ts", limit=3.0)
+        self.assertEqual(len(found), len({f.line for f in found}))
+        self.assertGreater(len(found), 14000)
+        both = 'API_TOKEN = "' + "ghp_" + R36 + '"; secret_key = "Q8w3E5r7T9y1"\n'
+        self.assertEqual([f.params["kind_en"] for f in secrets.scan_text(both, "src/a.py")], ["GitHub token"])
+
     def test_command_line_flags_are_still_masked(self):
         pw = "Tr0ub4dor" + "77xK"
         cases = [
