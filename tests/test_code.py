@@ -74,6 +74,66 @@ class CodeRules(Checks):
                          "    return db.execute(text(f\"SELECT * FROM items WHERE title LIKE '%{q}%'\")).all()\n")
         self.check({"main.py": src}, [("COD001", "main.py", 6, "high")])
 
+    def test_fastapi_body_models_are_request_data(self):
+        """request: ChatRequest, req: QueryIn, user: UserCreate: o modelo é o corpo da requisição. O nome do parâmetro e o
+        fim "Request" do tipo só dizem "injetado pelo framework" quando o tipo é do framework (Request, Depends)."""
+        src = FASTAPI + ("import subprocess, httpx\nfrom typing import Annotated\n"
+                         "from fastapi import Request, Body\nfrom starlette.requests import Request as StarletteRequest\n"
+                         "from pydantic import BaseModel\n"
+                         "class ChatRequest(BaseModel):\n    message: str\n    url: str\n"
+                         "@app.post('/chat')\n"
+                         "async def chat(request: ChatRequest):\n"
+                         "    subprocess.run(request.message, shell=True)\n"
+                         "@app.post('/users')\n"
+                         "def create(user: 'schemas.UserCreate', db=Depends(get_db)):\n"
+                         "    db.execute(f\"INSERT INTO users (name) VALUES ('{user.name}')\")\n"
+                         "@app.post('/fetch')\n"
+                         "async def fetch(req: Annotated[ChatRequest, Body()]):\n"
+                         "    return httpx.get(req.url)\n"
+                         "@app.get('/ok')\n"
+                         "async def ok(request: Request, raw: StarletteRequest, user: User = Depends(current_user),\n"
+                         "             db: Session = Depends(get_db), settings: AppSettings = Depends(get_settings)):\n"
+                         "    subprocess.run(request.app.state.cmd + raw.scope['x'] + user.home + settings.cmd, shell=True)\n")
+        # Injetados pelo framework: argumento de função (médio), não dado da requisição.
+        self.check({"main.py": src}, [("COD002", "main.py", 13, "critical"), ("COD001", "main.py", 16, "high"),
+                                      ("COD008", "main.py", 19, "high"), ("COD002", "main.py", 23, "medium")])
+
+    def test_cod001_python_guards_before_the_query(self):
+        """if x not in ALLOWED: abort(400), if not x.isdigit(): return, if not re.fullmatch(...): raise: depois do if, o
+        valor é um dos permitidos. Um if que não sai da função, ou uma lista que vem da requisição, não protege."""
+        src = FLASK + ("import sqlite3, re\nconn = sqlite3.connect('d')\nALLOWED = {'name', 'date'}\n"
+                       "@app.get('/a')\ndef a():\n"
+                       "    sort = request.args.get('sort')\n"
+                       "    if not sort or sort not in ALLOWED:\n"
+                       "        abort(400)\n"
+                       "    uid = request.args['id']\n"
+                       "    if not uid.isdigit():\n"
+                       "        return 'bad', 400\n"
+                       "    t = request.args['table']\n"
+                       "    if not re.fullmatch(r'[a-z_]+', t):\n"
+                       "        raise ValueError('bad')\n"
+                       "    conn.execute(f'SELECT * FROM {t} WHERE id = {uid} ORDER BY {sort}')\n"
+                       "    c = request.args['c']\n"
+                       "    if not re.match(r'^[a-z_]+$', c) or not validate_column(c):\n"
+                       "        return 'bad', 400\n"
+                       "    d = request.args['d']\n"
+                       "    if not re.match(r'[a-z_]+', d):\n"
+                       "        return 'bad', 400\n"
+                       "    conn.execute(f'SELECT {c}, {d} FROM t')\n"
+                       "    e = request.args['e']\n"
+                       "    if not re.search(r'[a-z_]+$', e):\n"
+                       "        return 'bad', 400\n"
+                       "    conn.execute(f'SELECT {c}, {e} FROM t')\n"
+                       "    w = request.args['w']\n"
+                       "    if w not in request.args.getlist('ok'):\n"
+                       "        abort(400)\n"
+                       "    x = request.args['x']\n"
+                       "    if x not in ALLOWED:\n"
+                       "        print('odd')\n"
+                       "    return str(conn.execute(f\"SELECT * FROM t WHERE w = '{w}' AND x = '{x}'\").fetchall())\n")
+        self.check({"app.py": src}, [("COD001", "app.py", 24, "high"), ("COD001", "app.py", 28, "high"),
+                                     ("COD001", "app.py", 35, "high")])
+
     def test_cod001_function_argument_in_value_position_is_medium(self):
         src = "def find(conn, name):\n    return conn.execute(f\"SELECT * FROM t WHERE name = '{name}'\")\n"
         f = run({"db.py": src})
@@ -112,6 +172,114 @@ class CodeRules(Checks):
                "  await db.query('SELECT * FROM users WHERE id = $1', [id])\n"
                "  return Response.json({})\n}\n")
         self.silent({"app/api/users/route.ts": src})
+
+    def test_cod001_values_named_like_sql_parts(self):
+        """query, count, item.name: entre aspas ou depois de = é valor, não nome de tabela nem pedaço de SQL. Os nomes
+        que parecem pedaço de SQL só ficam de fora fora dessas posições (ORDER BY {order}) ou com origem desconhecida."""
+        py = FLASK + ("import sqlite3\ncur = sqlite3.connect('x').cursor()\n"
+                      "@app.get('/s')\ndef s():\n"
+                      "    query = request.args.get('query', '')\n"
+                      "    cur.execute(f\"SELECT * FROM docs WHERE title LIKE '%{query}%'\")\n"
+                      "    count = request.args['count']\n"
+                      "    cur.execute(f'SELECT * FROM docs WHERE n = {count}')\n"
+                      "    order = request.args.get('order', 'id')\n"
+                      "    cur.execute(f'SELECT * FROM docs ORDER BY {order}')\n"
+                      "    ids = request.json['ids']\n"
+                      "    qmarks = ','.join('?' for _ in ids)\n"
+                      "    cur.execute(f'SELECT * FROM docs WHERE id IN ({qmarks})', ids)\n"
+                      "def lib(conn, query):\n"
+                      "    return conn.execute(f\"SELECT * FROM docs WHERE title = '{query}'\")\n")
+        api = FASTAPI + ("import sqlite3\nfrom pydantic import BaseModel\ncur = sqlite3.connect('x').cursor()\n"
+                         "class Item(BaseModel):\n    name: str\n    model: str\n"
+                         "@app.post('/i')\ndef i(item: Item):\n"
+                         "    cur.execute(f\"SELECT * FROM t WHERE name = '{item.name}'\")\n"
+                         "    cur.execute(f\"SELECT * FROM {item.model}\")\n")
+        mcp = ("from mcp.server.fastmcp import FastMCP\nimport sqlite3\nmcp = FastMCP('x')\nconn = sqlite3.connect('d')\n"
+               "@mcp.tool()\ndef search(query: str) -> list:\n"
+               "    return conn.execute(f\"SELECT * FROM docs WHERE body LIKE '%{query}%'\").fetchall()\n")
+        js = EXPRESS + ("const db = require('./db')\n"
+                        "app.get('/s', async (req, res) => {\n"
+                        "  const query = req.query.q\n"
+                        "  const rows = await db.query(`SELECT * FROM docs WHERE title LIKE '%${query}%'`)\n"
+                        "  const order = req.query.sort\n"
+                        "  const r2 = await db.query(`SELECT * FROM docs ORDER BY ${order}`)\n"
+                        "  res.json(rows)\n})\n")
+        self.check({"app.py": py, "main.py": api, "server.py": mcp, "server.js": js},
+                   [("COD001", "app.py", 8, "high"), ("COD001", "app.py", 10, "high"), ("COD001", "main.py", 11, "high"),
+                    ("APP014", "server.py", 7, "high"), ("COD001", "server.js", 6, "high")])
+
+    def test_cod001_names_that_only_end_like_placeholders(self):
+        """marks, qmarks, question_marks e questionMarks são placeholders; remarks e bookmarks são o dado do formulário."""
+        py = FLASK + ("import sqlite3\nconn = sqlite3.connect('d.db')\n"
+                      "@app.post('/n')\ndef n():\n"
+                      "    ids = request.json['ids']\n"
+                      "    qmarks = ','.join('?' * len(ids))\n"
+                      "    question_marks = ','.join(['?'] * len(ids))\n"
+                      "    conn.execute(f'SELECT * FROM t WHERE id IN ({qmarks}) OR id IN ({question_marks})', ids + ids)\n"
+                      "    remarks = request.form['remarks']\n"
+                      "    conn.execute(f\"INSERT INTO notes (remarks) VALUES ('{remarks}')\")\n"
+                      "    return 'ok'\n")
+        js = EXPRESS + ("const db = require('./db')\n"
+                        "app.post('/n', async (req, res) => {\n"
+                        "  const questionMarks = req.body.ids.map(() => '?').join(',')\n"
+                        "  await db.query(`SELECT * FROM t WHERE id IN (${questionMarks})`, req.body.ids)\n"
+                        "  const bookmarks = req.body.bookmarks\n"
+                        "  await db.query(`INSERT INTO t (b) VALUES ('${bookmarks}')`)\n"
+                        "  res.json({})\n})\n")
+        self.check({"app.py": py, "server.js": js}, [("COD001", "app.py", 12, "high"), ("COD001", "server.js", 8, "high")])
+
+    def test_cod001_js_allowlists_before_the_query(self):
+        """ALLOWED.includes(x) ? x : 'name', if (!LISTA.includes(x)) return, if (!/^...$/.test(x)) throw: depois disso o
+        valor é um dos permitidos. Um if que não sai, uma regex sem âncora ou o outro lado do ? vindo de fora não protegem."""
+        src = EXPRESS + ("const db = require('./db')\nconst ALLOWED = ['name', 'date']\nconst SAFE = /^\\w+$/\n"
+                         "app.get('/a', async (req, res) => {\n"
+                         "  const sort = ALLOWED.includes(req.query.sort) ? req.query.sort : 'name'\n"
+                         "  const dir = req.query.dir\n"
+                         "  if (!['asc', 'desc'].includes(dir)) return res.status(400).end()\n"
+                         "  const col = req.query.col\n"
+                         "  if (!/^[a-z_]+$/.test(col)) {\n"
+                         "    throw new Error('bad')\n"
+                         "  }\n"
+                         "  const rows = await db.query(`SELECT ${col} FROM t ORDER BY ${sort} ${dir}`)\n"
+                         "  const x = req.query.x\n"
+                         "  if (!ALLOWED.includes(x)) console.log('odd')\n"
+                         "  const y = req.query.y\n"
+                         "  if (!/[a-z]+/.test(y)) return res.end()\n"
+                         "  const z = ALLOWED.includes(req.query.z) ? req.query.z : req.query.w\n"
+                         "  const k = req.query.k\n"
+                         "  if (!SAFE.test(k)) return res.end()\n"
+                         "  await db.query(`SELECT * FROM t ORDER BY ${k}`)\n"
+                         "  const w = req.query.w\n"
+                         "  if (!req.body.allowed.includes(w)) return res.end()\n"
+                         "  await db.query(`SELECT * FROM t ORDER BY ${w}`)\n"
+                         "  await db.query(`SELECT * FROM t ORDER BY ${x}`)\n"
+                         "  await db.query(`SELECT * FROM t ORDER BY ${y}`)\n"
+                         "  await db.query(`SELECT * FROM t ORDER BY ${z}`)\n"
+                         "  res.json(rows)\n})\n")
+        self.check({"server.js": src}, [("COD001", "server.js", 25, "high"), ("COD001", "server.js", 26, "high"),
+                                        ("COD001", "server.js", 27, "high"), ("COD001", "server.js", 28, "high")])
+
+    def test_cod001_js_placeholder_lists_stay_silent(self):
+        """ids.map(() => '?').join(','): a lista de placeholders herda a origem de ids, mas o texto dela é fixo. O
+        JavaScript conhece os mesmos nomes de placeholder que o Python (marks, ph, qs) e olha o valor declarado."""
+        src = EXPRESS + ("const db = require('./db')\n"
+                         "app.post('/s', async (req, res) => {\n"
+                         "  const ids = req.body.ids\n"
+                         "  const marks = ids.map(() => '?').join(',')\n"
+                         "  await db.query(`SELECT * FROM t WHERE id IN (${marks})`, ids)\n"
+                         "  const ph = ids.map((_, i) => `$${i + 1}`).join(', ')\n"
+                         "  await db.query(`SELECT * FROM t WHERE id IN (${ph})`, ids)\n"
+                         "  const inList = ids.map(() => '?').join(',')\n"
+                         "  await db.query('SELECT * FROM t WHERE id IN (' + inList + ')', ids)\n"
+                         "  const names = req.body.names.join(\"','\")\n"
+                         "  await db.query(`SELECT * FROM t WHERE name IN ('${names}')`)\n"
+                         "  await db.query(`SELECT * FROM t WHERE name = '${req.body.bookmarks}'`)\n"
+                         "  const quoted = req.body.names.map((n) => `'${n}'`).join(',')\n"
+                         "  await db.query(`SELECT * FROM t WHERE name IN (${quoted})`)\n"
+                         "  await db.query(`SELECT * FROM t WHERE name IN (${req.body.names.map((n) => `'${n}'`).join(',')})`)\n"
+                         "  res.json({})\n})\n")
+        self.check({"server.js": src}, [("COD001", "server.js", 13, "high"), ("COD001", "server.js", 14, "high"),
+                                        ("COD001", "server.js", 16, "high"), ("COD001", "server.js", 17, "high")])
 
     # ------------------------------------------------------------------ COD002 comando
 
@@ -164,6 +332,21 @@ class CodeRules(Checks):
         f = run({"app.py": src})
         self.assertEqual(got(f), [("COD003", "app.py", 5, "critical"), ("COD003", "app.py", 8, "critical")])
 
+    def test_cod003_python_repr_quotes_the_value(self):
+        """{v!r} e repr(v) escrevem o valor como um literal do Python: exec(f"x = {v!r}") e python -c com ele não rodam o
+        texto. Sem o !r o texto vira código; num template (Jinja) o repr não protege."""
+        src = FLASK + ("import subprocess, sys\n"
+                       "@app.post('/a')\ndef a():\n"
+                       "    v = request.json['v']\n"
+                       "    exec(f'x = {v!r}')\n"
+                       "    exec('x = ' + repr(v))\n"
+                       "    subprocess.run([sys.executable, '-c', f'print({v!r})'])\n"
+                       "    exec(f'x = {v}')\n"
+                       "    exec(f'x = {v!r}; y = {v}')\n"
+                       "    return render_template_string(f'<p>{v!r}</p>')\n")
+        self.check({"app.py": src}, [("COD003", "app.py", 10, "critical"), ("COD003", "app.py", 11, "critical"),
+                                     ("COD003", "app.py", 12, "critical")])
+
     def test_cod003_js_eval_and_new_function(self):
         src = EXPRESS + ("app.post('/run', (req, res) => {\n"
                          "  const out = eval(req.body.code)\n"
@@ -207,6 +390,20 @@ class CodeRules(Checks):
         ruamel = "from ruamel.yaml import YAML\n\ndef read(path):\n    yaml = YAML()\n    return yaml.load(open(path))\n"
         self.silent({"conf.py": ruamel})
 
+    def test_cod004_safe_loader_subclass_in_the_file(self):
+        """class StrictLoader(yaml.SafeLoader): o loader do próprio arquivo herda o modo seguro (também em dois passos).
+        Herdar de yaml.Loader continua perigoso."""
+        src = ("import yaml\nfrom yaml import CSafeLoader\n"
+               "class StrictLoader(yaml.SafeLoader):\n    pass\n"
+               "class Strict2Loader(StrictLoader):\n    pass\n"
+               "class FastLoader(CSafeLoader):\n    pass\n"
+               "class DangerLoader(yaml.Loader):\n    pass\n"
+               "def a(text):\n    return yaml.load(text, Loader=StrictLoader)\n"
+               "def b(text):\n    return yaml.load(text, Strict2Loader)\n"
+               "def c(text):\n    return yaml.load(text, Loader=FastLoader)\n"
+               "def d(text):\n    return yaml.load(text, Loader=DangerLoader)\n")
+        self.check({"conf.py": src}, [("COD004", "conf.py", 18, "medium")])
+
     # ------------------------------------------------------------------ COD005 XSS
 
     def test_cod005_js_request_input_in_html(self):
@@ -228,6 +425,20 @@ class CodeRules(Checks):
                "el.innerHTML = '<b>loading</b>'\n"
                "el.innerHTML = `<img src=\"${location.origin}/logo.png\">`\n")
         self.silent({"app/page.tsx": page, "public/app.js": dom})
+
+    def test_cod005_markup_words_in_the_html_do_not_hide_input(self):
+        """icon, svg, style e css no código dizem "isto monta um ícone ou um estilo"; no HTML fixo (class="icon",
+        style="...") não dizem nada sobre o valor que entra."""
+        dom = ("const box = document.getElementById('box')\n"
+               "box.innerHTML = `<span class=\"icon\">${location.hash.slice(1)}</span>`\n"
+               "box.innerHTML = '<div style=\"color:red\">' + location.search + '</div>'\n"
+               "box.innerHTML = `<svg viewBox=\"0 0 24 24\">${iconPath}</svg>`\n"
+               "box.innerHTML = renderIcon(location.hash)\n"
+               "box.innerHTML = DOMPurify.sanitize(`<b class=\"x\">${location.hash}</b>`)\n"
+               "box.innerHTML = `<i class=\"icon\"></i>${data.choices[0].message.content}`\n")
+        self.check({"public/app.js": dom}, [("COD005", "public/app.js", 2, "medium"),
+                                            ("COD005", "public/app.js", 3, "medium"),
+                                            ("APP009", "public/app.js", 7, "medium")])
 
     def test_cod005_python_html_response(self):
         src = FLASK + ("@app.get('/hi')\n"
@@ -305,6 +516,32 @@ class CodeRules(Checks):
                          "    return FileResponse(item.path)\n")
         self.silent({"main.py": src})
 
+    def test_cod007_extension_of_the_uploaded_name_stays_silent(self):
+        """os.path.splitext(file.filename)[1] não tem / nem ..: num nome que o código montou (uuid + extensão), quem manda
+        o arquivo só escolhe o .png. O resto do nome (root, split('.')[-1], o nome inteiro) continua alto."""
+        src = FASTAPI + ("import os, uuid, subprocess\nfrom fastapi import UploadFile, File\nUPLOAD_DIR = 'uploads'\n"
+                         "@app.post('/a')\nasync def a(file: UploadFile = File(...)):\n"
+                         "    ext = os.path.splitext(file.filename)[1].lower()\n"
+                         "    path = os.path.join(UPLOAD_DIR, f'{uuid.uuid4()}{ext}')\n"
+                         "    with open(path, 'wb') as f:\n"
+                         "        f.write(await file.read())\n"
+                         "    with open(os.path.join(UPLOAD_DIR, str(uuid.uuid4()) + os.path.splitext(file.filename)[-1]), 'wb') as f:\n"
+                         "        f.write(b'')\n"
+                         "    name = uuid.uuid4().hex\n"
+                         "    root, ext2 = os.path.splitext(file.filename)\n"
+                         "    name += ext2\n"
+                         "    open(os.path.join(UPLOAD_DIR, name), 'wb').close()\n"
+                         "    subprocess.run(f'convert in{ext} out.png', shell=True)\n"
+                         "@app.post('/b')\nasync def b(file: UploadFile = File(...)):\n"
+                         "    root, ext = os.path.splitext(file.filename)\n"
+                         "    open(os.path.join(UPLOAD_DIR, root + ext), 'wb').close()\n"
+                         "    tail = file.filename.split('.')[-1]\n"
+                         "    open(os.path.join(UPLOAD_DIR, f'{uuid.uuid4()}.{tail}'), 'wb').close()\n"
+                         "    ext = file.filename\n"
+                         "    open(os.path.join(UPLOAD_DIR, ext), 'wb').close()\n")
+        self.check({"main.py": src}, [("COD002", "main.py", 18, "critical"), ("COD007", "main.py", 22, "high"),
+                                      ("COD007", "main.py", 24, "high"), ("COD007", "main.py", 26, "high")])
+
     def test_cod007_js_path_from_request(self):
         src = EXPRESS + ("const fs = require('fs')\nconst path = require('path')\n"
                          "app.get('/f', (req, res) => {\n"
@@ -312,6 +549,22 @@ class CodeRules(Checks):
                          "})\n"
                          "app.get('/g/:name', (req, res) => res.sendFile(req.params.name))\n")
         self.check({"server.js": src}, [("COD007", "server.js", 6, "high"), ("COD007", "server.js", 8, "high")])
+
+    def test_cod007_js_named_fs_imports(self):
+        """import { writeFile } from 'fs/promises', const { readFileSync } = require('fs'): o "fs" só aparece no texto
+        entre aspas, que a máscara apaga; a função chamada sozinha é a mesma do fs."""
+        route = ("import { writeFile, readFile } from 'fs/promises'\nimport path from 'path'\n"
+                 "export async function POST(request) {\n"
+                 "  const data = await request.formData()\n"
+                 "  const file = data.get('file')\n"
+                 "  await writeFile(path.join(process.cwd(), 'public', 'uploads', file.name), Buffer.from(await file.arrayBuffer()))\n"
+                 "  const txt = await readFile(path.join(process.cwd(), 'data', data.get('name')), 'utf8')\n"
+                 "  return Response.json({ txt })\n}\n")
+        server = EXPRESS + ("const { readFileSync } = require('fs')\n"
+                            "app.get('/f', (req, res) => res.send(readFileSync('files/' + req.query.name)))\n")
+        self.check({"app/api/upload/route.ts": route, "server.js": server},
+                   [("COD007", "app/api/upload/route.ts", 6, "high"), ("COD007", "app/api/upload/route.ts", 7, "high"),
+                    ("COD007", "server.js", 4, "high")])
 
     def test_cod007_js_basename_root_and_upload_path_stay_silent(self):
         src = EXPRESS + ("const fs = require('fs')\nconst path = require('path')\n"
@@ -352,6 +605,81 @@ class CodeRules(Checks):
               "  const q = useSearchParams().get('url')\n"
               "  useEffect(() => { fetch(q) }, [q])\n  return null\n}\n")
         self.silent({"app.py": py, "app/search/page.tsx": js})
+
+    def test_cod008_base_address_in_a_variable_stays_silent(self):
+        """full = BASE + caminho; requests.get(full): o começo do endereço é o do código, como em f"{BASE}/{caminho}".
+        Quando o começo vem da requisição (u + '/x'), continua alto."""
+        py = FLASK + ("import requests\nBASE = 'https://api.example.com'\n"
+                      "@app.get('/a')\ndef a():\n"
+                      "    path = request.args['p']\n"
+                      "    full = BASE + path\n"
+                      "    r = requests.get(full)\n"
+                      "    return requests.get(BASE + path).text + r.text\n"
+                      "@app.get('/b')\ndef b():\n"
+                      "    u = request.args['u']\n"
+                      "    full = u + '/x'\n"
+                      "    return requests.get(full).text\n")
+        js = ("const BASE = 'https://api.example.com'\nconst SUFFIX = '/v1'\n"
+              "export async function GET(req) {\n"
+              "  const { searchParams } = new URL(req.url)\n"
+              "  const p = searchParams.get('p')\n"
+              "  const full = BASE + p\n"
+              "  const a = await fetch(full)\n"
+              "  const target = searchParams.get('url')\n"
+              "  const full2 = target + SUFFIX\n"
+              "  const b = await fetch(full2)\n"
+              "  return new Response((await a.text()) + (await b.text()))\n}\n")
+        self.check({"app.py": py, "app/api/proxy/route.ts": js},
+                   [("COD008", "app.py", 15, "high"), ("COD008", "app/api/proxy/route.ts", 10, "high")])
+
+    def test_cod008_host_written_into_the_address(self):
+        """f"https://{host}/x", "https://" + t + ".example.com": o texto fixo para antes do fim do host, então quem manda o
+        valor escolhe o servidor (t = "evil.com/?" ou "@evil.com"). Depois da primeira / é só caminho. No redirect para
+        https://{Host}/ (de http para https) o cabeçalho é do próprio navegador: fica quieto."""
+        py = FLASK + ("import requests\n"
+                      "@app.get('/a')\ndef a():\n"
+                      "    host = request.args['h']\n"
+                      "    r = requests.get(f'https://{host}/v1/x')\n"
+                      "    s = requests.get(f\"http://localhost:{request.args['port']}/x\")\n"
+                      "    t = requests.get('https://' + request.args['t'] + '.example.com/x')\n"
+                      "    u = requests.get(f'https://api.example.com/{host}?q={host}')\n"
+                      "    return r.text + s.text + t.text + u.text\n"
+                      "@app.get('/b')\ndef b():\n"
+                      "    return redirect(f\"https://{request.headers['Host']}{request.full_path}\")\n")
+        express = EXPRESS + ("app.use((req, res, next) => {\n"
+                             "  if (!req.secure) return res.redirect('https://' + req.headers.host + req.url)\n"
+                             "  next()\n})\n")
+        js = ("export async function GET(req) {\n"
+              "  const { searchParams } = new URL(req.url)\n"
+              "  const host = searchParams.get('h')\n"
+              "  const a = await fetch(`https://${host}/v1/x`)\n"
+              "  const b = await fetch('https://' + searchParams.get('t') + '.example.com/x')\n"
+              "  const c = await fetch(`https://api.example.com/${host}`)\n"
+              "  return new Response((await a.text()) + (await b.text()) + (await c.text()))\n}\n")
+        mcp = FMCP + ("import httpx\n@mcp.tool()\nasync def get(region: str, path: str) -> str:\n"
+                      "    a = httpx.get(f'https://{region}.api.example.com/v1')\n"
+                      "    b = httpx.get(f'https://api.example.com/{path}')\n"
+                      "    return a.text + b.text\n")
+        f = run({"app.py": py, "app/api/proxy/route.ts": js, "server.py": mcp, "web.js": express})
+        self.assertEqual(got(f), [("APP014", "server.py", 6, "medium"), ("COD008", "app.py", 7, "high"),
+                                  ("COD008", "app.py", 8, "high"), ("COD008", "app.py", 9, "high"),
+                                  ("COD008", "app/api/proxy/route.ts", 4, "high"),
+                                  ("COD008", "app/api/proxy/route.ts", 5, "high")])
+        self.assertEqual([x.params["kind"] for x in f if x.rule == "APP014"], ["url"])
+
+    def test_cod008_search_params_held_in_a_variable(self):
+        """const sp = new URL(req.url).searchParams; sp.get('url'): a busca da requisição com outro nome. A busca de um
+        endereço escrito no código não é da requisição."""
+        js = ("export async function GET(req) {\n"
+              "  const sp = new URL(req.url).searchParams\n"
+              "  const params = req.nextUrl.searchParams\n"
+              "  const a = await fetch(sp.get('url'))\n"
+              "  const b = await fetch(params.get('next') ?? '/')\n"
+              "  const own = new URL('https://api.example.com/x?a=1').searchParams\n"
+              "  const c = await fetch(own.get('a'))\n"
+              "  return new Response((await a.text()) + (await b.text()) + (await c.text()))\n}\n")
+        self.check({"app/api/proxy/route.ts": js},
+                   [("COD008", "app/api/proxy/route.ts", 4, "high"), ("COD008", "app/api/proxy/route.ts", 5, "high")])
 
     # ------------------------------------------------------------------ COD009 redirect
 
@@ -987,6 +1315,30 @@ class ToolArguments(Checks):
                        "  exec(`ls ${n} ${mode}`)\n  return { content: [] }\n})\n")
         self.check({"server.ts": src}, [("APP014", "server.ts", 8, "high"), ("APP014", "server.ts", 9, "critical")])
 
+    def test_interpreter_with_inline_code(self):
+        """[sys.executable, "-c", código], spawn("node", ["-e", código]): o interpretador roda o texto como código, como
+        exec(). Um arquivo de script do projeto com o valor como argumento continua quieto."""
+        py = FMCP + ("import subprocess, sys\n@mcp.tool()\ndef run_python(code: str) -> str:\n"
+                     "    a = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True).stdout\n"
+                     "    b = subprocess.run(['node', '-e', 'console.log(' + code + ')'], capture_output=True).stdout\n"
+                     "    c = subprocess.run([sys.executable, 'scripts/report.py', code], capture_output=True).stdout\n"
+                     "    return a + b + c\n")
+        flask = FLASK + ("import subprocess\n@app.post('/run')\ndef run():\n"
+                         "    return subprocess.run(['python3', '-c', request.json['code']], capture_output=True).stdout\n")
+        llm = OPENAI_PY + ("import subprocess, sys\ndef go(q):\n"
+                           "    r = client.chat.completions.create(model='m', messages=[{'role': 'user', 'content': q}])\n"
+                           "    subprocess.run([sys.executable, '-c', r.choices[0].message.content])\n")
+        js = MCPJS + ("server.tool('py', { code: z.string() }, async ({ code }) => {\n"
+                      "  execFile('python3', ['-c', code])\n"
+                      "  execFile(process.execPath, ['-e', code])\n"
+                      "  execFile('python3', ['main.py', code])\n"
+                      "  return { content: [] }\n})\n")
+        f = run({"server.py": py, "app.py": flask, "agent.py": llm, "server.ts": js})
+        self.assertEqual(got(f), [("APP009", "agent.py", 6, "critical"), ("APP014", "server.py", 6, "high"),
+                                  ("APP014", "server.py", 7, "critical"), ("APP014", "server.ts", 8, "high"),
+                                  ("APP014", "server.ts", 9, "high"), ("COD003", "app.py", 6, "critical")])
+        self.assertEqual({x.params.get("kind") for x in f if x.rule == "APP014"}, {"code"})
+
     def test_js_register_tool_paths_and_guards(self):
         src = MCPJS + ("const ROOT = '/srv/notes'\n"
                        "server.registerTool('read', { inputSchema: { p: z.string() } }, async ({ p }) => {\n"
@@ -1241,6 +1593,13 @@ class CodeEngine(unittest.TestCase):
                  "nested.js": "const x = " + "[" * 3000 + "]" * 3000 + "\n", "huge.js": "// x\n" * 200_000}
         self.assertEqual(got(run(files)), [])
 
+    def test_long_files_are_not_taken_for_minified(self):
+        """Um arquivo comum de 4000 linhas é lido até o fim; só linhas realmente longas indicam bundle minificado."""
+        src = EXPRESS + "const a = 1 // filler line here\n" * 4000 + "app.post('/x', (req, res) => { eval(req.body.code) })\n"
+        self.assertEqual(got(run({"server.js": src})), [("COD003", "server.js", 4003, "critical")])
+        self.assertFalse(code._minified(src))
+        self.assertTrue(code._minified("const a = 1\n" * 3000 + "var a=1;" * 3000 + "\n"))
+
     def test_pathological_files_stay_fast(self):
         """Milhares de começos sem fim, com uma origem e um sink para a análise toda rodar: cada arquivo tem um teto."""
         head = "const cp = require('child_process')\nconst q = req.query.x\neval(q)\ncp.exec(q)\n"
@@ -1255,6 +1614,98 @@ class CodeEngine(unittest.TestCase):
         t = time.time()
         run(blobs)
         self.assertLess(time.time() - t, 15)
+
+    def test_text_built_from_texts_built_from_texts_stays_fast(self):
+        """a2 += a1 trinta vezes, a3 += a2 trinta vezes: remontar cada pedaço cresce exponencialmente (2 KB travavam a
+        auditoria). O achado continua saindo."""
+        py = ("from flask import request\nimport sqlite3\ncur = sqlite3.connect('x').cursor()\n"
+              "a1 = 'SELECT * FROM t WHERE a = '\n" + "a1 += request.args['a']\n" * 30)
+        js = "const q = req.query.a\nlet a1 = 'SELECT * FROM t WHERE a = '\n" + "a1 += q\n" * 30
+        for k in (2, 3):
+            py += f"a{k} = ''\n" + f"a{k} += a{k - 1}\n" * 30
+            js += f"let a{k} = ''\n" + f"a{k} += a{k - 1}\n" * 30
+        for scan_fn, rel, src in ((code.scan_python, "app.py", py + "cur.execute(a3)\n"),
+                                  (code.scan_js, "server.js", js + "db.query(a3)\n")):
+            with self.subTest(rel=rel):
+                t = time.time()
+                found = scan_fn(rel, src)
+                self.assertLess(time.time() - t, 1)
+                self.assertEqual([(f.rule, f.severity) for f in found], [("COD001", "high")])
+
+    def test_long_line_before_math_random_stays_fast(self):
+        """O nome que recebe o Math.random() é procurado na linha: espaços longos ali faziam a busca cúbica."""
+        src = "const resetToken = Math.random().toString(36)\nx:" + " " * 1200 + "b Math.random()\n"
+        t = time.time()
+        found = code.scan_js("a.js", src)
+        self.assertLess(time.time() - t, 1)
+        self.assertEqual([(f.rule, f.line) for f in found], [("COD010", 1)])
+
+    def test_percent_format_with_long_flags_stays_fast(self):
+        """"%" seguido de milhares de zeros (flags e largura casavam os mesmos zeros de vários jeitos) e milhares de
+        "%(" sem ")" (cada um lia o resto do texto)."""
+        fmt = "SELECT * FROM t WHERE a = '%s'" + (" %" + "0" * 3000 + "!") * 30 + " %(" * 20000
+        src = (FLASK + "import sqlite3\ncur = sqlite3.connect('x').cursor()\n@app.get('/a')\ndef a():\n"
+               f"    cur.execute(\"{fmt}\" % request.args['a'])\n")
+        t = time.time()
+        found = code.scan_python("app.py", src)
+        self.assertLess(time.time() - t, 1)
+        self.assertEqual([(f.rule, f.severity) for f in found], [("COD001", "high")])
+
+    def test_whole_file_searches_stay_linear(self):
+        """'use server' depois de espaços e export const GET: sem "=": cada começo de linha lia o resto do arquivo."""
+        blobs = {"lib/a.js": "const u = req.query.u\nfetch(u)\n" + (" " * 240 + "\n") * 1990,
+                 "lib/b.ts": "import OpenAI from 'openai'\n" + ("export const GET:" + " " * 200 + "\n") * 1990}
+        for rel, src in blobs.items():
+            with self.subTest(rel=rel):
+                t = time.time()
+                code.scan_js(rel, src)
+                self.assertLess(time.time() - t, 1)
+        js = code._Js("app/actions.ts", "// x\n  'use server'\nexport async function a() {}\n", {})
+        self.assertTrue(js.server_side())
+        self.assertTrue(code._JS_ROUTE_FN.search("export const GET: RequestHandler = async (req) => {}"))
+
+    def test_arrows_without_their_parenthesis_stay_fast(self):
+        """") =>" sem o "(" que o abre: cada seta voltava até 2000 caracteres, um por um, sem teto no arquivo."""
+        src = "const q = req.query.a\neval(q)\n" + (") => " * 500 + "\n") * 200
+        t = time.time()
+        found = code.scan_js("a.js", src)
+        self.assertLess(time.time() - t, 2)
+        self.assertEqual([(f.rule, f.line) for f in found], [("COD003", 2)])
+        js = code._Js("a.js", "f((a, [b]) => { g(c) }, (d) => d)", {})
+        self.assertEqual([js.open_before(i) for i in (9, 19, 21, 26, 32)], [2, 17, 14, 24, 1])
+        self.assertEqual(js.open_before(0), -1)
+
+    def test_regex_literal_ends_its_declaration(self):
+        """const SAFE = /^\\w+$/ no fim da linha: a / que fecha a regex não é uma divisão que continua na linha de baixo
+        (o valor declarado engolia o handler inteiro, com a origem dele)."""
+        src = "const SAFE = /^\\w+$/\napp.get('/a', (req, res) => res.send(req.query.k))\nconst D = a /\n  b\nfoo()\n"
+        js = code._Js("a.js", src, {})
+        start = src.index("=") + 1
+        self.assertEqual(src[start:js.expr_end(start)], " /^\\w+$/")
+        start = src.index("= a") + 1
+        self.assertEqual(src[start:js.expr_end(start)], " a /\n  b")
+
+    def test_long_names_in_expressions_stay_fast(self):
+        """Um nome de 2900 letras numa expressão com chamada: a busca de chamadas tentava começar em cada letra dele."""
+        src = "const q = req.query.a\neval(q)\n" + ("x = q + " + "a" * 2900 + " + f()\n") * 50
+        t = time.time()
+        found = code.scan_js("a.js", src)
+        self.assertLess(time.time() - t, 2)
+        self.assertEqual([(f.rule, f.line) for f in found], [("COD003", 2)])
+        self.assertEqual(code._opaque_calls("a(b) + c.d(e, f(g)) + h"), "a( ) + c.d(       ) + h")
+
+    def test_return_math_random_finds_its_function_fast(self):
+        """return Math.random(): o nome da função vem de um índice do arquivo, não de uma busca nos 1500 caracteres antes
+        de cada return (com milhares deles, segundos por arquivo)."""
+        src = ("function makeToken() {\n  return Math.random().toString(36)\n}\n"
+               "const makeSecret = async () => {\n  return Math.random().toString(36)\n}\n"
+               "class K {\n  generateApiKey(): string {\n    return Math.random().toString(36)\n  }\n}\n"
+               "function delay() {\n  return Math.random() * 100\n}\n")
+        self.assertEqual([(f.rule, f.line) for f in code.scan_js("lib/k.ts", src)], [("COD010", 2), ("COD010", 5), ("COD010", 9)])
+        js = code._Js("a.js", "a():\nreturn Math.random()\n" * 6000, {})
+        t = time.time()
+        js.run()
+        self.assertLess(time.time() - t, 1)
 
     def test_line_numbers_follow_comments_and_strings(self):
         src = EXPRESS + ("/* a comment\n   eval(req.body.a)\n*/\n"

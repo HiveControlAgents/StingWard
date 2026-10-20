@@ -31,6 +31,7 @@ _JS_MAX = 500_000
 _CACHE_KEY = ("__code__",)
 _PER_FILE = 40  # achados por arquivo: um arquivo gerado não enche o relatório
 _STR_PARTS = 40  # pedaços de um texto montado com += que ainda vale a pena remontar
+_PIECES = 400  # partes remontadas por texto, somando os textos montados que ele usa
 
 _SRC = {REQ: ("dados da requisição", "request input"), PARAM: ("um argumento da função", "a function argument")}
 
@@ -263,7 +264,19 @@ _SQL_LOOK = re.compile(r"""(?isx)
   )""")
 # O valor entra onde vai um dado ('...', = x, LIKE '%x', IN (x)), não um nome de tabela ou coluna ("tabela", ORDER BY x).
 _VALUE_POS = re.compile(r"""(?:'|%|(?:[=<>]|\blike|\bilike|\bin\s*\(|\bvalues\s*\()\s*["'%]*)$""", re.I)
+# Começo de endereço que para onde o host ou a porta começa: "https://", "//", "http://localhost:". O que vem depois
+# decide o servidor ("evil.com/?", "@evil.com"). "https://api.example.com" + caminho é a base do código mais o caminho.
+_IN_HOST = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*:)?//(?:[^/?#\\\s]*[.:@])?\Z")
 _SQL_DDL = re.compile(r"\s*\(?\s*(?:pragma|create|drop|alter|truncate)\b", re.I)
+# Nome de variável que costuma guardar placeholders (",".join("?" * n)) ou um pedaço de SQL escrito no código (tabela,
+# coluna, ORDER BY, WHERE montado). O pedaço só conta fora da posição de dado: '{query}' é o texto da busca. marks é a
+# palavra inteira (marks, qmarks, question_marks, questionMarks): remarks e bookmarks são dado.
+_PLACEHOLDER = re.compile(r"(?i:placeholder|^q?marks$|_marks$|^ph$|^qs$|params?_?(?:str|sql|list)|bind)|[a-z0-9]Marks$")
+_PY_SQL_PART = re.compile(r"(?i)^(?:table|tables|table_name|tablename|schema|columns?|cols|fields|col|column_name|order|"
+                          r"direction|sort_dir|where|where_clause|conditions?|clause|set_clause|joins?|filters?_sql|sql|query|"
+                          r"select|limit|offset|n|i|idx|count)$")
+_JS_SQL_PART = re.compile(r"(?i)^(?:table|tableName|schema|columns?|cols|fields|order|direction|sortDir|where|whereClause|"
+                          r"conditions?|clause|setClause|joins?|sql|query|select|limit|offset|i|idx|n|count)$")
 
 
 # Uma string que começa como SQL (para saber se vale procurar consultas no arquivo).
@@ -323,6 +336,11 @@ _SQL_HELPER = re.compile(r"(?i)^_*(?:(?:execute|exec|run|raw)_?(?:query|sql|stat
                          r"query_?(?:db|sql|database)|sql_?query|run_?read_?only_?query)$")
 _NOT_REQ_ANN = re.compile(r"(?i)(?:dep|deps|dependency|session|db|user|request|response|websocket|tasks?|connection|"
                           r"settings|config|client|logger|context|ctx|engine|cursor)$")
+# Fim do nome de um modelo do corpo da requisição (ChatRequest, UserCreate, ItemUpdate, QueryIn, SearchPayload), depois de
+# uma letra minúscula ou dígito: Request sozinho, Login e Plugin não contam.
+_BODY_ANN = re.compile(r"(?<=[a-z0-9])(?:Request|Req|Create|Update|Upsert|Patch|In|Input|Body|Payload|Params|Form|Data|"
+                       r"Query|Message|Schema|Dto|DTO)$")
+_FRAMEWORK_REQ_ANN = {"HttpRequest", "BaseRequest"}  # Django, aiohttp: também quando a anotação é texto
 _NOT_REQ_PARAM = {"request", "req", "db", "session", "background_tasks", "response", "websocket", "current_user", "user",
                   "settings", "self", "cls", "ctx", "context"}
 
@@ -379,6 +397,8 @@ _PY_FILE_SINKS = {"open", "io.open", "codecs.open", "aiofiles.open", "builtins.o
                   "shutil.rmtree", "os.rmdir", "flask.send_file", "send_file", "starlette.responses.FileResponse",
                   "fastapi.responses.FileResponse", "FileResponse", "django.http.FileResponse", "os.listdir",
                   "shutil.copy", "shutil.copyfile", "shutil.move"}
+_SAFE_LOADERS = ("SafeLoader", "BaseLoader", "FullLoader")
+_EXT_STR = {"lower", "upper", "casefold", "strip", "lstrip", "rstrip"}
 _PATH_METHODS = {"read_text", "read_bytes", "open", "write_text", "write_bytes", "unlink", "rmdir", "iterdir"}
 _PY_REDIRECT = ("redirect", "RedirectResponse", "HttpResponseRedirect", "HttpResponsePermanentRedirect")
 _PY_HTML = ("Markup", "mark_safe", "SafeString", "HTMLResponse", "HttpResponse", "make_response", "Response")
@@ -594,6 +614,10 @@ class _Py:
         self.out = _Out(rel)
         self.strs = {}
         self.vals = {}
+        # nome -> origens só para caminhos, quando o dado de fora nele é só a extensão (os.path.splitext(nome)[1]).
+        self.path_env = {}
+        self.has_ext = "splitext" in text
+        self._safe_loaders = None
         self.clients = set()
         self.hashers = {}
         self.llm_funcs = set()
@@ -742,12 +766,13 @@ class _Py:
             return bool(_LC_RECEIVER.search(_receiver(call)))
         return False
 
-    def origins(self, node, env):
+    def origins(self, node, env, path=False):
+        """path: as origens para montar um caminho, sem a extensão tirada do nome (ver ext_expr)."""
         out = set()
         stack = [node]
         while stack:
             n = stack.pop()
-            if n is None:
+            if n is None or path and self.ext_expr(n):
                 continue
             if isinstance(n, ast.Call):
                 d = self._dot(n.func)
@@ -770,7 +795,7 @@ class _Py:
                 out.add(REQ)
                 continue
             if isinstance(n, ast.Name):
-                out |= env.get(n.id, set())
+                out |= self.path_env[n.id] if path and n.id in self.path_env else env.get(n.id, set())
                 continue
             if isinstance(n, ast.Attribute):
                 key = _attr_key(n)
@@ -805,9 +830,13 @@ class _Py:
 
     # ------------------------------------------------------------------ strings montadas
 
-    def pieces(self, node, env, depth=0):
-        """Partes de uma string montada: [("lit", texto) | ("expr", nó)]."""
-        if depth > 6 or node is None:
+    def pieces(self, node, env, depth=0, room=None):
+        """Partes de uma string montada: [("lit", texto) | ("expr", nó)]. room: quantas partes ainda remontar (texto
+        montado com outros textos montados cresce exponencialmente); o que passa vira ("expr", nó), que mantém a origem."""
+        if room is None:
+            room = [_PIECES]
+        room[0] -= 1
+        if depth > 6 or node is None or room[0] < 0:
             return [("expr", node)]
         if _const_str(node):
             return [("lit", node.value)]
@@ -820,7 +849,7 @@ class _Py:
                     out.append(("expr", v.value))
             return out
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            return self.pieces(node.left, env, depth + 1) + self.pieces(node.right, env, depth + 1)
+            return self.pieces(node.left, env, depth + 1, room) + self.pieces(node.right, env, depth + 1, room)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod) and _const_str(node.left):
             return _percent_pieces(node.left.value, node.right)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format" \
@@ -829,23 +858,22 @@ class _Py:
         if isinstance(node, ast.Name) and node.id in self.strs:
             out = []
             for part in self.strs[node.id]:
-                out += self.pieces(part, env, depth + 1)
+                out += self.pieces(part, env, depth + 1, room)
             return out
         return [("expr", node)]
 
-    def static(self, node):
-        """Valor que não vem de fora: constante, número, placeholder (",".join("?" * n)), nome de tabela do próprio código."""
+    def static(self, node, value=False):
+        """Valor que não vem de fora: constante, número, placeholder (",".join("?" * n)), nome de tabela do próprio código.
+        value: o valor veio de fora e está onde vai um dado ('{x}', = {x}, LIKE, IN (...)); ali query, count ou item.name
+        são o próprio dado, e só constante e placeholder contam."""
         if isinstance(node, ast.Constant):
             return True
         if isinstance(node, ast.Name):
-            return node.id.isupper() or bool(re.search(r"(?i)placeholder|marks|^ph$|^qs$|params?_?(?:str|sql|list)|bind|"
-                                                       r"^(?:table|tables|table_name|tablename|schema|columns?|cols|fields|"
-                                                       r"col|column_name|order|direction|sort_dir|where|where_clause|"
-                                                       r"conditions?|clause|set_clause|joins?|filters?_sql|sql|query|"
-                                                       r"select|limit|offset|n|i|idx|count)$", node.id))
+            return node.id.isupper() or bool(_PLACEHOLDER.search(node.id)) or \
+                not value and bool(_PY_SQL_PART.search(node.id))
         if isinstance(node, ast.Attribute):
-            return bool(re.search(r"(?i)table|schema|column|_meta|model|index|collection|^name$", node.attr)) and \
-                isinstance(node.value, (ast.Name, ast.Attribute))
+            return not value and bool(re.search(r"(?i)table|schema|column|_meta|model|index|collection|^name$", node.attr)) \
+                and isinstance(node.value, (ast.Name, ast.Attribute))
         if isinstance(node, ast.Call):
             d = self._dot(node.func)
             last = d.rsplit(".", 1)[-1] if d else ""
@@ -869,10 +897,12 @@ class _Py:
         ddl = bool(_SQL_DDL.match(lit))
         best = None
         for i, expr in exprs:
-            if expr is None or self.static(expr):
+            if expr is None:
                 continue
             o = self.origins(expr, env)
-            before = "".join(p for k, p in parts[:i] if k == "lit")
+            before = _lit_before(parts, i)
+            if self.static(expr, value=bool(o & (REQ_ANY | MODEL)) and bool(_VALUE_POS.search(before))):
+                continue
             if LLM in o:
                 return ("high", LLM)
             if TOOL in o:
@@ -930,7 +960,12 @@ class _Py:
         elif isinstance(st, ast.AugAssign):
             o = self.origins(st.value, env)
             if isinstance(st.target, ast.Name):
-                env[st.target.id] = env.get(st.target.id, set()) | o
+                name = st.target.id
+                po = (self.path_env.get(name, env.get(name, set())) | self.origins(st.value, env, path=True)) \
+                    if self.has_ext else None
+                env[name] = env.get(name, set()) | o
+                if po is not None:
+                    self.path_view(name, po, env[name])
                 if isinstance(st.op, ast.Add) and st.target.id in self.strs:
                     if len(self.strs[st.target.id]) < _STR_PARTS:
                         self.strs[st.target.id] = self.strs[st.target.id] + [st.value]
@@ -938,10 +973,12 @@ class _Py:
                         del self.strs[st.target.id]  # texto montado em dezenas de passos: segue só a origem
         elif isinstance(st, (ast.For, ast.AsyncFor)):
             _bind(st.target, self.origins(st.iter, env), env)
+            self.unpath(st.target)
         elif isinstance(st, (ast.With, ast.AsyncWith)):
             for it in st.items:
                 if it.optional_vars is not None:
                     _bind(it.optional_vars, self.origins(it.context_expr, env), env)
+                    self.unpath(it.optional_vars)
                     if isinstance(it.optional_vars, ast.Name) and isinstance(it.context_expr, ast.Call) and \
                             self._dot(it.context_expr.func) in _PY_CLIENT_CTOR:
                         self.clients.add(it.optional_vars.id)
@@ -949,14 +986,17 @@ class _Py:
             self.returned(st, env, fn)
         for b in _bodies(st):
             self.body(b, env, fn)
+        if isinstance(st, ast.If) and _exits(st.body):
+            for key in self.guarded(st.test, env):
+                env[key] = set()  # if x not in ALLOWED: abort(400): daqui em diante x é um dos permitidos
 
     def function(self, node, outer, tool=False, seeds=None):
         decos = [self._dot(d.func if isinstance(d, ast.Call) else d) for d in node.decorator_list]
         route = any(_ROUTE_DECO.search(d) for d in decos if d)
         tool = tool or any(_TOOL_DECO.search(d) for d in decos if d) or (node.name in self.tool_refs and self.cls is None)
         env = dict(outer)
-        saved = self.strs, self.vals
-        self.strs, self.vals = dict(saved[0]), dict(saved[1])
+        saved = self.strs, self.vals, self.path_env
+        self.strs, self.vals, self.path_env = dict(saved[0]), dict(saved[1]), dict(saved[2])
         a = node.args
         params = a.posonlyargs + a.args + a.kwonlyargs + [x for x in (a.vararg, a.kwarg) if x]
         defaults = dict(zip([p.arg for p in (a.posonlyargs + a.args)][::-1], a.defaults[::-1]))
@@ -965,6 +1005,7 @@ class _Py:
         cli = not route and not tool and any(_CLI_DECO.search(d) for d in decos if d)
         segs = _route_segments(node) if route else {}
         for p in params:
+            self.path_env.pop(p.arg, None)
             if p.arg in ("self", "cls") or cli or segs.get(p.arg) == "typed" or _scalar_annotation(p.annotation) or \
                     self.validated(p, defaults.get(p.arg)) or ((tool or seeds) and _tool_injected(p)):
                 env.pop(p.arg, None)  # o parâmetro esconde a variável de fora com o mesmo nome
@@ -990,13 +1031,81 @@ class _Py:
         if self.llm_sdk and any(isinstance(c, ast.Call) and self.is_llm_call(c, cost=True) for c in _walk(node)):
             self.llm_funcs.add(node.name)
         self.body(node.body, env, fn)
-        self.strs, self.vals = saved
+        self.strs, self.vals, self.path_env = saved
+
+    def guarded(self, test, env):
+        """Nomes que o teste de um if que sai da função confere: x not in ALLOWED, not x.isdigit(),
+        not re.fullmatch(padrão, x), not validate_x(x). Com "or", vale cada parte (o if sai se qualquer uma falhar)."""
+        if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.Or):
+            return [k for v in test.values for k in self.guarded(v, env)]
+        if isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], ast.NotIn):
+            # A lista de permitidos é do código (constante, ALLOWED, do banco), não de quem chama.
+            if not self.origins(test.comparators[0], env) & (REQ_ANY | MODEL | {TOOL}):
+                return [k for k in [_guard_key(test.left)] if k]
+            return []
+        if not (isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not) and isinstance(test.operand, ast.Call)):
+            return []
+        call = test.operand
+        f = call.func
+        if isinstance(f, ast.Attribute) and f.attr in _STR_CHECKS and not call.args:
+            return [k for k in [_guard_key(f.value)] if k]
+        d = self._dot(f)
+        last = d.rsplit(".", 1)[-1] if d else ""
+        if last in ("fullmatch", "match", "search"):
+            # re.fullmatch(p, x), PADRAO.fullmatch(x), re.match(r"^[a-z_]+$", x): match só vale com o fim ancorado
+            # ($ ou \Z) e search com os dois, num padrão que se vê no código.
+            if d.startswith("re."):
+                pat, arg = (list(call.args) + [None, None])[:2]
+            elif isinstance(f, ast.Attribute):
+                v = self.vals.get(f.value.id) if isinstance(f.value, ast.Name) else None
+                pat = v.args[0] if isinstance(v, ast.Call) and self._dot(v.func) == "re.compile" and v.args else None
+                arg = call.args[0] if call.args else None
+            else:
+                return []
+            if last == "fullmatch" or _anchored(pat.value if _const_str(pat) else None, last == "search"):
+                return [k for k in [_guard_key(arg)] if k]
+            return []
+        if _VALIDATOR.match(last) and not _NOT_VALIDATOR.search(last) and call.args:
+            return [k for k in [_guard_key(call.args[0])] if k]
+        return []
+
+    def ext_expr(self, n):
+        """os.path.splitext(nome)[1] (ou [-1]), com .lower() ou .strip() em cima: a extensão não tem / nem .., então num
+        caminho o nome do arquivo que veio de fora só escolhe o .png. Em SQL ou num comando ela continua sendo de fora."""
+        while isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in _EXT_STR:
+            n = n.func.value
+        if not (isinstance(n, ast.Subscript) and isinstance(n.value, ast.Call)):
+            return False
+        i = n.slice
+        if isinstance(i, ast.UnaryOp) and isinstance(i.op, ast.USub):
+            i = i.operand
+        return isinstance(i, ast.Constant) and i.value == 1 and self._dot(n.value.func).endswith("splitext")
+
+    def path_view(self, name, po, o):
+        if po != o:
+            self.path_env[name] = set(po)
+        else:
+            self.path_env.pop(name, None)
+
+    def unpath(self, target):
+        if self.path_env:
+            for n in _walk(target):
+                if isinstance(n, ast.Name):
+                    self.path_env.pop(n.id, None)
 
     def assign(self, targets, value, env, fn):
         o = self.origins(value, env)
+        po = self.origins(value, env, path=True) if self.has_ext and o else o
         for t in targets:
             self.assigned(t, value, fn)
             _bind(t, o, env)
+            if self.has_ext:
+                self.unpath(t)
+                if isinstance(t, ast.Name):
+                    self.path_view(t.id, po, o)
+                elif isinstance(t, (ast.Tuple, ast.List)) and len(t.elts) == 2 and isinstance(t.elts[1], ast.Name) and \
+                        isinstance(value, ast.Call) and self._dot(value.func).endswith("splitext"):
+                    self.path_env[t.elts[1].id] = set()  # raiz, ext = os.path.splitext(nome)
             if isinstance(t, ast.Name):
                 self.vals[t.id] = value
                 if _builds_string(value) or (isinstance(value, ast.Name) and value.id in self.strs):
@@ -1156,6 +1265,12 @@ class _Py:
         cmd = _arg(call, 0, "args", "cmd", "command")
         if cmd is None or _const_str(cmd):
             return
+        if not shell and isinstance(cmd, (ast.List, ast.Tuple)) and _interp_c(cmd.elts, self._dot):
+            # [sys.executable, "-c", texto], ["node", "-e", texto]: o texto é código, como em exec().
+            if not _const_str(cmd.elts[2]):
+                self.report_code(cmd.elts[2], "code", _interp_name(cmd.elts, self._dot), env, ln,
+                                 python=cmd.elts[1].value == "-c")
+            return
         if not shell and isinstance(cmd, (ast.List, ast.Tuple)) and _shell_c(cmd.elts):
             # ["sh", "-c", texto]: o texto vai para o shell do mesmo jeito que com shell=True.
             shell, cmd = True, cmd.elts[2]
@@ -1192,7 +1307,13 @@ class _Py:
         code = _arg(call, 0, "source")
         if code is None or _const_str(code):
             return
-        o = self.origins(code, env)
+        self.report_code(code, kind, sink, env, ln, python=kind == "code")
+
+    def report_code(self, code, kind, sink, env, ln, python=False):
+        """python: o texto é código Python, onde {v!r} e repr(v) viram um literal (um template não respeita isso)."""
+        o = set()
+        for n in self.code_parts(code) if python else [code]:
+            o |= self.origins(n, env)
         built = _builds_string(code) or (isinstance(code, ast.Name) and code.id in self.strs)
         if LLM in o:
             self.out.add("APP009", "critical", ln, _llm_params(kind))
@@ -1202,6 +1323,22 @@ class _Py:
             self.out.add("COD003", "critical", ln, dict(_src(REQ), sink=sink))
         elif PARAM in o and kind == "code" and self.server and built:
             self.out.add("COD003", "medium", ln, dict(_src(PARAM), sink=sink))
+
+    def code_parts(self, code):
+        """As partes de um código Python montado que podem mudar o código: {v!r} e repr(v) escrevem o valor como literal."""
+        out, todo, seen = [], [code], 0
+        while todo and seen < _PIECES:
+            n = todo.pop()
+            seen += 1
+            if isinstance(n, ast.JoinedStr):
+                todo += [v.value for v in n.values if isinstance(v, ast.FormattedValue) and v.conversion != ord("r")]
+            elif isinstance(n, ast.BinOp) and isinstance(n.op, ast.Add):
+                todo += [n.left, n.right]
+            elif isinstance(n, ast.Name) and n.id in self.strs and seen == 1:
+                todo += self.strs[n.id]
+            elif not (isinstance(n, ast.Call) and self._dot(n.func) == "repr" or _const_str(n)):
+                out.append(n)
+        return out + todo
 
     def whole_query(self, q, env):
         """A consulta inteira vem de fora (texto do modelo ou da requisição), não de um construtor como select(...)."""
@@ -1251,6 +1388,26 @@ class _Py:
         else:
             self.out.add("COD001", sev, ln, _src(origin))
 
+    def safe_loaders(self):
+        """Classes do próprio arquivo que herdam só de loaders seguros (class StrictLoader(yaml.SafeLoader), também em
+        mais de um passo): o yaml.load com elas é seguro como com o SafeLoader."""
+        if self._safe_loaders is None:
+            classes = [n for n in _walk(self.tree) if isinstance(n, ast.ClassDef)]
+            safe = set()
+            for _ in range(4):
+                more = set()
+                for c in classes:
+                    bases = [self._dot(b) for b in c.bases]
+                    loaders = [b for b in bases if b.endswith("Loader")]
+                    if c.name not in safe and loaders and \
+                            all(b.endswith(_SAFE_LOADERS) or b.rsplit(".", 1)[-1] in safe for b in loaders):
+                        more.add(c.name)
+                if not more:
+                    break
+                safe |= more
+            self._safe_loaders = safe
+        return self._safe_loaders
+
     def deserialize(self, call, d, env, ln):
         if d in ("yaml.load", "yaml.load_all", "yaml.unsafe_load", "yaml.unsafe_load_all"):
             if not self.imported(call.func):
@@ -1259,7 +1416,7 @@ class _Py:
             ld = self._dot(loader) if loader is not None else ""
             if "unsafe" not in d and loader is not None and not ld.endswith(("Loader", "UnsafeLoader")):
                 return  # SafeLoader, CSafeLoader, BaseLoader, FullLoader
-            if ld.endswith(("SafeLoader", "BaseLoader", "FullLoader")):
+            if ld.endswith(_SAFE_LOADERS) or ld.rsplit(".", 1)[-1] in self.safe_loaders():
                 return
             data = _arg(call, 0, "stream")
             o = self.origins(data, env) if data is not None else set()
@@ -1305,7 +1462,7 @@ class _Py:
                 return
         if target is None or _const_str(target) or fn.guard_path or fn.admin:
             return
-        o = self.origins(target, env)
+        o = self.origins(target, env, path=self.has_ext)
         if REQ in o:
             self.out.add("COD007", "high", ln, {"sink": (d or last) + "()"})
         elif TOOL in o:
@@ -1351,10 +1508,20 @@ class _Py:
             return True
         return isinstance(v, ast.Call) and self._dot(v.func).endswith(("Path", "PurePath", "os.path.join", "joinpath"))
 
-    def lead_origins(self, node, env):
-        """Origens do começo do endereço (esquema e host), não de um pedaço do caminho."""
+    def lead_origins(self, node, env, depth=0, host=False):
+        """Origens do começo do endereço (esquema e host), não de um pedaço do caminho. host: o host escrito depois de um
+        "https://" fixo também conta (para buscar no servidor; num redirect para https://{Host}/ ninguém de fora manda o
+        cabeçalho Host pelo navegador de outra pessoa)."""
         if isinstance(node, ast.BoolOp):
-            return self.lead_origins(node.values[0], env)
+            return self.lead_origins(node.values[0], env, depth, host)
+        v = self.vals.get(node.id) if isinstance(node, ast.Name) and node.id not in self.strs else None
+        if depth < 3 and isinstance(v, ast.BinOp) and isinstance(v.op, ast.Add):
+            # full = BASE + caminho; requests.get(full): o começo é o do valor declarado.
+            return self.lead_origins(v, env, depth + 1, host)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add) and not _builds_string(node):
+            while isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+                node = node.left  # BASE + caminho: o começo é o da esquerda
+            return self.lead_origins(node, env, depth + 1, host)
         if isinstance(node, ast.Name) and node.id in self.strs:
             parts = self.pieces(node, env)
         elif _builds_string(node):
@@ -1362,6 +1529,8 @@ class _Py:
         else:
             return self.origins(node, env)
         parts = [p for p in parts if not (p[0] == "lit" and p[1] == "")]
+        if host and len(parts) > 1 and parts[0][0] == "lit" and _IN_HOST.match(parts[0][1]):
+            parts = parts[1:]  # f"https://{host}/x": o texto fixo para onde o host começa
         if parts and parts[0][0] == "expr" and parts[0][1] is not None:
             return self.origins(parts[0][1], env)
         return set()
@@ -1378,7 +1547,7 @@ class _Py:
         if http:
             url = _arg(call, 1 if last == "request" else 0, "url")
             if url is not None and not _const_str(url) and not fn.guard_url and not fn.admin:
-                o = self.lead_origins(url, env)
+                o = self.lead_origins(url, env, host=True)
                 if REQ in o:
                     self.out.add("COD008", "high", ln, {"sink": d + "()"})
                 elif TOOL in o:
@@ -1500,6 +1669,49 @@ _PY_AUTH = re.compile(r"(?i)\bDepends\(\s*\w*(?:user|auth|token|verify|api_?key|
 _PY_LIMIT = re.compile(r"(?i)rate.?limit|limiter|slowapi|throttl|ratelimit|quota|RateLimiter")
 
 
+def _lit_before(parts, i, keep=200):
+    """O texto fixo antes da parte i, só o fim (o que _VALUE_POS olha): juntar tudo a cada parte é quadrático."""
+    out, size, j = [], 0, i - 1
+    while j >= 0 and size < keep:
+        if parts[j][0] == "lit":
+            out.append(parts[j][1])
+            size += len(parts[j][1])
+        j -= 1
+    return "".join(reversed(out))[-keep:]
+
+
+# Conferências de texto que deixam só dígitos ou letras: depois de "if not x.isdigit(): return", x não muda o SQL.
+_STR_CHECKS = {"isdigit", "isnumeric", "isdecimal", "isalnum", "isalpha", "isidentifier"}
+
+
+def _anchored(pattern, start=True):
+    """O padrão confere o texto inteiro: termina em $ ou \\Z e, com start, começa em ^ ou \\A."""
+    if not pattern or not re.search(r"(?:(?<!\\)\$|\\Z)\Z", pattern):
+        return False
+    return not start or pattern.startswith(("^", "\\A"))
+
+
+def _exits(body):
+    """O bloco sai da função ou do laço: return, raise, continue, break, abort(400), sys.exit()."""
+    last = body[-1] if body else None
+    if isinstance(last, (ast.Return, ast.Raise, ast.Continue, ast.Break)):
+        return True
+    if isinstance(last, ast.Expr) and isinstance(last.value, ast.Call):
+        f = last.value.func
+        name = f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else ""
+        return name in ("abort", "exit", "_exit")
+    return False
+
+
+def _guard_key(node):
+    """A chave do ambiente para o valor conferido: x, ou body.sort (como _attr_key)."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return _attr_key(node)
+    return None
+
+
 def _attr_key(node):
     parts = []
     while isinstance(node, ast.Attribute):
@@ -1532,6 +1744,34 @@ _SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "cmd", "cmd.exe", "powers
 _SHELL_FLAGS = {"-c", "-lc", "-ic", "-ec", "-xc", "/c", "/C", "-Command", "-command", "-NoProfile -Command"}
 
 
+# Interpretador que roda o texto da opção como código: python -c, node -e, ruby -e, php -r.
+_INTERP = [(re.compile(r"(?:python[\d.]*w?|py|pypy3?)(?:\.exe)?"), {"-c"}),
+           (re.compile(r"(?:node|nodejs|bun)(?:\.exe)?"), {"-e", "--eval", "-p", "--print"}),
+           (re.compile(r"(?:ruby|perl|rscript)(?:\.exe)?"), {"-e"}), (re.compile(r"php(?:\.exe)?"), {"-r"})]
+_INTERP_SELF = {"sys.executable": "-c", "process.execPath": "-e"}
+
+
+def _interp_flag(prog, flag):
+    """prog: o programa sem pasta ("python3", "node") ou o executável atual (sys.executable, process.execPath)."""
+    if prog in _INTERP_SELF:
+        return flag == _INTERP_SELF[prog] or prog == "process.execPath" and flag in ("--eval", "-p", "--print")
+    name = prog.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return any(rx.fullmatch(name) and flag in flags for rx, flags in _INTERP)
+
+
+def _interp_name(elts, dot):
+    prog = elts[0].value if _const_str(elts[0]) else dot(elts[0])
+    return prog.replace("\\", "/").rsplit("/", 1)[-1] + " " + elts[1].value
+
+
+def _interp_c(elts, dot):
+    """[sys.executable, "-c", texto], ["node", "-e", texto]: o terceiro item é código que o interpretador roda."""
+    if len(elts) < 3 or not _const_str(elts[1]) or isinstance(elts[2], ast.Starred):
+        return False
+    prog = elts[0].value if _const_str(elts[0]) else dot(elts[0])
+    return bool(prog) and _interp_flag(prog, elts[1].value)
+
+
 def _shell_c(elts):
     """["sh", "-c", texto], ["bash", "-lc", texto], ["cmd", "/c", texto]: o terceiro item vai inteiro para o shell."""
     if len(elts) < 3 or not (_const_str(elts[0]) and _const_str(elts[1])):
@@ -1550,12 +1790,17 @@ def _builds_string(node):
     return _const_str(node)
 
 
+# %s, %(nome)s, %-05.2f: a largura começa com 1-9 (o 0 é flag), para flags e largura não disputarem os mesmos zeros,
+# e o nome tem teto (milhares de "%(" sem ")" liam cada um o resto do texto).
+_PERCENT = re.compile(r"%(?:\(([^)]{0,100})\))?[-#0 +]*(?:[1-9]\d*)?(?:\.\d+)?([sdifrxXeEgGcab%])")
+
+
 def _percent_pieces(fmt, right):
     vals = right.elts if isinstance(right, ast.Tuple) else None
     names = right if isinstance(right, ast.Dict) else None
     out, i = [], 0
     pos = 0
-    for m in re.finditer(r"%(?:\(([^)]*)\))?[-#0 +]*\d*(?:\.\d+)?([sdifrxXeEgGcab%])", fmt):
+    for m in _PERCENT.finditer(fmt):
         out.append(("lit", fmt[pos:m.start()]))
         pos = m.end()
         if m.group(2) == "%":
@@ -1595,10 +1840,27 @@ def _format_pieces(fmt, call):
     return out
 
 
+def _body_model(ann, imports):
+    """request: ChatRequest, user: UserCreate, req: Annotated[QueryIn, Body()]: o tipo é o modelo do corpo da requisição
+    (FastAPI, Litestar). Request, HttpRequest e o que vem de um módulo de framework web são o próprio framework."""
+    if isinstance(ann, ast.Subscript) and (_dotted(ann.value, imports) or "").endswith("Annotated"):
+        sl = ann.slice
+        ann = sl.elts[0] if isinstance(sl, ast.Tuple) and sl.elts else sl
+    if isinstance(ann, ast.Constant) and isinstance(ann.value, str):
+        name = full = ann.value.strip()
+    elif isinstance(ann, (ast.Name, ast.Attribute)):
+        full = _dotted(ann, imports) or ""
+        name = ann.id if isinstance(ann, ast.Name) else ann.attr
+    else:
+        return False
+    name = name.rsplit(".", 1)[-1]
+    if not _BODY_ANN.search(name) or name in _FRAMEWORK_REQ_ANN:
+        return False
+    return full.split(".")[0] not in _PY_WEB
+
+
 def _framework_param(p, default, imports):
     """Parâmetro de rota que o framework injeta (banco, usuário logado, Request), não dado de quem chama."""
-    if p.arg in _NOT_REQ_PARAM:
-        return True
     if default is not None and isinstance(default, ast.Call):
         d = _dotted(default.func, imports) or ""
         if d.endswith(("Depends", "Security")):
@@ -1608,6 +1870,11 @@ def _framework_param(p, default, imports):
         for n in _walk(ann):
             if isinstance(n, ast.Call) and (_dotted(n.func, imports) or "").endswith(("Depends", "Security")):
                 return True
+        if _body_model(ann, imports):
+            return False  # o tipo diz mais que o nome: request: ChatRequest é o corpo
+    if p.arg in _NOT_REQ_PARAM:
+        return True
+    if ann is not None:
         if isinstance(ann, ast.Name) and _NOT_REQ_ANN.search(ann.id):
             return True
         if isinstance(ann, ast.Attribute) and _NOT_REQ_ANN.search(ann.attr):
@@ -1996,8 +2263,10 @@ def _script_only(rel, text):
 
 
 def _minified(text):
+    """Bundle minificado: uma linha com mais de 20000 caracteres ou duas com mais de 3000. Todas as linhas contam: com
+    split("\n", 2000), o resto depois da linha 2000 virava uma linha só, e arquivos comuns longos eram pulados."""
     long_lines = 0
-    for line in text.split("\n", 2000):
+    for line in text.split("\n"):
         if len(line) > 3000:
             long_lines += 1
             if long_lines > 1 or len(line) > 20000:
@@ -2014,6 +2283,16 @@ _JS_REQ = re.compile(
     r"\bevent\s*\.\s*(?:body|queryStringParameters|pathParameters|multiValueQueryStringParameters)\b|"
     r"(?<![\w$.])(?:useSearchParams|useParams|useQueryState)\s*\(|\brouter\s*\.\s*query\b|"
     r"(?<![\w$])(?:window\.|document\.)?location\s*\.\s*(?:search|hash)\b")
+# A busca de um endereço guardada com outro nome: new URL(req.url).searchParams, request.nextUrl.searchParams.
+_JS_PARAMS_END = re.compile(r"\.\s*searchParams\Z")
+_JS_REQ_URL = re.compile(r"\b(?:req|request)\s*\.\s*(?:url|nextUrl)\b|\bnextUrl\b")
+# if (!LISTA.includes(x)) return, if (!SET.has(x)) throw, if (!/^...$/.test(x)) { return ... }.
+_JS_GUARD_IF = re.compile(r"\bif\s*\(\s*!\s*(?:([\w$.]+|\[[^\[\]\n]{0,500}\])\s*\.\s*(?:includes|has)|"
+                          r"(/[^/\n]{0,300}/[a-z]*|[\w$]+)\s*\.\s*test)\s*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\)\s*\{?\s*"
+                          r"(?:return|throw)\b")
+# const sort = ALLOWED.includes(x) ? x : 'name' (ou SET.has(x) ? x : ...): o valor é um dos permitidos.
+_JS_ALLOW_TERNARY = re.compile(r"\s*(?:[\w$.]+|\[[^\[\]\n]{0,500}\])\s*\.\s*(?:includes|has)\s*\(\s*([^()\n]{1,200}?)\s*\)"
+                               r"\s*\?\s*([^:\n]{1,200}?)\s*:")
 _JS_MCP_ARGS = re.compile(r"\brequest\s*\.\s*params\b")
 # Começos possíveis de _JS_REQ e _JS_LLM, com texto fixo na frente (rápidas); a regex completa confere em volta.
 _JS_REQ_HINT = re.compile(r"\.\s*(?:query|body|params|cookies|headers|files?|fields|json|formData|text|param|header|parseBody|"
@@ -2032,7 +2311,8 @@ _JS_LLM = re.compile(
     r"\b(?:llm|model|chain|chatModel|agent|executor|runnable)\s*\.\s*(?:invoke|call|predict)\s*\(")
 _JS_WORD = re.compile(r"(?<![\w$.])([A-Za-z_$][\w$]*)(?![\w$])(?!\s*:(?!:))")
 _JS_THIS = re.compile(r"\bthis\s*\.\s*([A-Za-z_$][\w$]*)")
-_JS_CALL_NAME = re.compile(r"([A-Za-z_$][\w$]*)\s*(?:<[^<>()]*>\s*)?\(")
+# Só no começo de um nome: sem o (?<!...), um nome longo sem "(" depois era tentado a partir de cada letra (quadrático).
+_JS_CALL_NAME = re.compile(r"(?<![\w$])([A-Za-z_$][\w$]*)\s*(?:<[^<>()]*>\s*)?\(")
 # Como _PASS no Python: o resultado é o próprio dado (texto, caminho, URL, JSON, markdown virando HTML).
 _JS_PASS = {"String", "decodeURIComponent", "decodeURI", "encodeURI", "join", "resolve", "normalize", "format", "parse",
             "stringify", "URL", "URLSearchParams", "from", "concat", "replace", "replaceAll", "split", "Buffer", "atob", "btoa",
@@ -2054,6 +2334,8 @@ _JS_METHOD = re.compile(r"\n[ \t]*(?:(?:public|private|protected|static|async|ov
                         r"([A-Za-z_$][\w$]*)[ \t]*(?:<[^>()\n]{0,200}>)?[ \t]*(\()")
 _WORDCH = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$")
 _IDENT = re.compile(r"[A-Za-z_$][\w$]*")
+# Texto que é só um placeholder: '?', '%s', '$1', `$${i + 1}`, `:id${i}`, `@p${i}`. `'${n}'` põe o valor entre aspas.
+_JS_PH_LIT = re.compile(r"""(['"`])(?:\?|%s|\$\d*|[$:@]\w*\$\{[^{}`'"]*\}|[:@]\w+)\1""")
 _BRACKETS = re.compile(r"[()\[\]{}]")
 _ARG_STOP = re.compile(r"[()\[\]{},]")
 _EXPR_STOP = re.compile(r"[()\[\]{},;\n]")
@@ -2098,7 +2380,7 @@ def _near(hint, full, text, back=60, ahead=200):
 _JS_NOT_METHOD = {"if", "for", "while", "switch", "catch", "function", "return", "with", "await", "typeof", "new", "super",
                   "else", "do", "try", "throw", "delete", "void", "yield", "import", "export", "case"}
 _JS_ROUTE_FN = re.compile(r"export\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s*\(|"
-                          r"export\s+const\s+(?:GET|POST|PUT|PATCH|DELETE)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\(|function)")
+                          r"export\s+const\s+(?:GET|POST|PUT|PATCH|DELETE)\s*(?::[^=]{1,200})?=\s*(?:async\s*)?(?:\(|function)")
 _JS_TOOL_CALL = re.compile(r"\.\s*(?:tool|registerTool|addTool)\s*\(|(?:tool|createTool|betaZodTool|betaTool)\s*\(|"
                            r"new\s+(?:DynamicStructuredTool|DynamicTool|FunctionTool)\s*\(|"
                            r"setRequestHandler\s*\(\s*CallToolRequestSchema")
@@ -2255,6 +2537,15 @@ _JS_GUARD_REDIRECT = re.compile(r"startsWith\s*\(\s*['\"]/|isSafe|safeRedirect|i
 _JS_GUARD_URL = re.compile(r"(?i)allowed|whitelist|allowlist|isPrivate|private_?(?:ip|address|network|range|host|cidr)|isPublic|"
                            r"\.hostname\s*[!=]==|\.host\s*[!=]==|startsWith\s*\(")
 _JS_RANDOM = re.compile(r"Math\s*\.\s*random\s*\(")
+# Começo de função com nome: function f(, const f = (...) =>, método f(...) {. Lido uma vez por arquivo (procurar nos 1500
+# caracteres antes de cada return custava segundos com milhares deles), com tetos e ^[ \t]* para não ler o arquivo de novo.
+_JS_FN_HEAD = re.compile(r"(?:function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?"
+                         r"(?:\([^()]{0,300}\)|[\w$]+)\s*(?::[^=]{0,200})?=>|^[ \t]*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\([^()]{0,300}\)\s*"
+                         r"(?::[^{]{0,200})?\{)", re.M)
+# Quem recebe o valor na linha do Math.random(): const x =, this.x =, x: (chave), const x: string =. Os espaços do tipo
+# só aparecem entre palavras, para a busca não ter dois jeitos de casar os mesmos espaços (ficava cúbica).
+_JS_RANDOM_NAME = re.compile(r"(?:(?:const|let|var)\s+|this\s*\.\s*|\.)?(?<![\w$])([A-Za-z_$][\w$]*)[ \t]*"
+                             r"(?::[ \t]*[\w<>\[\]|]+(?:[ \t]+[\w<>\[\]|]+)*)?[ \t]*[:=](?!=)[^=:]*$")
 _JS_HASH = re.compile(r"""createHash\(\s*(['"])(md5|sha1|sha256|sha512|sha224|sha384)\1\s*\)|"""
                       r"""(?<![\w$.])(md5|sha1|sha256|sha512)\s*\(|\bCryptoJS\s*\.\s*(MD5|SHA1|SHA256|SHA512|SHA3)\s*\(""")
 _JS_SYSTEM = re.compile(r"""role\s*:\s*(['"])(?:system|developer)\1""")
@@ -2277,7 +2568,8 @@ _JS_ROUTE_PATH = re.compile(r"(?:^|/)(?:src/)?app/(?:.+/)?route\.(?:js|ts|mjs)$|
                             r"^api/[^/]+\.(?:js|ts|mjs)$|(?:^|/)netlify/(?:edge-)?functions/.+\.(?:js|ts|mjs)$|"
                             r"(?:^|/)supabase/functions/[^/]+/index\.(?:ts|js)$|(?:^|/)app/routes/.+\.(?:js|ts|jsx|tsx)$")
 _JS_SERVER_ROUTE = re.compile(r"""(?<![\w$.])(?:app|router|server|fastify|api|routes?|r|hono)\s*\.\s*(?:post|get|put|patch|all|route)\s*\(\s*['"`]/""")
-_JS_USE_SERVER = re.compile(r"""^\s*(['"])use server\1""", re.M)
+# [ \t]* e não \s*: com re.M, \s* passava das linhas em branco e cada começo de linha lia o resto do arquivo.
+_JS_USE_SERVER = re.compile(r"""^[ \t]*(['"])use server\1""", re.M)
 _JS_AUTH = re.compile(r"(?i)\b(?:getServerSession|getSession|currentUser|getUser|getAuth|clerk\w*|requireAuth|withAuth|"
                       r"isAuthenticated|authenticate\w*|authorize\w*|verifyToken|jwtVerify|verifyJwt|verifyIdToken|getToken|"
                       r"validateRequest|getKindeServerSession|withApiAuthRequired|getIronSession|unauthorized|authorization|"
@@ -2298,6 +2590,7 @@ class _Js:
     def __init__(self, rel, text, project, ext=None):
         self.rel, self.text, self.project = rel, text, project
         self.code, self.mask, lits = _js_mask(_script_only(rel, text))
+        self.lit_ends = {y for _, y in lits}  # onde o texto de uma string ou regex termina (a / que fecha a regex)
         self.sql_lits = any(_SQL_VERB.match(self.code, x, y) for x, y in lits)
         self.out = _Out(rel)
         self.budget = _JS_BUDGET + 40 * len(text)
@@ -2315,6 +2608,7 @@ class _Js:
         self.tool_rx = None      # leitura dos argumentos de tool calling da API, quando o arquivo trata disso
         self.typed = set()       # argumentos de ferramenta que o Zod restringe a número, enum, uuid...
         self._depth = None       # (posições, profundidade) dos parênteses, para saber se a função é o handler
+        self._opens = None       # profundidade -> posições dos que abrem, para achar o ( de uma seta
         self.seeds = {}          # helper -> índices dos parâmetros que recebem argumento de ferramenta
         self.fn_groups = {}      # helper -> nomes de cada parâmetro (o padrão desestruturado conta como um)
         self.fn_tool = set()     # helpers cujos parâmetros já eram argumento de ferramenta
@@ -2369,17 +2663,17 @@ class _Js:
         return -1
 
     def open_before(self, j, limit=2000):
-        """Posição do ( que abre o ) em j, ou -1."""
-        depth = 0
-        for i in range(j, max(-1, j - limit), -1):
-            c = self.mask[i]
-            if c in ")]}":
-                depth += 1
-            elif c in "([{":
-                depth -= 1
-                if depth == 0:
-                    return i
-        return -1
+        """Posição do (, [ ou { que abre o fechamento em j (até limit caracteres antes), ou -1. Usa o índice de
+        depth_at: voltar caractere por caractere a cada => custava até 2000 passos por seta, sem teto no arquivo."""
+        if self.mask[j:j + 1] not in (")", "]", "}"):
+            return -1
+        self.depth_at(j)
+        ps, ds = self._depth
+        k = bisect.bisect_left(ps, j)
+        # Quem abre é o último que abre antes de j e deixa a profundidade em uma a mais que a de depois de j.
+        opens = self._opens.get(ds[k] + 1, ())
+        i = bisect.bisect_left(opens, j) - 1
+        return opens[i] if i >= 0 and j - opens[i] < limit else -1
 
     def args(self, i):
         """i logo depois do "(": [(a, b)] dos argumentos de nível zero."""
@@ -2423,6 +2717,8 @@ class _Js:
                 while j >= p and mask[j] in " \t\r\n":
                     j -= 1
                 last = mask[j] if j >= p else ""
+                if last == "/" and j in self.lit_ends:
+                    return i  # const SAFE = /^\w+$/: a / fecha a regex, não é uma divisão que continua embaixo
                 rest = mask[i:i + 200].lstrip()
                 if not (last in "=+-*/%&|^!?:,(<>." or rest[:1] in ".?:+-*/%&|^)]}" or rest[:2] in ("&&", "||", "??")):
                     return i
@@ -2446,6 +2742,8 @@ class _Js:
             m = _JS_UPLOAD.sub(lambda x: " " * len(x.group()), m)
         if self.has_req and _JS_REQ.search(m):
             o.add(REQ)
+        if self.has_req and _JS_PARAMS_END.search(s) and _JS_REQ_URL.search(s):
+            o.add(REQ)  # const sp = new URL(req.url).searchParams: sp.get('x') é a busca da requisição
         if self.has_llm and _JS_LLM.search(m):
             o.add(LLM)
         env = self.env
@@ -2482,13 +2780,19 @@ class _Js:
         out.append((start, b))
         return out
 
-    def pieces(self, a, b, depth=0):
+    def pieces(self, a, b, depth=0, room=None):
+        """Como _Py.pieces: [("lit", texto) | ("expr", (a, b))], com o mesmo teto de partes remontadas."""
+        if room is None:
+            room = [_PIECES]
         a, b = self.trim(a, b)
         if a >= b or depth > 6:
             return []
+        room[0] -= 1
+        if room[0] < 0:
+            return [("expr", (a, b))]
         ops = self.split_plus(a, b)
         if len(ops) > 1:
-            return [p for x, y in ops for p in self.pieces(x, y, depth + 1)]
+            return [p for x, y in ops for p in self.pieces(x, y, depth + 1, room)]
         c = self.code[a]
         if c in "'\"" and self.code[b - 1] == c and b - a >= 2 and not self.mask[a + 1:b - 1].strip():
             return [("lit", self.code[a + 1:b - 1])]
@@ -2498,10 +2802,10 @@ class _Js:
         if word in self.strs:
             out = []
             for x, y in self.strs[word]:
-                out += self.pieces(x, y, depth + 1)
+                out += self.pieces(x, y, depth + 1, room)
             return out
         if c == "(" and self.close(a) == b - 1:
-            return self.pieces(a + 1, b - 1, depth + 1)
+            return self.pieces(a + 1, b - 1, depth + 1, room)
         return [("expr", (a, b))]
 
     def template(self, a, b):
@@ -2520,17 +2824,23 @@ class _Js:
             i = k + 1
         return out
 
-    def static(self, a, b):
+    def static(self, a, b, value=False):
+        """Como _Py.static: value é o valor de fora na posição de um dado, onde o nome (query, count) não diz nada."""
         s = self.code[a:b].strip()
         if re.fullmatch(r"\d+(?:\.\d+)?|[A-Z][A-Z0-9_]*|true|false|null|undefined", s):
             return True
         if re.fullmatch(r"(?:window\.)?location\.(?:origin|host|hostname|protocol)|(?:process|import\.meta)\.env\.\w+", s):
             return True
-        if re.search(r"(?i)placeholder|^(?:table|tableName|schema|columns?|cols|fields|order|direction|sortDir|where|"
-                     r"whereClause|conditions?|clause|setClause|joins?|sql|query|select|limit|offset|i|idx|n|count)$", s):
+        if re.search(r"(?i)placeholder", s) or _IDENT.fullmatch(s) and _PLACEHOLDER.search(s) or \
+                not value and _JS_SQL_PART.search(s):
             return True
-        if re.search(r"\.join\s*\(", s) and re.search(r"[?$]|%s|:\w", s):
+        if re.search(r"\.join\s*\(", s) and _JS_PH_LIT.search(s):
             return True
+        if s in self.vals and s not in self.strs:
+            # const lista = ids.map(() => '?').join(','): herda a origem de ids, mas o texto é só placeholder.
+            v = self.code[slice(*self.vals[s])]
+            if re.search(r"\.join\s*\(", v) and _JS_PH_LIT.search(v):
+                return True
         return bool(_JS_KILL.match(s)) or s.endswith(".length")
 
     # ------------------------------------------------------------------ contexto do arquivo
@@ -2636,9 +2946,11 @@ class _Js:
         if any(t in mask for t in ("innerHTML", "outerHTML", "insertAdjacentHTML", "dangerouslySetInnerHTML")) or \
                 "document" in mask and "write" in mask:
             rules.append((_JS_HTML, self.html))
-        if (req or tool) and any(t in mask for t in ("fs", "sendFile", "download", "Bun", "Deno")):
+        # import { readFile } from 'fs/promises': o "fs" está só no texto entre aspas, que a máscara apaga.
+        fs_import = (req or tool) and bool(_FS_IMPORT.search(code))
+        if fs_import or (req or tool) and any(t in mask for t in ("fs", "sendFile", "download", "Bun", "Deno")):
             rules.append((_JS_FS, self.files))
-            if _FS_IMPORT.search(code):
+            if fs_import:
                 rules.append((_JS_FS_BARE, self.files))
         if any(t in mask for t in ("fetch", "got", "ky", "needle", "axios", "superagent", "http")) and \
                 (req and self.server or tool and not self.use_client):
@@ -2668,6 +2980,8 @@ class _Js:
         if not (events or tpl or tool and self.calls_imported()):
             return  # sem sink no arquivo; com import, a chamada pode levar o argumento da ferramenta a outro arquivo
         events += self.flow_events()
+        if "if" in mask and ("includes" in mask or "has" in mask or "test" in mask):
+            events += self.guard_events()
         if tool:
             events += self.call_events()
         events.sort(key=lambda e: (e[0], e[1]))
@@ -2679,6 +2993,8 @@ class _Js:
             for _, _, kind, data in events:
                 if kind == "decl":
                     self.declare(*data)
+                elif kind == "guard":
+                    self.guard(*data)
                 elif kind == "params":
                     self.bind_params(*data)
                 else:
@@ -2775,6 +3091,26 @@ class _Js:
         if any(t in code for t in ("createHash", "md5", "sha1", "sha256", "sha512", "CryptoJS")):
             self.hashing()
         self.unbounded()
+
+    def guard_events(self):
+        """if (!ALLOWED.includes(x)) return, if (!/^[a-z_]+$/.test(x)) throw: o nome conferido, na posição do if."""
+        return [(m.start(), 0, "guard", (m.group(3), m.group(1) and m.span(1), m.group(2) and m.span(2)))
+                for m in _JS_GUARD_IF.finditer(self.mask)]
+
+    def guard(self, name, allow, rx):
+        """Depois do if, o nome é um dos permitidos. A lista não pode vir de quem chama; a regex (literal ou const
+        declarada antes) só vale ancorada nas duas pontas e sem a flag m."""
+        if allow and self.origins(*allow) & (REQ_ANY | MODEL | {TOOL}):
+            return
+        if rx:
+            word = self.code[rx[0]:rx[1]].strip()
+            span = rx if word[:1] == "/" else self.vals.get(word)
+            lit = self.code[span[0]:span[1]].strip() if span else ""
+            j = lit.rfind("/")
+            if not (lit[:1] == "/" and j > 0 and "m" not in lit[j + 1:] and _anchored(lit[1:j])):
+                return
+        for d in (self.env, self.strs, self.vals):
+            d.pop(name, None)
 
     def flow_events(self):
         """Declarações, atribuições e parâmetros de função, na ordem do arquivo."""
@@ -2895,12 +3231,17 @@ class _Js:
         """Quantos (, [ e { estão abertos antes de pos."""
         if self._depth is None:
             ps, ds, d = [], [], 0
+            opens = collections.defaultdict(list)  # profundidade depois de abrir -> posições, em ordem
             for m in _BRACKETS.finditer(self.mask):
-                d += 1 if m.group() in "([{" else -1
+                if m.group() in "([{":
+                    d += 1
+                    opens[d].append(m.start())
+                else:
+                    d -= 1
                 ps.append(m.start())
                 ds.append(d)
             self.spend(len(self.mask) // 4)
-            self._depth = (ps, ds)
+            self._depth, self._opens = (ps, ds), opens
         ps, ds = self._depth
         i = bisect.bisect_left(ps, pos) - 1
         return ds[i] if i >= 0 else 0
@@ -2939,6 +3280,9 @@ class _Js:
     def declare(self, names, start, op):
         end = self.expr_end(start)
         o = self.origins(start, end)
+        t = _JS_ALLOW_TERNARY.match(self.mask, start, end)
+        if t and re.sub(r"\s", "", t.group(1)) == re.sub(r"\s", "", t.group(2)):
+            o = self.origins(t.end(), end)  # ALLOWED.includes(x) ? x : 'name': só o valor padrão pode vir de fora
         value = self.mask[start:end].strip()
         builds = value[:1] in "'\"`" or ("+" in value and re.search(r"[`'\"]", self.mask[start:end]))
         m = re.match(r"(?:util\s*\.\s*)?promisify\s*\(\s*(?:([\w$]+)\s*\.\s*)?(exec|execFile)\s*\)", value)
@@ -2979,10 +3323,10 @@ class _Js:
         ddl = bool(_SQL_DDL.match(lit))
         best = None
         for i, (x, y) in exprs:
-            if self.static(x, y):
-                continue
             o = self.origins(x, y)
-            before = "".join(p for k, p in parts[:i] if k == "lit")
+            before = _lit_before(parts, i)
+            if self.static(x, y, value=bool(o & (REQ_ANY | MODEL)) and bool(_VALUE_POS.search(before))):
+                continue
             if LLM in o:
                 return ("high", LLM)
             if TOOL in o:
@@ -3082,6 +3426,18 @@ class _Js:
             bool(re.search(r"""\bshell\s*:\s*(?:true\b|['"`])""", rest))
         argv = self.args(args[1][0] + 1) if len(args) > 1 and self.code[args[1][0]] == "[" else []
         spans = [args[0]]
+        interp = self.interp_c(args[0], argv[0]) if not shell and fn in _CP_ARGV and len(argv) >= 2 else None
+        if interp:
+            # execFile("python3", ["-c", texto]), spawn(process.execPath, ["-e", texto]): o texto é código.
+            parts = self.pieces(*argv[1])
+            if parts and not all(k == "lit" for k, _ in parts):
+                o = set()
+                for k, p in parts:
+                    if k == "expr":
+                        o |= self.origins(*p)
+                built = any(k == "lit" for k, _ in parts)
+                self.report_exec(o, built, "code", m, "COD003", dict(_src(REQ), sink=interp))
+            return
         if not shell and fn in _CP_ARGV and len(argv) >= 2 and self.shell_c(args[0], argv[0]):
             # spawn("sh", ["-c", cmd]), execFile("bash", ["-lc", cmd]): o terceiro item vai inteiro para o shell.
             shell, spans = True, [argv[1]]
@@ -3103,6 +3459,20 @@ class _Js:
             o = self.origins(a, b) if not (first and first[0][0] == "lit") else set()
             built = False
         self.report_exec(o, built, "shell", m, "COD002", _src(REQ))
+
+    def interp_c(self, prog, flag):
+        """"python3 -c" para execFile("python3", ["-c", ...]) ou spawn(process.execPath, ["-e", ...]); senão None."""
+        p = self.code[prog[0]:prog[1]].strip()
+        f = self.code[flag[0]:flag[1]].strip()
+        if len(f) < 3 or f[0] not in "'\"`" or f[-1] != f[0]:
+            return None
+        if len(p) >= 3 and p[0] in "'\"`" and p[-1] == p[0]:
+            p = p[1:-1]
+        elif re.sub(r"\s", "", p) != "process.execPath":
+            return None
+        else:
+            p = "process.execPath"
+        return p.replace("\\", "/").rsplit("/", 1)[-1] + " " + f[1:-1] if _interp_flag(p, f[1:-1]) else None
 
     def shell_c(self, prog, flag):
         p = self.code[prog[0]:prog[1]].strip()
@@ -3147,7 +3517,8 @@ class _Js:
             return
         s = self.code[a:b]
         parts = self.pieces(a, b)
-        if not parts or all(k == "lit" for k, _ in parts) or _JS_SANITIZE.search(s):
+        # Só no código: class="icon" e style="..." no HTML fixo não limpam o valor que entra.
+        if not parts or all(k == "lit" for k, _ in parts) or _JS_SANITIZE.search(self.mask[a:b]):
             return
         o = set()
         for k, p in parts:
@@ -3161,8 +3532,9 @@ class _Js:
             self.out.tool("html", True, ln)
         elif REQ in o:
             self.out.add("COD005", "medium", ln, {"sink": sink})
-        elif built and sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
-            self.out.add("COD005", "low", ln, {"sink": sink})
+        elif built and sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write") and \
+                not _JS_SANITIZE.search(s):
+            self.out.add("COD005", "low", ln, {"sink": sink})  # <svg ...>${caminho}</svg>: ícone montado no código
 
     def html(self, m):
         g = m.group(0)
@@ -3264,15 +3636,17 @@ class _Js:
             return True, fixed
         return TOOL not in self.origins(*parts[0][1]), fixed
 
-    def lead_origins(self, a, b, depth=0):
-        """Origens do começo do endereço (esquema e host), não de um pedaço do caminho."""
+    def lead_origins(self, a, b, depth=0, host=False):
+        """Origens do começo do endereço (esquema e host), não de um pedaço do caminho. host: como em _Py.lead_origins."""
         a, b = self.trim(a, b)
         s = self.mask[a:b]
         if depth < 3 and s in self.vals and s not in self.strs:
             # const url = new URL(`${apiUrl}${caminho}`); fetch(url): o começo é o do valor declarado.
+            # const full = BASE + caminho; fetch(full): idem.
             x, y = self.trim(*self.vals[s])
-            if re.match(r"new\s+URL\s*\(", self.mask[x:y]) and self.close(self.mask.index("(", x)) == y - 1:
-                return self.lead_origins(x, y, depth + 1)
+            if re.match(r"new\s+URL\s*\(", self.mask[x:y]) and self.close(self.mask.index("(", x)) == y - 1 or \
+                    len(self.split_plus(x, y)) > 1:
+                return self.lead_origins(x, y, depth + 1, host)
         w = re.match(r"(?:new\s+URL|decodeURIComponent|decodeURI|String|encodeURI)\s*\(", s)
         if w and self.close(a + w.end() - 1) == b - 1:
             inner = self.args(a + w.end())
@@ -3281,6 +3655,8 @@ class _Js:
             a, b = inner[0]
         parts = self.pieces(a, b)
         parts = [p for p in parts if not (p[0] == "lit" and not p[1])]
+        if host and len(parts) > 1 and parts[0][0] == "lit" and _IN_HOST.match(parts[0][1]):
+            parts = parts[1:]  # `https://${host}/x`
         if not parts or parts[0][0] != "expr":
             return set()
         x, y = parts[0][1]
@@ -3298,7 +3674,7 @@ class _Js:
             return
         if _JS_GUARD_URL.search(self.mask, self.guard_start(m.start(), 800), m.start()):
             return
-        o = self.lead_origins(*args[0])
+        o = self.lead_origins(*args[0], host=True)
         if REQ in o and self.server:
             self.out.add("COD008", "high", self.line(m.start()), {"sink": re.sub(r"\s", "", m.group(0)).rstrip("(") + "()"})
         elif TOOL in o and not self.use_client:
@@ -3387,21 +3763,21 @@ class _Js:
             self.out.add("COD006", "medium", self.line(m.start()), {"what": "NODE_TLS_REJECT_UNAUTHORIZED=0"})
 
     def weak_random(self):
-        decls = starts = None
+        decls = starts = heads = ends = None
         for m in _JS_RANDOM.finditer(self.mask):
-            start = self.mask.rfind("\n", 0, m.start()) + 1
+            start = max(self.mask.rfind("\n", 0, m.start()) + 1, m.start() - 300)
             head = self.mask[start:m.start()]
             name = None
-            d = re.search(r"(?:(?:const|let|var)\s+|this\s*\.\s*|\.)?([A-Za-z_$][\w$]*)\s*(?::\s*[\w<>\[\]| ]+)?\s*[:=](?!=)[^=:]*$", head)
+            d = _JS_RANDOM_NAME.search(head)
             if d:
                 name = d.group(1)
             elif re.match(r"\s*return\b", head):
-                fn = None
-                for f in re.finditer(r"(?:function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?"
-                                     r"(?:\([^()]*\)|[\w$]+)\s*(?::[^=]+)?=>|^\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*(?::[^{]+)?\{)",
-                                     self.mask[max(0, m.start() - 1500):m.start()], re.M):
-                    fn = f.group(1) or f.group(2) or f.group(3)
-                name = fn
+                # A última função declarada até 1500 caracteres antes do return.
+                if heads is None:
+                    heads = [(f.start(), f.end(), f.group(1) or f.group(2) or f.group(3)) for f in _JS_FN_HEAD.finditer(self.mask)]
+                    ends = [h[1] for h in heads]
+                i = bisect.bisect_right(ends, m.start()) - 1
+                name = heads[i][2] if i >= 0 and heads[i][0] >= m.start() - 1500 else None
             else:
                 # const token = [...Array(32)].map(() => chars[Math.floor(Math.random() * n)]).join(""), ou o valor
                 # na linha de baixo: a declaração em volta decide.
