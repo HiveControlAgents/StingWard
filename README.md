@@ -101,7 +101,7 @@ It comments the report on the PR (and updates the same comment on every run), up
 | `fail-on` | `high` | Fail the job at this severity or above: `critical`, `high`, `medium`, `low`, `never` |
 | `lang` | `en` | Report language: `en` or `pt` |
 | `comment` | `true` | Comment on pull requests (needs `pull-requests: write`) |
-| `sarif` | `true` | Upload SARIF to code scanning (needs `security-events: write`) |
+| `sarif` | `true` | Upload SARIF to code scanning (needs `security-events: write`, plus `actions: read` in private repositories) |
 
 ## Command line reference
 

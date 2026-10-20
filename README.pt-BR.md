@@ -101,7 +101,7 @@ Ela comenta o relatório no PR (e atualiza o mesmo comentário a cada execução
 | `fail-on` | `high` | Falha o job nesta severidade ou acima: `critical`, `high`, `medium`, `low`, `never` |
 | `lang` | `en` | Idioma do relatório: `en` ou `pt` |
 | `comment` | `true` | Comenta nos pull requests (precisa de `pull-requests: write`) |
-| `sarif` | `true` | Envia SARIF para o code scanning (precisa de `security-events: write`) |
+| `sarif` | `true` | Envia SARIF para o code scanning (precisa de `security-events: write` e, em repositório privado, de `actions: read`) |
 
 ## Referência da linha de comando
 

@@ -103,7 +103,7 @@ Comenta el informe en el PR (y actualiza el mismo comentario en cada ejecución)
 | `fail-on` | `high` | Falla el job en esta severidad o mayor: `critical`, `high`, `medium`, `low`, `never` |
 | `lang` | `en` | Idioma del informe: `en` o `pt` |
 | `comment` | `true` | Comenta en los pull requests (necesita `pull-requests: write`) |
-| `sarif` | `true` | Sube SARIF a code scanning (necesita `security-events: write`) |
+| `sarif` | `true` | Sube SARIF a code scanning (necesita `security-events: write` y, en repositorios privados, `actions: read`) |
 
 ## Referencia de la línea de comandos
 

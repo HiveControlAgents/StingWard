@@ -19,7 +19,7 @@ inputs:
     description: Comment the report on pull requests (needs pull-requests write)
     default: "true"
   sarif:
-    description: Upload SARIF to GitHub code scanning (needs security-events write)
+    description: Upload SARIF to GitHub code scanning (needs security-events write, plus actions read in private repositories)
     default: "true"
 
 outputs:
