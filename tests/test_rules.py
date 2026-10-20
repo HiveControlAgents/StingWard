@@ -975,6 +975,11 @@ def _adv(vid, pkg, fixed=None, **extra):
     return dict({"id": vid, "summary": f"Issue in {pkg}", "affected": [{"package": {"ecosystem": "npm", "name": pkg}, "ranges": ranges}]}, **extra)
 
 
+def _pyadv(vid, pkg, fixed=None, **extra):
+    ranges = [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}] + ([{"fixed": fixed}] if fixed else [])}]
+    return dict({"id": vid, "summary": f"Issue in {pkg}", "affected": [{"package": {"ecosystem": "PyPI", "name": pkg}, "ranges": ranges}]}, **extra)
+
+
 class DepRules(RuleTest):
     def deps(self, files, ids, docs, kev=None, epss=None, nvd=None, offline=False, osv_error=False):
         p = Project(files)
@@ -1078,6 +1083,181 @@ class DepRules(RuleTest):
         for files in cases:
             with self.subTest(files=sorted(files)):
                 self.assertSilent(self.scan(files), "DEP003")
+
+    # ------------------------------------------------------------------ DEP004: lowest version of a range
+
+    PIL_RCE = _pyadv("GHSA-pil1", "pillow", "10.0.1", aliases=["CVE-2023-50447"], summary="Arbitrary code execution",
+                     database_specific={"severity": "CRITICAL"})
+    PIL_HIGH = _pyadv("GHSA-pil2", "pillow", "12.3.0", aliases=["CVE-2026-0002"], summary="Heap overflow",
+                      database_specific={"severity": "HIGH"})
+    PIL_MED = _pyadv("GHSA-pil3", "pillow", "11.0.0", aliases=["CVE-2026-0003"], summary="Denial of service",
+                     database_specific={"severity": "MODERATE"})
+    PIL = {d["id"]: d for d in (PIL_RCE, PIL_HIGH, PIL_MED)}
+
+    def test_dep004_lowest_version_of_a_range(self):
+        ctx, f, q = self.deps({"requirements.txt": "# app\nPillow>=10\nflask==3.0.0\n"},
+                              {"Pillow": sorted(self.PIL)}, self.PIL)
+        q.assert_called_once_with([("PyPI", "flask", "3.0.0"), ("PyPI", "Pillow", "10")])  # one round for pins and floors
+        self.assertEqual(ctx.sources["packages"], 2)
+        self.assertEqual(brief(f), [("DEP004", "requirements.txt", 2, "medium"), ("DEP003", "requirements.txt", None, "low")])
+        d = f[0]
+        self.assertEqual((d.params["pkg"], d.params["spec"], d.params["floor"], d.params["upper"], d.params["fixed"],
+                          d.params["whole_range"]), ("Pillow", ">=10", "10", "", "12.3.0", False))
+        self.assertEqual([v["id"] for v in d.params["vulns"]], ["CVE-2023-50447", "CVE-2026-0002", "CVE-2026-0003"])
+        self.assertEqual(d.refs, ["https://osv.dev/vulnerability/GHSA-pil1", "https://nvd.nist.gov/vuln/detail/CVE-2023-50447"])
+        title, why, fix = texts("DEP004", "en", d.params)
+        self.assertEqual(title, "Pillow >=10: the lowest version it allows (10) has 3 known vulnerabilities; "
+                                "worst is CVE-2023-50447 (Arbitrary code execution)")
+        self.assertIn("a machine that already has version 10 keeps it", why)
+        self.assertIn("Other issues in version 10: CVE-2026-0002, CVE-2026-0003.", why)
+        self.assertEqual(fix, "Raise the minimum to 12.3.0: replace Pillow>=10 with Pillow>=12.3.0. "
+                              "The next install then upgrades older copies.")
+        title, why, fix = texts("DEP004", "pt", d.params)
+        self.assertEqual(title, "Pillow >=10: a menor versão aceita (10) tem 3 falhas conhecidas; "
+                                "a pior é CVE-2023-50447 (Arbitrary code execution)")
+        self.assertIn("quem já tem a versão 10 instalada continua com ela", why)
+        self.assertTrue(fix.startswith("Suba a versão mínima para 12.3.0: troque Pillow>=10 por Pillow>=12.3.0."), fix)
+
+    def test_dep004_severity_is_capped_unless_the_whole_range_is_affected(self):
+        unfixed = _pyadv("GHSA-pil4", "pillow", None, aliases=["CVE-2026-0004"], database_specific={"severity": "HIGH"})
+        kev = {"CVE-2026-0003": {"knownRansomwareCampaignUse": "Unknown"}}
+        cases = [
+            ("only medium at the floor", "Pillow>=10", [self.PIL_MED], {}, "low", False),
+            ("high at the floor", "Pillow>=10", [self.PIL_HIGH, self.PIL_MED], {}, "medium", False),
+            ("critical at the floor", "Pillow>=10", [self.PIL_RCE], {}, "medium", False),
+            ("CISA KEV at the floor", "Pillow>=10", [self.PIL_MED], {"kev": kev}, "medium", False),
+            ("upper bound leaves the fix out", "Pillow>=10,<11", [self.PIL_RCE, self.PIL_HIGH], {}, "high", True),
+            ("upper bound leaves the critical fix out", "Pillow~=10.0.0", [self.PIL_HIGH, self.PIL_MED], {}, "high", True),
+            ("compatible release keeps every fix", "Pillow~=10.0", [self.PIL_RCE], {}, "medium", False),
+            ("no fix at all", "Pillow>=10", [unfixed, self.PIL_MED], {}, "high", True),
+            ("whole range but only medium", "Pillow==10.*", [self.PIL_MED], {}, "medium", True),
+        ]
+        for name, req, advs, kw, sev, whole in cases:
+            with self.subTest(name=name):
+                docs = {a["id"]: a for a in advs}
+                _, f, _ = self.deps({"requirements.txt": req + "\n"}, {"Pillow": sorted(docs)}, docs, **kw)
+                dep = [x for x in f if x.rule == "DEP004"]
+                self.assertEqual([(x.severity, x.params["whole_range"]) for x in dep], [(sev, whole)])
+                if "kev" in kw:
+                    self.assertIn("kev", dep[0].tags)
+                    self.assertIn("CISA", texts("DEP004", "en", dep[0].params)[1])
+
+    def test_dep004_no_version_in_the_range_has_the_fix(self):
+        _, f, _ = self.deps({"requirements.txt": "Pillow>=10,<11\n"}, {"Pillow": sorted(self.PIL)}, self.PIL)
+        d = next(x for x in f if x.rule == "DEP004")
+        self.assertEqual((d.severity, d.params["upper"], d.params["fixed"]), ("high", "11", "12.3.0"))
+        self.assertEqual([v["spans"] for v in d.params["vulns"]], [False, True, True])  # 11.0.0 is outside <11 too
+        title, why, fix = texts("DEP004", "en", d.params)
+        self.assertEqual(title, "Pillow >=10,<11: every version it allows has CVE-2026-0002 (Heap overflow)")
+        self.assertEqual(why, "Every version this range allows has CVE-2026-0002, so whichever one is installed has it too. "
+                              "Version 10, the lowest, has 3 known vulnerabilities; worst is CVE-2023-50447.")
+        self.assertEqual(fix, "No version in this range has the fix. Widen it to allow 12.3.0 or later: "
+                              "replace Pillow>=10,<11 with Pillow>=12.3.0.")
+        self.assertEqual(d.refs[0], "https://osv.dev/vulnerability/GHSA-pil2")
+        title, why, fix = texts("DEP004", "pt", d.params)
+        self.assertEqual(title, "Pillow >=10,<11: toda versão aceita tem a CVE-2026-0002 (Heap overflow)")
+        self.assertTrue(fix.startswith("Nenhuma versão dessa faixa tem a correção."), fix)
+
+    def test_dep004_unfixed_issue_says_so(self):
+        unfixed = _pyadv("GHSA-pil4", "pillow", None, aliases=["CVE-2026-0004"], database_specific={"severity": "LOW"})
+        docs = {"GHSA-pil2": self.PIL_HIGH, "GHSA-pil4": unfixed}
+        _, f, _ = self.deps({"requirements.txt": "Pillow>=10\n"}, {"Pillow": sorted(docs)}, docs)
+        d = next(x for x in f if x.rule == "DEP004")
+        self.assertEqual(d.severity, "medium")
+        self.assertIn("1 issue(s) still unfixed", d.params["fix_en"])
+        _, f, _ = self.deps({"requirements.txt": "Pillow>=10\n"}, {"Pillow": ["GHSA-pil4"]}, {"GHSA-pil4": unfixed})
+        self.assertIn("No fixed version yet", next(x for x in f if x.rule == "DEP004").params["fix_en"])
+
+    def test_dep004_package_json_without_lockfile(self):
+        pkg = '{\n  "dependencies": {\n    "axios": "^1.6.0",\n    "lodash": "4.17.15"\n  },\n' \
+              '  "devDependencies": {\n    "left-pad": "*"\n  }\n}\n'
+        axios = _adv("GHSA-axios", "axios", "1.12.0", aliases=["CVE-2025-58754"], summary="Unbounded memory use",
+                     database_specific={"severity": "HIGH"})
+        _, f, q = self.deps({"package.json": pkg}, {"axios": ["GHSA-axios"]}, {"GHSA-axios": axios})
+        q.assert_called_once_with([("npm", "lodash", "4.17.15"), ("npm", "axios", "1.6.0")])
+        self.assertEqual(brief(f), [("DEP004", "package.json", 3, "medium"), ("DEP003", "package.json", None, "low")])
+        self.assertEqual(f[0].params["upper"], "2.0.0")
+        self.assertEqual(texts("DEP004", "en", f[0].params)[2],
+                         'Raise the minimum to 1.12.0: replace "axios": "^1.6.0" with "axios": "^1.12.0". '
+                         "The next install then upgrades older copies.")
+
+    def test_dep004_pyproject_dependencies(self):
+        doc = '[project]\nname = "app"\ndependencies = [\n  "Pillow>=10",\n  "flask",\n  "attrs==23.1.0",\n]\n\n' \
+              '[project.optional-dependencies]\nhttp = ["requests[socks]>=2.25"]\n'
+        attrs = _pyadv("GHSA-attrs", "attrs", "23.2.0", database_specific={"severity": "LOW"})
+        req = _pyadv("GHSA-req", "requests", "2.32.4", database_specific={"severity": "MODERATE"})
+        docs = dict(self.PIL, **{"GHSA-attrs": attrs, "GHSA-req": req})
+        _, f, q = self.deps({"pyproject.toml": doc}, {"Pillow": sorted(self.PIL), "attrs": ["GHSA-attrs"],
+                                                      "requests": ["GHSA-req"]}, docs)
+        # A version written as == is a pin (DEP001); ranges are checked at their lowest version.
+        self.assertEqual(q.call_args[0][0], [("PyPI", "attrs", "23.1.0"), ("PyPI", "Pillow", "10"), ("PyPI", "requests", "2.25")])
+        self.assertEqual(brief(f), [("DEP004", "pyproject.toml", 4, "medium"), ("DEP001", "pyproject.toml", 6, "low"),
+                                    ("DEP004", "pyproject.toml", 10, "low")])
+        self.assertIn("replace requests[socks]>=2.25 with requests[socks]>=2.32.4", f[2].params["fix_en"])
+        self.assertSilent(f, "DEP003")  # libraries declare ranges on purpose
+
+    def test_dep004_same_range_in_two_files_is_one_query(self):
+        files = {"requirements.txt": "Pillow>=10\n", "pyproject.toml": '[project]\ndependencies = ["pillow>=10"]\n'}
+        _, f, q = self.deps(files, {"Pillow": sorted(self.PIL), "pillow": sorted(self.PIL)}, self.PIL)
+        self.assertEqual(len(q.call_args[0][0]), 1)
+        self.assertEqual(sorted((x.rule, x.file, x.line) for x in f if x.rule == "DEP004"),
+                         [("DEP004", "pyproject.toml", 2), ("DEP004", "requirements.txt", 1)])
+
+    def test_dep004_malicious_lowest_version_is_dep002(self):
+        mal = {"id": "MAL-2026-9", "summary": "Malicious code in evil-pkg"}
+        _, f, _ = self.deps({"package.json": '{"dependencies": {"evil-pkg": "^1.0.0"}}\n'}, {"evil-pkg": ["MAL-2026-9"]},
+                            {"MAL-2026-9": mal})
+        self.assertEqual([(x.rule, x.severity, x.params.get("version")) for x in f], [("DEP002", "critical", "1.0.0"),
+                                                                                       ("DEP003", "low", None)])
+
+    def test_dep004_near_misses(self):
+        lock = '{"lockfileVersion": 3, "packages": {"": {}, "node_modules/axios": {"version": "1.12.2"}}}\n'
+        poetry = '[[package]]\nname = "pillow"\nversion = "12.3.0"\n'
+        axios = _adv("GHSA-axios", "axios", "1.12.0", database_specific={"severity": "HIGH"})
+        docs = dict(self.PIL, **{"GHSA-axios": axios})
+        ids = {"Pillow": sorted(self.PIL), "pillow": sorted(self.PIL), "axios": ["GHSA-axios"]}
+        cases = [
+            ("package.json beside a lockfile", {"package.json": '{"dependencies": {"axios": "^1.6.0"}}\n', "package-lock.json": lock},
+             [("npm", "axios", "1.12.2")]),
+            ("requirements.txt beside poetry.lock", {"requirements.txt": "Pillow>=10\n", "poetry.lock": poetry},
+             [("PyPI", "pillow", "12.3.0")]),
+            ("pyproject.toml beside uv.lock", {"pyproject.toml": '[project]\ndependencies = ["Pillow>=10"]\n',
+                                               "uv.lock": poetry}, [("PyPI", "pillow", "12.3.0")]),
+            ("pyproject.toml beside pdm.lock", {"pyproject.toml": '[project]\ndependencies = ["Pillow>=10"]\n',
+                                                "pdm.lock": poetry}, [("PyPI", "pillow", "12.3.0")]),
+            ("pinned in another file", {"requirements.txt": "Pillow>=10\n", "requirements-prod.txt": "pillow==12.3.0\n"},
+             [("PyPI", "pillow", "12.3.0")]),
+            ("pinned in another folder", {"api/package.json": '{"dependencies": {"axios": "^1.6.0"}}\n',
+                                          "web/package-lock.json": lock}, [("npm", "axios", "1.12.2")]),
+            ("no lowest version", {"requirements.txt": "flask\nPillow>10\nrequests<3\n-e .\n",
+                                   "package.json": '{"dependencies": {"a": "*", "b": "latest", "c": "^1 || ^2", "d": "file:../d"}}\n'},
+                                   None),
+            ("other tables of pyproject.toml", {"pyproject.toml": '[build-system]\nrequires = ["setuptools>=40"]\n'
+                                                                  '[tool.poetry.dependencies]\nPillow = "^10"\n'}, None),
+        ]
+        for name, files, queried in cases:
+            with self.subTest(name=name):
+                _, f, q = self.deps(files, ids, docs)
+                self.assertSilent(f, "DEP004")
+                if queried is None:
+                    q.assert_not_called()
+                else:
+                    self.assertEqual(q.call_args[0][0], queried)
+        _, f, _ = self.deps({"requirements.txt": "Pillow>=10\n"}, {}, {})  # lowest version with no known issue
+        self.assertSilent(f, "DEP004")
+        withdrawn = dict(self.PIL_HIGH, withdrawn="2026-01-01T00:00:00Z")
+        _, f, _ = self.deps({"requirements.txt": "Pillow>=10\n"}, {"Pillow": ["GHSA-pil2"]}, {"GHSA-pil2": withdrawn})
+        self.assertSilent(f, "DEP004")
+
+    def test_dep004_offline_and_osv_unreachable(self):
+        files = {"requirements.txt": "Pillow>=10\n", "pyproject.toml": '[project]\ndependencies = ["axios>=1"]\n'}
+        ctx, f, q = self.deps(files, {"Pillow": sorted(self.PIL)}, self.PIL, offline=True)
+        q.assert_not_called()
+        self.assertEqual(brief(f), [("DEP003", "requirements.txt", None, "low")])
+        self.assertEqual(ctx.sources, {"packages": 2})
+        ctx, f, _ = self.deps(files, {}, {}, osv_error=True)
+        self.assertEqual(brief(f), [("DEP003", "requirements.txt", None, "low")])
+        self.assertIn("timed out", ctx.sources["osv_error"])
 
 
 # =========================================================================== motor: ignore, dedupe, limites, modos

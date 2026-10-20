@@ -291,6 +291,51 @@ class FixedVersion(unittest.TestCase):
         self.assertEqual(vulndb.fixed_version(v, "npm", "lodash", "2.0.0-beta.1"), "2.0.0")
 
 
+class AffectsWholeRange(unittest.TestCase):
+    """DEP004: the issue at the lowest version of a range is in every version the range allows."""
+
+    def whole(self, v, floor="4.0.0", upper=None, inclusive=False, eco="npm", name="lodash"):
+        return vulndb.affects_whole_range(v, eco, name, floor, upper, inclusive)
+
+    def test_fix_inside_the_range_is_a_way_out(self):
+        v = vuln([{"introduced": "0"}, {"fixed": "4.17.21"}])
+        self.assertFalse(self.whole(v))  # no upper bound: 4.17.21 is allowed
+        self.assertFalse(self.whole(v, upper="5.0.0"))
+        self.assertTrue(self.whole(v, upper="4.17.21"))  # <4.17.21 leaves the fix out
+        self.assertFalse(self.whole(v, upper="4.17.21", inclusive=True))  # <=4.17.21 keeps it
+        self.assertTrue(self.whole(v, upper="4.10.0"))
+
+    def test_unfixed_issue_covers_everything(self):
+        self.assertTrue(self.whole(vuln([{"introduced": "0"}])))
+        self.assertTrue(self.whole(vuln([{"introduced": "0"}, {"fixed": "3.0.0"}], [{"introduced": "4.0.0"}])))
+
+    def test_last_affected_and_limit(self):
+        v = vuln([{"introduced": "0"}, {"last_affected": "4.5.0"}])
+        self.assertFalse(self.whole(v))  # 4.5.1 and later escape
+        self.assertFalse(self.whole(v, floor="4.5.0"))
+        self.assertTrue(self.whole(v, upper="4.5.0", inclusive=True))
+        self.assertFalse(self.whole(v, upper="5.0.0"))
+        self.assertFalse(self.whole(vuln([{"introduced": "0"}, {"limit": "4.2.0"}]), upper="5.0.0"))
+
+    def test_fix_below_the_floor_does_not_count(self):
+        v = vuln([{"introduced": "0"}, {"fixed": "3.0.0"}], [{"introduced": "3.5.0"}, {"fixed": "6.0.0"}])
+        self.assertTrue(self.whole(v, upper="5.0.0"))
+        self.assertFalse(self.whole(v, upper="7.0.0"))
+
+    def test_no_ranges_means_unknown(self):
+        for v in ({"id": "x"}, {"affected": None}, {"affected": [None, {"package": None}]},
+                  {"affected": [{"package": {"ecosystem": "npm", "name": "lodash"},
+                                                                    "versions": ["4.0.0", "4.0.1"]}]},
+                  vuln([{"introduced": "0"}], rtype="GIT"), vuln([{"introduced": "0"}], name="underscore")):
+            with self.subTest(vuln=v):
+                self.assertFalse(self.whole(v))
+
+    def test_pypi_names_and_versions(self):
+        v = vuln([{"introduced": "0"}, {"fixed": "12.3.0"}], rtype="ECOSYSTEM", eco="PyPI", name="pillow")
+        self.assertTrue(self.whole(v, floor="10", upper="11", eco="PyPI", name="Pillow"))
+        self.assertFalse(self.whole(v, floor="10", eco="PyPI", name="Pillow"))
+
+
 # --------------------------------------------------------------------------- pacote malicioso
 
 # Recortes dos registros reais do OSV (2026-10-19)

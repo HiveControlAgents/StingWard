@@ -489,7 +489,8 @@ class Formats(CliTest):
         self.assertEqual(sec["data"], {})
         dep = next(f for f in doc["findings"] if f["rule"] == "DEP003")
         self.assertEqual((dep["line"], dep["data"]), (None, {"manifest": "package.json", "count": 1}))
-        self.assertEqual(doc["sources"], {"packages": 0})  # offline: conta pacotes, não consulta bases
+        # offline: conta pacotes, não consulta bases. O 1 é o piso de "lodash": "^4.0.0" (DEP004, só online).
+        self.assertEqual(doc["sources"], {"packages": 1})
 
     def test_markdown(self):
         code, out, _ = run_main([self.mixed, "--offline", "--lang", "en", "--format", "markdown"])
