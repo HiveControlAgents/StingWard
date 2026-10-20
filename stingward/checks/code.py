@@ -1370,10 +1370,18 @@ class _Py:
             return True
         return isinstance(v, ast.Call) and self._dot(v.func).endswith(("Path", "PurePath", "os.path.join", "joinpath"))
 
-    def lead_origins(self, node, env):
+    def lead_origins(self, node, env, depth=0):
         """Origens do começo do endereço (esquema e host), não de um pedaço do caminho."""
         if isinstance(node, ast.BoolOp):
-            return self.lead_origins(node.values[0], env)
+            return self.lead_origins(node.values[0], env, depth)
+        v = self.vals.get(node.id) if isinstance(node, ast.Name) and node.id not in self.strs else None
+        if depth < 3 and isinstance(v, ast.BinOp) and isinstance(v.op, ast.Add):
+            # full = BASE + caminho; requests.get(full): o começo é o do valor declarado.
+            return self.lead_origins(v, env, depth + 1)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add) and not _builds_string(node):
+            while isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+                node = node.left  # BASE + caminho: o começo é o da esquerda
+            return self.lead_origins(node, env, depth + 1)
         if isinstance(node, ast.Name) and node.id in self.strs:
             parts = self.pieces(node, env)
         elif _builds_string(node):
@@ -3360,8 +3368,10 @@ class _Js:
         s = self.mask[a:b]
         if depth < 3 and s in self.vals and s not in self.strs:
             # const url = new URL(`${apiUrl}${caminho}`); fetch(url): o começo é o do valor declarado.
+            # const full = BASE + caminho; fetch(full): idem.
             x, y = self.trim(*self.vals[s])
-            if re.match(r"new\s+URL\s*\(", self.mask[x:y]) and self.close(self.mask.index("(", x)) == y - 1:
+            if re.match(r"new\s+URL\s*\(", self.mask[x:y]) and self.close(self.mask.index("(", x)) == y - 1 or \
+                    len(self.split_plus(x, y)) > 1:
                 return self.lead_origins(x, y, depth + 1)
         w = re.match(r"(?:new\s+URL|decodeURIComponent|decodeURI|String|encodeURI)\s*\(", s)
         if w and self.close(a + w.end() - 1) == b - 1:
