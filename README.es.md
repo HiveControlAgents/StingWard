@@ -144,7 +144,7 @@ Entorno: `STINGWARD_LANG` define el idioma por defecto, `NVD_API_KEY` sube el l�
 ## Calidad
 
 - **Más de 400 pruebas automáticas**, además de pruebas en línea que consultan de verdad OSV, KEV, EPSS y NVD en seis ecosistemas. La cobertura de líneas supera el 90%.
-- **Cada push ejecuta 21 jobs de CI**: pruebas en Linux, macOS y Windows con Python 3.9 a 3.13, los paquetes de PyPI y npm construidos e instalados desde cero en los tres sistemas, el plugin de Claude Code validado y la Action ejecutada sobre proyectos de ejemplo.
+- **Cada push ejecuta 24 jobs de CI**: pruebas en Linux, macOS y Windows con Python 3.9 a 3.14, los paquetes de PyPI y npm construidos e instalados desde cero en los tres sistemas, el plugin de Claude Code validado y la Action ejecutada sobre proyectos de ejemplo.
 - **Stingward se audita a sí mismo** en CI y no puede tener hallazgos altos ni críticos; su propia nota es el distintivo A de arriba.
 - **Los falsos positivos se miden** en colecciones populares de skills y servidores MCP públicos: ningún hallazgo crítico o alto que no sea real, y pocos medios por repositorio. Cada falso positivo corregido se convierte en una prueba de regresión.
 - **Revisión de seguridad del propio Stingward**, por ejemplo para asegurar que una carpeta de skill armada como repositorio git no ejecuta comandos, y que un secreto nunca llega a un informe. Cada problema encontrado se corrige con una prueba que falla en el código anterior.
