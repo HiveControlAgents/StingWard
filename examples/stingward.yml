@@ -11,6 +11,7 @@ permissions:
   contents: read
   pull-requests: write     # PR comment
   security-events: write   # code scanning (SARIF)
+  # actions: read          # uncomment in a private repository: the SARIF upload needs it too
 
 jobs:
   stingward:
