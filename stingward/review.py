@@ -33,6 +33,7 @@ from collections import defaultdict
 
 from . import _redact as redact
 from . import report_html
+from .model import decode_text
 
 STATUSES = ("confirmed", "false_positive", "accepted_risk", "fixed")
 MAX_FILE = 5_000_000      # arquivo de revisão
@@ -335,8 +336,9 @@ def _read(path, limit, what):
     try:
         if os.path.getsize(path) > limit:
             raise ReviewError(f"{path}: {what} grande demais / too large")
-        with open(path, encoding="utf-8-sig") as fh:
-            return fh.read()
+        # UTF-16 pelo BOM: o PowerShell 5 grava assim com > (o Bloco de Notas, com "Unicode").
+        with open(path, "rb") as fh:
+            return decode_text(fh.read(), errors="strict")
     except OSError as e:
         raise ReviewError(f"{path}: {e.strerror or e}") from None
     except UnicodeDecodeError:

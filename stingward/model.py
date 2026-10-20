@@ -16,11 +16,12 @@ _BOMS = ((codecs.BOM_UTF32_LE, "utf-32"), (codecs.BOM_UTF32_BE, "utf-32"),
 TEXT_BOMS = tuple(bom for bom, _ in _BOMS)
 
 
-def decode_text(data: bytes) -> str:
+def decode_text(data: bytes, errors: str = "replace") -> str:
     """Texto de um arquivo como as verificações e o relatório o leem: UTF-8 sem o BOM, ou UTF-16/32 pelo BOM; \r\n
-    e \r viram \n, como no open() em modo texto."""
+    e \r viram \n, como no open() em modo texto. Com errors="strict", byte inválido levanta UnicodeDecodeError em vez
+    de virar \ufffd: o arquivo de revisão e o parecer, escritos à mão, são recusados em vez de mudar calados."""
     enc = next((e for bom, e in _BOMS if data.startswith(bom)), "utf-8-sig")
-    return data.decode(enc, errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+    return data.decode(enc, errors=errors).replace("\r\n", "\n").replace("\r", "\n")
 
 
 def bump(sev: str, steps: int = 1) -> str:
