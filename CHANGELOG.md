@@ -49,6 +49,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - COD001 now reports SQL built from a variable such as `remarks` or `bookmarks`. Any name containing `marks` was taken for a list of `?` placeholders; now only `marks`, `qmarks`, `question_marks` and `questionMarks` are.
 - COD003, APP009 and APP014 no longer report Python code that writes the outside value with `{value!r}` or `repr(value)`, such as `exec(f"x = {value!r}")` or `[sys.executable, "-c", f"open({url!r})"]`: the value becomes a quoted Python literal, not code. Templates are still reported, since the template engine reads inside the quotes.
 - The Python code check now trusts a value after an `if` that leaves the function when the value fails a check: `if sort not in ALLOWED: abort(400)`, `if not uid.isdigit(): return ...`, `if not re.fullmatch(r"[a-z_]+", t): raise ...` or `if not validate_column(c): ...`. These allowlists are how a dynamic `ORDER BY` or table name is made safe, and they were reported as high SQL injection. A list that comes from the request, an `if` that does not leave, or `re.match` without an anchored end still count as unchecked.
+- The JavaScript check no longer reads the code after `const RE = /^\w+$/` as part of that value. The `/` that closes a regular expression at the end of a line was taken for a division going on to the next line, so the constant took the origins of the handler written below it.
 
 ## [0.1.5] - 2026-10-20
 

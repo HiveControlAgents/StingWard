@@ -1644,6 +1644,16 @@ class CodeEngine(unittest.TestCase):
         self.assertEqual([js.open_before(i) for i in (9, 19, 21, 26, 32)], [2, 17, 14, 24, 1])
         self.assertEqual(js.open_before(0), -1)
 
+    def test_regex_literal_ends_its_declaration(self):
+        """const SAFE = /^\\w+$/ no fim da linha: a / que fecha a regex não é uma divisão que continua na linha de baixo
+        (o valor declarado engolia o handler inteiro, com a origem dele)."""
+        src = "const SAFE = /^\\w+$/\napp.get('/a', (req, res) => res.send(req.query.k))\nconst D = a /\n  b\nfoo()\n"
+        js = code._Js("a.js", src, {})
+        start = src.index("=") + 1
+        self.assertEqual(src[start:js.expr_end(start)], " /^\\w+$/")
+        start = src.index("= a") + 1
+        self.assertEqual(src[start:js.expr_end(start)], " a /\n  b")
+
     def test_long_names_in_expressions_stay_fast(self):
         """Um nome de 2900 letras numa expressão com chamada: a busca de chamadas tentava começar em cada letra dele."""
         src = "const q = req.query.a\neval(q)\n" + ("x = q + " + "a" * 2900 + " + f()\n") * 50

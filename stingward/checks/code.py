@@ -2583,6 +2583,7 @@ class _Js:
     def __init__(self, rel, text, project, ext=None):
         self.rel, self.text, self.project = rel, text, project
         self.code, self.mask, lits = _js_mask(_script_only(rel, text))
+        self.lit_ends = {y for _, y in lits}  # onde o texto de uma string ou regex termina (a / que fecha a regex)
         self.sql_lits = any(_SQL_VERB.match(self.code, x, y) for x, y in lits)
         self.out = _Out(rel)
         self.budget = _JS_BUDGET + 40 * len(text)
@@ -2709,6 +2710,8 @@ class _Js:
                 while j >= p and mask[j] in " \t\r\n":
                     j -= 1
                 last = mask[j] if j >= p else ""
+                if last == "/" and j in self.lit_ends:
+                    return i  # const SAFE = /^\w+$/: a / fecha a regex, não é uma divisão que continua embaixo
                 rest = mask[i:i + 200].lstrip()
                 if not (last in "=+-*/%&|^!?:,(<>." or rest[:1] in ".?:+-*/%&|^)]}" or rest[:2] in ("&&", "||", "??")):
                     return i
