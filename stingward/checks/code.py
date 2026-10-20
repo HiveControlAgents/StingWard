@@ -396,6 +396,7 @@ _PY_FILE_SINKS = {"open", "io.open", "codecs.open", "aiofiles.open", "builtins.o
                   "shutil.rmtree", "os.rmdir", "flask.send_file", "send_file", "starlette.responses.FileResponse",
                   "fastapi.responses.FileResponse", "FileResponse", "django.http.FileResponse", "os.listdir",
                   "shutil.copy", "shutil.copyfile", "shutil.move"}
+_EXT_STR = {"lower", "upper", "casefold", "strip", "lstrip", "rstrip"}
 _PATH_METHODS = {"read_text", "read_bytes", "open", "write_text", "write_bytes", "unlink", "rmdir", "iterdir"}
 _PY_REDIRECT = ("redirect", "RedirectResponse", "HttpResponseRedirect", "HttpResponsePermanentRedirect")
 _PY_HTML = ("Markup", "mark_safe", "SafeString", "HTMLResponse", "HttpResponse", "make_response", "Response")
@@ -611,6 +612,9 @@ class _Py:
         self.out = _Out(rel)
         self.strs = {}
         self.vals = {}
+        # nome -> origens só para caminhos, quando o dado de fora nele é só a extensão (os.path.splitext(nome)[1]).
+        self.path_env = {}
+        self.has_ext = "splitext" in text
         self.clients = set()
         self.hashers = {}
         self.llm_funcs = set()
@@ -759,12 +763,13 @@ class _Py:
             return bool(_LC_RECEIVER.search(_receiver(call)))
         return False
 
-    def origins(self, node, env):
+    def origins(self, node, env, path=False):
+        """path: as origens para montar um caminho, sem a extensão tirada do nome (ver ext_expr)."""
         out = set()
         stack = [node]
         while stack:
             n = stack.pop()
-            if n is None:
+            if n is None or path and self.ext_expr(n):
                 continue
             if isinstance(n, ast.Call):
                 d = self._dot(n.func)
@@ -787,7 +792,7 @@ class _Py:
                 out.add(REQ)
                 continue
             if isinstance(n, ast.Name):
-                out |= env.get(n.id, set())
+                out |= self.path_env[n.id] if path and n.id in self.path_env else env.get(n.id, set())
                 continue
             if isinstance(n, ast.Attribute):
                 key = _attr_key(n)
@@ -952,7 +957,12 @@ class _Py:
         elif isinstance(st, ast.AugAssign):
             o = self.origins(st.value, env)
             if isinstance(st.target, ast.Name):
-                env[st.target.id] = env.get(st.target.id, set()) | o
+                name = st.target.id
+                po = (self.path_env.get(name, env.get(name, set())) | self.origins(st.value, env, path=True)) \
+                    if self.has_ext else None
+                env[name] = env.get(name, set()) | o
+                if po is not None:
+                    self.path_view(name, po, env[name])
                 if isinstance(st.op, ast.Add) and st.target.id in self.strs:
                     if len(self.strs[st.target.id]) < _STR_PARTS:
                         self.strs[st.target.id] = self.strs[st.target.id] + [st.value]
@@ -960,10 +970,12 @@ class _Py:
                         del self.strs[st.target.id]  # texto montado em dezenas de passos: segue só a origem
         elif isinstance(st, (ast.For, ast.AsyncFor)):
             _bind(st.target, self.origins(st.iter, env), env)
+            self.unpath(st.target)
         elif isinstance(st, (ast.With, ast.AsyncWith)):
             for it in st.items:
                 if it.optional_vars is not None:
                     _bind(it.optional_vars, self.origins(it.context_expr, env), env)
+                    self.unpath(it.optional_vars)
                     if isinstance(it.optional_vars, ast.Name) and isinstance(it.context_expr, ast.Call) and \
                             self._dot(it.context_expr.func) in _PY_CLIENT_CTOR:
                         self.clients.add(it.optional_vars.id)
@@ -977,8 +989,8 @@ class _Py:
         route = any(_ROUTE_DECO.search(d) for d in decos if d)
         tool = tool or any(_TOOL_DECO.search(d) for d in decos if d) or (node.name in self.tool_refs and self.cls is None)
         env = dict(outer)
-        saved = self.strs, self.vals
-        self.strs, self.vals = dict(saved[0]), dict(saved[1])
+        saved = self.strs, self.vals, self.path_env
+        self.strs, self.vals, self.path_env = dict(saved[0]), dict(saved[1]), dict(saved[2])
         a = node.args
         params = a.posonlyargs + a.args + a.kwonlyargs + [x for x in (a.vararg, a.kwarg) if x]
         defaults = dict(zip([p.arg for p in (a.posonlyargs + a.args)][::-1], a.defaults[::-1]))
@@ -987,6 +999,7 @@ class _Py:
         cli = not route and not tool and any(_CLI_DECO.search(d) for d in decos if d)
         segs = _route_segments(node) if route else {}
         for p in params:
+            self.path_env.pop(p.arg, None)
             if p.arg in ("self", "cls") or cli or segs.get(p.arg) == "typed" or _scalar_annotation(p.annotation) or \
                     self.validated(p, defaults.get(p.arg)) or ((tool or seeds) and _tool_injected(p)):
                 env.pop(p.arg, None)  # o parâmetro esconde a variável de fora com o mesmo nome
@@ -1012,13 +1025,45 @@ class _Py:
         if self.llm_sdk and any(isinstance(c, ast.Call) and self.is_llm_call(c, cost=True) for c in _walk(node)):
             self.llm_funcs.add(node.name)
         self.body(node.body, env, fn)
-        self.strs, self.vals = saved
+        self.strs, self.vals, self.path_env = saved
+
+    def ext_expr(self, n):
+        """os.path.splitext(nome)[1] (ou [-1]), com .lower() ou .strip() em cima: a extensão não tem / nem .., então num
+        caminho o nome do arquivo que veio de fora só escolhe o .png. Em SQL ou num comando ela continua sendo de fora."""
+        while isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in _EXT_STR:
+            n = n.func.value
+        if not (isinstance(n, ast.Subscript) and isinstance(n.value, ast.Call)):
+            return False
+        i = n.slice
+        if isinstance(i, ast.UnaryOp) and isinstance(i.op, ast.USub):
+            i = i.operand
+        return isinstance(i, ast.Constant) and i.value == 1 and self._dot(n.value.func).endswith("splitext")
+
+    def path_view(self, name, po, o):
+        if po != o:
+            self.path_env[name] = set(po)
+        else:
+            self.path_env.pop(name, None)
+
+    def unpath(self, target):
+        if self.path_env:
+            for n in _walk(target):
+                if isinstance(n, ast.Name):
+                    self.path_env.pop(n.id, None)
 
     def assign(self, targets, value, env, fn):
         o = self.origins(value, env)
+        po = self.origins(value, env, path=True) if self.has_ext and o else o
         for t in targets:
             self.assigned(t, value, fn)
             _bind(t, o, env)
+            if self.has_ext:
+                self.unpath(t)
+                if isinstance(t, ast.Name):
+                    self.path_view(t.id, po, o)
+                elif isinstance(t, (ast.Tuple, ast.List)) and len(t.elts) == 2 and isinstance(t.elts[1], ast.Name) and \
+                        isinstance(value, ast.Call) and self._dot(value.func).endswith("splitext"):
+                    self.path_env[t.elts[1].id] = set()  # raiz, ext = os.path.splitext(nome)
             if isinstance(t, ast.Name):
                 self.vals[t.id] = value
                 if _builds_string(value) or (isinstance(value, ast.Name) and value.id in self.strs):
@@ -1327,7 +1372,7 @@ class _Py:
                 return
         if target is None or _const_str(target) or fn.guard_path or fn.admin:
             return
-        o = self.origins(target, env)
+        o = self.origins(target, env, path=self.has_ext)
         if REQ in o:
             self.out.add("COD007", "high", ln, {"sink": (d or last) + "()"})
         elif TOOL in o:
