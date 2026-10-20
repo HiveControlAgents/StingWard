@@ -7,7 +7,7 @@ import re
 
 from . import gitsafe, review
 from .checks import TESTISH, agents, app, code, deps, is_text_source, secrets
-from .model import SEV_RANK, Context
+from .model import SEV_RANK, TEXT_BOMS, Context, decode_text
 
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "env", "__pycache__", ".next", ".nuxt", ".svelte-kit", ".turbo",
              "dist", "build", "out", "coverage", ".cache", "target", "vendor", ".pytest_cache", ".mypy_cache", ".tox",
@@ -83,11 +83,13 @@ def list_files(root: str, max_files: int = MAX_FILES, mode: str = "project", too
                     too_big.append(rel)
                 continue
             # Byte nulo indica binário, mas não basta para pular código: um "/*\0*/" no topo esconderia o arquivo.
+            # Texto em UTF-16 (com BOM) tem um nulo a cada letra ASCII e é texto.
             if not _CODE_EXT.search(rel):
                 try:
                     with open(p, "rb") as fh:
-                        if b"\0" in fh.read(4096):
-                            continue
+                        head = fh.read(4096)
+                    if b"\0" in head and not head.startswith(TEXT_BOMS):
+                        continue
                 except OSError:
                     continue
             out.append(rel)
@@ -108,9 +110,10 @@ def load_ignore(root: str):
     """Linhas do .stingwardignore: `REGRA`, `caminho/glob` ou `REGRA caminho/glob`."""
     rules = []
     try:
-        # Comentário em Latin-1 ou BOM no início não podem derrubar a varredura nem anular a primeira linha.
-        with open(os.path.join(root, ".stingwardignore"), encoding="utf-8-sig", errors="replace") as fh:
-            for line in fh:
+        # Comentário em Latin-1, BOM no início ou UTF-16 (echo REGRA > .stingwardignore no PowerShell) não podem
+        # derrubar a varredura nem anular as linhas.
+        with open(os.path.join(root, ".stingwardignore"), "rb") as fh:
+            for line in decode_text(fh.read()).split("\n"):
                 line = line.split("#", 1)[0].strip()
                 if not line:
                     continue
