@@ -52,7 +52,7 @@ class Dispatch(LockfileCase):
         yes = ["package-lock.json", "npm-shrinkwrap.json", "web/yarn.lock", "pnpm-lock.yaml", "bun.lock",
                "package.json", "requirements.txt", "requirements-dev.txt", "requirements_test.txt",
                "requirements.prod.txt", "poetry.lock", "uv.lock", "pdm.lock", "Pipfile.lock", "svc/go.mod",
-               "Cargo.lock", "Gemfile.lock", "composer.lock"]
+               "Cargo.lock", "Gemfile.lock", "composer.lock", "src/App/packages.lock.json"]
         no = ["requirements.in", "dev-requirements.txt", "package.json.bak", "Cargo.toml", "pyproject.toml",
               "Pipfile", "Gemfile", "go.sum", "bun.lockb", "yarn.lock.orig", "README.md"]
         for rel in yes:
@@ -1234,6 +1234,30 @@ class GemfileLock(LockfileCase):
 # --------------------------------------------------------------------------- composer.lock
 
 
+class NugetLock(LockfileCase):
+    LOCK = {"version": 1, "dependencies": {
+        "net8.0": {
+            "Newtonsoft.Json": {"type": "Direct", "requested": "[13.0.1, )", "resolved": "13.0.1",
+                                "contentHash": "ppPFpBcvxdsfUonNcvITKqLl3bqxWbDCZIzDWHzjpdAHRFfZe0Dw9HmA0+za13IdyrgJwpkDTDA9fHaxOrt20A=="},
+            "System.Text.Json": {"type": "Transitive", "resolved": "8.0.0"},
+            "Microsoft.Extensions.Logging": {"type": "CentralTransitive", "requested": "[8.0.0, )", "resolved": "8.0.0"},
+            "MyCompany.Shared": {"type": "Project", "dependencies": {"Newtonsoft.Json": "[13.0.1, )"}},
+        },
+        "net8.0/linux-x64": {"System.Text.Json": {"type": "Transitive", "resolved": "8.0.0"}},
+    }}
+
+    def test_packages_lock_json(self):
+        got = self.full("src/App/packages.lock.json", json.dumps(self.LOCK, indent=2))
+        self.assertEqual(sorted(set(x[:3] for x in got)), [
+            ("NuGet", "Microsoft.Extensions.Logging", "8.0.0"), ("NuGet", "Newtonsoft.Json", "13.0.1"),
+            ("NuGet", "System.Text.Json", "8.0.0")])
+        self.assertTrue(lockfiles.is_dependency_file("src/App/packages.lock.json"))
+
+    def test_malformed_does_not_crash(self):
+        self.assertNoCrash("packages.lock.json", ["", "{", "[]", '{"dependencies": []}', '{"dependencies": {"net8.0": []}}',
+                                                  '{"dependencies": {"net8.0": {"A": "x"}}}', DEEP_JSON])
+
+
 class ComposerLock(LockfileCase):
     def test_packages_and_packages_dev(self):
         lock = {
@@ -1657,6 +1681,21 @@ class Collect(LockfileCase):
                 want = ["tools/script/package.json"] if name == "yarn object form" else \
                     ["packages/legacy/package.json", "tools/script/package.json"]
                 self.assertEqual(sorted(rel for rel, _ in open_manifests), want)
+
+    def test_shrinkwrap_and_nuget_lockfiles_are_audited_but_not_scanned_as_text(self):
+        from stingward import scan
+        token = "gh" + "p_" + "aB3cD5eF7gH9iJ1kL3mN5oP7qR9sT1uVwX2y"
+        shrink = {"lockfileVersion": 3, "packages": {"": {}, "node_modules/left-pad": {
+            "version": "1.3.0", "resolved": f"https://npm.acme.dev/left-pad/-/left-pad-1.3.0.tgz?token={token}"}}}
+        nuget = {"version": 1, "dependencies": {"net8.0": {"Newtonsoft.Json": {"type": "Direct", "resolved": "12.0.1",
+                                                                               "contentHash": token}}}}
+        pkgs, _, _ = self.collect({"npm-shrinkwrap.json": shrink, "package.json": {"name": "app"},
+                                   "src/App/packages.lock.json": nuget})
+        self.assertEqual(sorted(p[:4] for p in pkgs), [
+            ("NuGet", "Newtonsoft.Json", "12.0.1", "src/App/packages.lock.json"),
+            ("npm", "left-pad", "1.3.0", "npm-shrinkwrap.json")])
+        found = scan.run(str(self.root), offline=True, only={"secrets"})[1]
+        self.assertEqual([f.file for f in found if f.rule.startswith("SEC")], [])
 
     def test_a_folder_below_a_lockfile_without_workspaces_is_not_covered(self):
         _, open_manifests, _ = self.collect({"package.json": {"name": "root"}, "package-lock.json": self.LOCK,

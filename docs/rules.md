@@ -71,7 +71,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 <a id="dep001"></a>
 ### DEP001 · Dependency version with known vulnerabilities
 
-Looks up every package and version from your lockfiles (npm, Yarn, pnpm, Bun, pip `requirements.txt`, Poetry, uv, Pipenv, PDM, Go modules, Cargo, Bundler, Composer) in OSV.dev. Severity comes from the advisory (CVSS or GitHub severity); a CVE in the **CISA KEV** catalog (exploited in the wild) is raised to critical, and an **EPSS** score of 50% or more (likely exploitation in the next 30 days) raises it one level. You get one finding per package, with the single upgrade that fixes all of its known issues.
+Looks up every package and version from your lockfiles (npm, Yarn, pnpm, Bun, pip `requirements.txt`, Poetry, uv, Pipenv, PDM, Go modules, Cargo, Bundler, Composer, NuGet `packages.lock.json`) in OSV.dev. Severity comes from the advisory (CVSS or GitHub severity); a CVE in the **CISA KEV** catalog (exploited in the wild) is raised to critical, and an **EPSS** score of 50% or more (likely exploitation in the next 30 days) raises it one level. You get one finding per package, with the single upgrade that fixes all of its known issues.
 
 **Fix:** upgrade to the version shown. If some issues have no fix yet, the finding says so: consider replacing the package.
 **Standards:** `CWE-1395`
