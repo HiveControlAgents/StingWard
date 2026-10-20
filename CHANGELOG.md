@@ -155,6 +155,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - Hugging Face tokens (`hf_`) without a digit are found. About 1 in 400 real tokens has none, and they were skipped as variable names; now upper and lower case letters after the prefix are enough.
 - A Clerk secret key (`sk_live_`, `sk_test_`, the same shape as Stripe's) is reported as "Clerk secret key" when the line mentions Clerk, instead of "Stripe key". The severity is unchanged: critical for live keys, low for test keys.
 - A dotenv-vault `.env.vault` (encrypted environments, made to be committed) no longer gets "remove it from git" (SEC002) or "add it to `.gitignore`" (SEC003). It still raises SEC002 high when it also holds a plain secret, and `.env.keys` counts as before.
+- A committed `.env.me` with a dotenv-vault login token (`DOTENV_ME=me_...`) is SEC002 high, not low: the token pulls every environment of the vault.
 
 ## [0.1.5] - 2026-10-20
 

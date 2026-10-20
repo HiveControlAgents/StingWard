@@ -428,6 +428,8 @@ def _env_has_secret(text: str) -> bool:
         # commitar esse arquivo é o uso previsto (a chave que abre fica no .env.keys, que continua contando).
         if val.startswith("encrypted:") or key.startswith(("DOTENV_PUBLIC_KEY", "DOTENV_VAULT")):
             continue
+        if key == "DOTENV_ME" and val.startswith("me_"):  # login do dotenv-vault: baixa todos os ambientes
+            return True
         toks = _tokens(val)
         # A chave anon do Supabase vai para o navegador de propósito; o SEC001 também não a conta. A service_role
         # padrão do Supabase local (_demo_key) também não abre nada fora da máquina.

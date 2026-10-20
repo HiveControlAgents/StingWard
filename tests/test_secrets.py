@@ -469,6 +469,11 @@ class CommittedEnv(Case):
         self.assertEqual(self.sev(".env.keys", keys), ["high"])
         self.assertEqual(brief(scan_files({".env.keys": keys}, tracked=set()), "SEC003"), [("SEC003", ".env.keys", None, "medium")])
 
+    def test_dotenv_vault_login_token_is_a_secret(self):
+        # .env.me holds DOTENV_ME, the token that logs in to the dotenv-vault account and pulls every environment.
+        self.assertEqual(self.sev(".env.me", "DOTENV_ME=me_" + "0dec82bea24ada79a983dcc11b431e28" * 2 + "\n"), ["high"])
+        self.assertEqual(self.sev(".env.me", "DOTENV_ME=me_your_token_here\n"), ["low"])
+
     def test_dotenvx_encrypted_file_is_low(self):
         text = (f'#/---[DOTENV_PUBLIC_KEY]---/\nDOTENV_PUBLIC_KEY="{self.HEX}"\nDOTENV_PUBLIC_KEY_PRODUCTION="{self.HEX}"\n\n'
                 f'OPENAI_API_KEY="{self.CIPHER}"\nDB_PASSWORD={self.CIPHER}\n')
