@@ -129,7 +129,7 @@ Not committed yet, but the next `git add .` takes it along.
 <a id="sec004"></a>
 ### SEC004 · Supabase `service_role` key in code
 
-The `service_role` key bypasses Row Level Security: whoever has it can read and change every table.
+The `service_role` key bypasses Row Level Security: whoever has it can read and change every table. The default key of a local Supabase (the one `supabase start` creates on every machine: issuer `supabase-demo`, signed with the CLI's default secret) is low, with a "local default key" note, and does not make a committed `.env` high. Any other `service_role` key is critical.
 
 **Fix:** keep it only on the server, never in the frontend, and rotate it in the Supabase dashboard.
 **Standards:** `CWE-798`

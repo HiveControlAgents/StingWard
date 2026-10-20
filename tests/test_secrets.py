@@ -3,6 +3,8 @@
 Segredos falsos são montados por concatenação, para o repositório continuar limpo na própria auditoria.
 """
 import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -347,6 +349,13 @@ def jwt(payload):
     return enc({"alg": "HS256", "typ": "JWT"}) + "." + enc(payload) + "." + "Ab3dE5gH7jK9lM1nP3qR5sT7uV9wX1yZ3aB5cD7eF9g"
 
 
+def signed_jwt(payload, secret):
+    b = lambda raw: base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    head = b(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode()) + "." + \
+        b(json.dumps(payload, separators=(",", ":")).encode())
+    return head + "." + b(hmac.new(secret, head.encode(), hashlib.sha256).digest())
+
+
 class CommittedEnv(Case):
     HEX = "03f1e0f2c3b4a5968778695a4b3c2d1e0f9e8d7c6b5a49382716051f2e3d4c5b"
     CIPHER = "encrypted:BDqDBibm4wsYqMpCjTQ6BsDHmMadg9K3dAt+Z9HPMfLEIRVz50hmLXPXRuDBXaJi/LwWYEVUNiq0HIS" + R36
@@ -359,6 +368,16 @@ class CommittedEnv(Case):
         anon = jwt({"iss": "supabase", "ref": "abcdefghijklmnop", "role": "anon"})
         self.assertEqual(self.sev(".env", "NEXT_PUBLIC_SUPABASE_URL=https://abcdefghijklmnop.supabase.co\n"
                                           f"NEXT_PUBLIC_SUPABASE_ANON_KEY={anon}\nSUPABASE_ANON_KEY=\"{anon}\"\n"), ["low"])
+
+    def test_supabase_local_demo_keys_only_is_low(self):
+        # The .env that supabase start prints: local URL, the demo anon key and the demo service_role key.
+        secret = b"super-secret-jwt-token-with-at-least-" + b"32-characters-long"
+        demo = lambda role: signed_jwt({"iss": "supabase-demo", "role": role, "exp": 1983812996}, secret)
+        text = (f"SUPABASE_URL=http://127.0.0.1:54321\nSUPABASE_ANON_KEY={demo('anon')}\n"
+                f"SUPABASE_SERVICE_ROLE_KEY={demo('service_role')}\n")
+        self.assertEqual(self.sev(".env", text), ["low"])
+        other = signed_jwt({"iss": "supabase-demo", "role": "service_role"}, b"project-own-secret-" + b"Q8w3E5r7T9y1")
+        self.assertEqual(self.sev(".env", f"SUPABASE_SERVICE_ROLE_KEY={other}\n"), ["high"])
 
     def test_dotenvx_encrypted_file_is_low(self):
         text = (f'#/---[DOTENV_PUBLIC_KEY]---/\nDOTENV_PUBLIC_KEY="{self.HEX}"\nDOTENV_PUBLIC_KEY_PRODUCTION="{self.HEX}"\n\n'

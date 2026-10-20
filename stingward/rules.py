@@ -74,11 +74,11 @@ RULES = {
     },
     "SEC004": {
         "group": "secrets",
-        "pt": ("Chave service_role do Supabase no código",
-               "Essa chave ignora todas as regras de acesso (RLS). Com ela, qualquer pessoa lê e apaga o banco inteiro.",
+        "pt": ("Chave service_role do Supabase no código{note}",
+               "Essa chave ignora todas as regras de acesso (RLS). Com ela, qualquer pessoa lê e apaga o banco inteiro.{local}",
                "Gere uma chave nova no painel do Supabase (Settings > API), use a service_role só no servidor e a anon no front-end."),
-        "en": ("Supabase service_role key in code",
-               "This key bypasses every access rule (RLS). With it anyone can read and delete the whole database.",
+        "en": ("Supabase service_role key in code{note}",
+               "This key bypasses every access rule (RLS). With it anyone can read and delete the whole database.{local}",
                "Rotate it in the Supabase dashboard (Settings > API), keep service_role server-side only and use the anon key in the frontend."),
     },
     # ------------------------------------------------------------------ apps feitos com IA

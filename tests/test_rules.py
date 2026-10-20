@@ -5,6 +5,8 @@ montados por concatenação, e caracteres invisíveis aparecem só como escapes,
 próprio repositório continue limpo na auditoria do CI.
 """
 import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -43,6 +45,14 @@ LINEAR = "lin_api_" + "Zq8W3e5R7t9Y1u3I5o7P9a1S3d5F7g9H0jK2"
 def jwt(payload):
     b = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
     return b({"alg": "HS256", "typ": "JWT"}) + "." + b(payload) + ".c2lnbmF0dXJlYWJj"
+
+
+def signed_jwt(payload, secret):
+    """JWT HS256 assinado de verdade, com o JSON compacto como o Supabase gera."""
+    b = lambda raw: base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    head = b(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode()) + "." + \
+        b(json.dumps(payload, separators=(",", ":")).encode())
+    return head + "." + b(hmac.new(secret, head.encode(), hashlib.sha256).digest())
 
 
 def tag_text(msg):
@@ -221,6 +231,28 @@ class SecretRules(RuleTest):
         f = self.scan({"lib/supabaseAdmin.ts": f'import {{ createClient }} from "@supabase/supabase-js"\n'
                                                 f'export const admin = createClient(url, "{svc}")\n'})
         self.assertEqual(brief(f), [("SEC004", "lib/supabaseAdmin.ts", 2, "critical")])
+
+    def test_sec004_supabase_local_demo_key_is_low(self):
+        # The key that supabase start writes on every machine: issuer supabase-demo, signed with the CLI's default
+        # secret. It only opens a local database. Built here, never written down.
+        demo_secret = b"super-secret-jwt-token-with-at-least-" + b"32-characters-long"
+        claims = {"iss": "supabase-demo", "role": "service_role", "exp": 1983812996}
+        f = self.scan({"scripts/seed.ts": f'const admin = createClient("http://127.0.0.1:54321", "{signed_jwt(claims, demo_secret)}")\n'})
+        self.assertEqual(brief(f), [("SEC004", "scripts/seed.ts", 1, "low")])
+        self.assertEqual(texts("SEC004", "en", f[0].params)[0], "Supabase service_role key in code (local default key)")
+        self.assertEqual(texts("SEC004", "pt", f[0].params)[0],
+                         "Chave service_role do Supabase no código (chave padrão do ambiente local)")
+        self.assertIn("supabase start", texts("SEC004", "en", f[0].params)[1])
+        self.assertIn("supabase start", texts("SEC004", "pt", f[0].params)[1])
+        # Any other service_role key stays critical: same claims with another secret, another issuer with the demo
+        # secret, and the demo claims with a made-up signature.
+        for token in (signed_jwt(claims, b"another-secret-of-this-project-" + b"9f3k2m7q"),
+                      signed_jwt(dict(claims, iss="supabase"), demo_secret),
+                      jwt(claims)):
+            with self.subTest(token=token[-12:]):
+                f = self.scan({"lib/admin.ts": f'export const admin = createClient(url, "{token}")\n'})
+                self.assertEqual(brief(f), [("SEC004", "lib/admin.ts", 1, "critical")])
+                self.assertNotIn("local", texts("SEC004", "en", f[0].params)[0])
 
     def test_sec004_anon_and_authenticated_keys_are_public(self):
         anon, auth = jwt({"iss": "supabase", "role": "anon"}), jwt({"role": "authenticated"})
