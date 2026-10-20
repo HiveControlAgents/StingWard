@@ -31,8 +31,11 @@ class NetError(Exception):
     pass
 
 
-def fetch_json(url: str, body=None, ttl: int = 0, timeout: int = 30, headers=None):
-    """GET (ou POST com body) que devolve JSON. ttl > 0 usa cache em disco."""
+def fetch_json(url: str, body=None, ttl: int = 0, timeout: int = 30, headers=None, valid=None):
+    """GET (ou POST com body) que devolve JSON. ttl > 0 usa cache em disco.
+
+    valid(dados) diz se a resposta tem a forma esperada. Resposta fora da forma (proxy, portal cativo, API mudada)
+    conta como falha: tenta de novo, não vai para o cache e, no fim, vira NetError. Cópia assim no cache é ignorada."""
     path = None
     cache = cache_dir() if ttl else None
     if cache is not None:
@@ -40,7 +43,9 @@ def fetch_json(url: str, body=None, ttl: int = 0, timeout: int = 30, headers=Non
         path = cache / f"{key}.json"
         try:
             if time.time() - path.stat().st_mtime < ttl:
-                return json.loads(path.read_text("utf-8"))
+                cached = json.loads(path.read_text("utf-8"))
+                if valid is None or valid(cached):
+                    return cached
         except (OSError, ValueError):
             pass
     data = json.dumps(body).encode() if body is not None else None
@@ -52,6 +57,8 @@ def fetch_json(url: str, body=None, ttl: int = 0, timeout: int = 30, headers=Non
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 out = json.loads(r.read().decode("utf-8"))
+            if valid is not None and not valid(out):
+                raise ValueError("unexpected response")
             break
         except urllib.error.HTTPError as e:
             last = e
