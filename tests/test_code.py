@@ -434,6 +434,32 @@ class CodeRules(Checks):
               "  useEffect(() => { fetch(q) }, [q])\n  return null\n}\n")
         self.silent({"app.py": py, "app/search/page.tsx": js})
 
+    def test_cod008_base_address_in_a_variable_stays_silent(self):
+        """full = BASE + caminho; requests.get(full): o começo do endereço é o do código, como em f"{BASE}/{caminho}".
+        Quando o começo vem da requisição (u + '/x'), continua alto."""
+        py = FLASK + ("import requests\nBASE = 'https://api.example.com'\n"
+                      "@app.get('/a')\ndef a():\n"
+                      "    path = request.args['p']\n"
+                      "    full = BASE + path\n"
+                      "    r = requests.get(full)\n"
+                      "    return requests.get(BASE + path).text + r.text\n"
+                      "@app.get('/b')\ndef b():\n"
+                      "    u = request.args['u']\n"
+                      "    full = u + '/x'\n"
+                      "    return requests.get(full).text\n")
+        js = ("const BASE = 'https://api.example.com'\nconst SUFFIX = '/v1'\n"
+              "export async function GET(req) {\n"
+              "  const { searchParams } = new URL(req.url)\n"
+              "  const p = searchParams.get('p')\n"
+              "  const full = BASE + p\n"
+              "  const a = await fetch(full)\n"
+              "  const target = searchParams.get('url')\n"
+              "  const full2 = target + SUFFIX\n"
+              "  const b = await fetch(full2)\n"
+              "  return new Response((await a.text()) + (await b.text()))\n}\n")
+        self.check({"app.py": py, "app/api/proxy/route.ts": js},
+                   [("COD008", "app.py", 15, "high"), ("COD008", "app/api/proxy/route.ts", 10, "high")])
+
     # ------------------------------------------------------------------ COD009 redirect
 
     def test_cod009_redirect_to_request_address(self):
