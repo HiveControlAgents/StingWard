@@ -267,6 +267,8 @@ _VALUE_POS = re.compile(r"""(?:'|%|(?:[=<>]|\blike|\bilike|\bin\s*\(|\bvalues\s*
 # Começo de endereço que para onde o host ou a porta começa: "https://", "//", "http://localhost:". O que vem depois
 # decide o servidor ("evil.com/?", "@evil.com"). "https://api.example.com" + caminho é a base do código mais o caminho.
 _IN_HOST = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*:)?//(?:[^/?#\\\s]*[.:@])?\Z")
+# Começo de redirect feito só de barras ("/", "\\", "//"): o que vem depois pode ser o host de outro site.
+_ONLY_SLASHES = re.compile(r"[/\\]{1,8}\Z")
 _SQL_DDL = re.compile(r"\s*\(?\s*(?:pragma|create|drop|alter|truncate)\b", re.I)
 # Nome de variável que costuma guardar placeholders (",".join("?" * n)) ou um pedaço de SQL escrito no código (tabela,
 # coluna, ORDER BY, WHERE montado). O pedaço só conta fora da posição de dado: '{query}' é o texto da busca. marks é a
@@ -1545,20 +1547,21 @@ class _Py:
             return True
         return isinstance(v, ast.Call) and self._dot(v.func).endswith(("Path", "PurePath", "os.path.join", "joinpath"))
 
-    def lead_origins(self, node, env, depth=0, host=False):
+    def lead_origins(self, node, env, depth=0, host=False, slash=False):
         """Origens do começo do endereço (esquema e host), não de um pedaço do caminho. host: o host escrito depois de um
         "https://" fixo também conta (para buscar no servidor; num redirect para https://{Host}/ ninguém de fora manda o
-        cabeçalho Host pelo navegador de outra pessoa)."""
+        cabeçalho Host pelo navegador de outra pessoa). slash: só barras na frente ("/" + next) não prendem o redirect no
+        site, porque next = "/evil.com" vira //evil.com."""
         if isinstance(node, ast.BoolOp):
-            return self.lead_origins(node.values[0], env, depth, host)
+            return self.lead_origins(node.values[0], env, depth, host, slash)
         v = self.vals.get(node.id) if isinstance(node, ast.Name) and node.id not in self.strs else None
         if depth < 3 and isinstance(v, ast.BinOp) and isinstance(v.op, ast.Add):
             # full = BASE + caminho; requests.get(full): o começo é o do valor declarado.
-            return self.lead_origins(v, env, depth + 1, host)
+            return self.lead_origins(v, env, depth + 1, host, slash)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add) and not _builds_string(node):
             while isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
                 node = node.left  # BASE + caminho: o começo é o da esquerda
-            return self.lead_origins(node, env, depth + 1, host)
+            return self.lead_origins(node, env, depth + 1, host, slash)
         if isinstance(node, ast.Name) and node.id in self.strs:
             parts = self.pieces(node, env)
         elif _builds_string(node):
@@ -1568,13 +1571,15 @@ class _Py:
         parts = [p for p in parts if not (p[0] == "lit" and p[1] == "")]
         if host and len(parts) > 1 and parts[0][0] == "lit" and _IN_HOST.match(parts[0][1]):
             parts = parts[1:]  # f"https://{host}/x": o texto fixo para onde o host começa
+        if slash and len(parts) > 1 and parts[0][0] == "lit" and _ONLY_SLASHES.match(parts[0][1]):
+            parts = parts[1:]
         if parts and parts[0][0] == "expr" and parts[0][1] is not None:
             return self.origins(parts[0][1], env)
         return set()
 
     def start_controlled(self, node, env):
         """A requisição decide o começo do endereço (esquema e host), não só um pedaço do caminho."""
-        return REQ in self.lead_origins(node, env)
+        return REQ in self.lead_origins(node, env, slash=True)
 
     def urls(self, call, d, last, env, fn, ln):
         f = call.func
@@ -3726,8 +3731,9 @@ class _Js:
             return True, fixed
         return TOOL not in self.origins(*parts[0][1]), fixed
 
-    def lead_origins(self, a, b, depth=0, host=False):
-        """Origens do começo do endereço (esquema e host), não de um pedaço do caminho. host: como em _Py.lead_origins."""
+    def lead_origins(self, a, b, depth=0, host=False, slash=False):
+        """Origens do começo do endereço (esquema e host), não de um pedaço do caminho. host e slash: como em
+        _Py.lead_origins."""
         a, b = self.trim(a, b)
         s = self.mask[a:b]
         if depth < 3 and s in self.vals and s not in self.strs:
@@ -3736,7 +3742,7 @@ class _Js:
             x, y = self.trim(*self.vals[s])
             if re.match(r"new\s+URL\s*\(", self.mask[x:y]) and self.close(self.mask.index("(", x)) == y - 1 or \
                     len(self.split_plus(x, y)) > 1:
-                return self.lead_origins(x, y, depth + 1, host)
+                return self.lead_origins(x, y, depth + 1, host, slash)
         w = re.match(r"(?:new\s+URL|decodeURIComponent|decodeURI|String|encodeURI)\s*\(", s)
         if w and self.close(a + w.end() - 1) == b - 1:
             inner = self.args(a + w.end())
@@ -3747,6 +3753,8 @@ class _Js:
         parts = [p for p in parts if not (p[0] == "lit" and not p[1])]
         if host and len(parts) > 1 and parts[0][0] == "lit" and _IN_HOST.match(parts[0][1]):
             parts = parts[1:]  # `https://${host}/x`
+        if slash and len(parts) > 1 and parts[0][0] == "lit" and _ONLY_SLASHES.match(parts[0][1]):
+            parts = parts[1:]  # `/${next}`
         if not parts or parts[0][0] != "expr":
             return set()
         x, y = parts[0][1]
@@ -3754,7 +3762,7 @@ class _Js:
         return self.origins(x, x + len(first)) if first else set()
 
     def start_controlled(self, a, b):
-        return REQ in self.lead_origins(a, b)
+        return REQ in self.lead_origins(a, b, slash=True)
 
     def fetch(self, m):
         if not self.lead_ok(m.start(), not _JS_BARE_FETCH.match(m.group(0))):

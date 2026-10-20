@@ -325,7 +325,7 @@ An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, 
 <a id="cod009"></a>
 ### COD009 · Redirect to an address taken from the request
 
-`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` with a URL parameter, and similar. A path that starts with a fixed `/...`, `url_for` and a check of the host are not reported.
+`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` with a URL parameter, and similar. A path that starts with a fixed `/...`, `url_for` and a check of the host are not reported. A start made only of slashes (`"/" + next`, `` `/${next}` ``, `"//" + host`) is reported: with `next = "/evil.com"` the browser goes to `//evil.com`, another site.
 
 **Fix:** redirect only to relative paths that start with a single `/` or to domains from a known list.
 **Standards:** `CWE-601`

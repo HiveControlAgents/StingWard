@@ -325,7 +325,7 @@ f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `rea
 <a id="cod009"></a>
 ### COD009 · Redirecionamento para um endereço que veio da requisição
 
-`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` com um parâmetro da URL e parecidos. Caminho que começa com um `/...` fixo, `url_for` e checagem do host não entram.
+`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` com um parâmetro da URL e parecidos. Caminho que começa com um `/...` fixo, `url_for` e checagem do host não entram. Começo feito só de barras (`"/" + next`, `` `/${next}` ``, `"//" + host`) entra: com `next = "/evil.com"`, o navegador vai para `//evil.com`, outro site.
 
 **Como corrigir:** redirecione só para caminhos relativos que começam com uma única `/` ou para domínios de uma lista conhecida.
 **Padrões:** `CWE-601`
