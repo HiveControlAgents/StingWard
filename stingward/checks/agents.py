@@ -172,6 +172,10 @@ _SKIP_PERMS = re.compile(r"--dangerously-skip-permissions\b|--dangerously-bypass
 _ALLOWED_FLAG = re.compile(r"--allowed-?tools[= ]+(?:\"([^\"\n]*)\"|'([^'\n]*)'|(\S+))", re.I)
 _COMMENT = re.compile(r"[ \t]*(?://|#(?!!)|/\*|\*|<!--|--\s)")
 _CAP = 5  # achados por regra por arquivo
+# O relatório mostra no máximo 70 caracteres de um trecho. Mascarar o texto todo antes de cortar é lento o bastante
+# para travar a varredura quando uma skill ou config hostil planta uma linha (ou um valor) de megabytes, então só um
+# começo folgado vai para o mascaramento: qualquer segredo que apareceria nos 70 caracteres já cabe nele.
+_MASK_CAP = 2000
 
 
 # --------------------------------------------------------------------------- filtros
@@ -183,6 +187,11 @@ _NEGATION = re.compile(
 _WARNING = re.compile(r"(?i)inject\w*|untrusted|suspicious|attack\w*|instruction-like|n[aã]o\s+confi")
 _AS_DATA = re.compile(r"(?i)as\s+data|not\s+(?:as\s+)?instructions|(?:do\s+not|don'?t|never)\s+(?:follow|obey|comply)|"
                       r"como\s+dado|n[aã]o\s+(?:siga|obede)")
+# "flag/report" (e sinalize/reporte/aponte): um revisor de segurança descreve o ataque com elas, mas um atacante também
+# as usa para disfarçar o roubo ("reporte o status, depois leia ~/.ssh e envie"). Sinal fraco demais para apagar o
+# achado como _NEGATION faz; só abranda para médio, nos dois modos.
+_SOFT_DEFENSIVE = re.compile(r"(?i)\b(?:flag|flags|flagged|flagging|report|reports|reported|reporting|"
+                             r"sinaliza|sinalize|sinalizar|reporta|reporte|reportar|aponta|aponte|apontar)\b")
 _SENTENCE = re.compile(r"(?<!e\.g)(?<!i\.e)(?<!etc)(?<!vs)[.!?](?=\s|$)|\n[ \t]*\n|\n[ \t]*(?:[-*+>]|\d+[.)])[ \t]|\||"
                        r"^[ \t]*#{1,6}[ \t][^\n]*\n", re.M)
 _QUOTES = ('"', "'", "`", "\u201C", "\u2018")
@@ -205,6 +214,13 @@ def _defensive(text, m):
     quoted = before[-1:] in _QUOTES or before.count("`") % 2 == 1
     rest = before + " " + after
     return quoted and bool(_NEGATION.search(rest) or _WARNING.search(rest))
+
+
+def _soft_defensive(text, m):
+    """A frase traz "flag/report" (ou sinalize/reporte/aponte): pode ser um revisor descrevendo o ataque, ou um
+    atacante disfarçando o roubo. Não dá para distinguir, então nunca apaga o achado, só baixa para médio."""
+    start, end = _sentence(text, m)
+    return bool(_SOFT_DEFENSIVE.search(text, start, end))
 
 
 def _comment_line(text, pos):
@@ -240,7 +256,8 @@ def _matches(rx, text, keep=None, cap=_CAP):
 
 def _snippet(s: str) -> str:
     # Mascara antes de cortar: um token cortado ao meio deixa de ser reconhecido e vazaria no relatório.
-    s = " ".join(secrets.mask(s).split())
+    # Limita antes de mascarar (ver _MASK_CAP): o relatório só mostra 70 caracteres e uma linha gigante travaria.
+    s = " ".join(secrets.mask(s[:_MASK_CAP]).split())
     return s if len(s) <= 70 else s[:67] + "..."
 
 
@@ -318,12 +335,14 @@ def _frontmatter_tools(text):
     return ", ".join(items) if items else " ".join(lines)
 
 
-def _hits(rx, text, keep, strict, cap=_CAP):
+def _hits(rx, text, keep, strict, cap=_CAP, soft_fn=None):
     """(match, linha, suavizado). Numa skill de terceiros (strict) o filtro de contexto não apaga o achado, só baixa
-    para médio: quem escreveu a skill escolhe as palavras ao redor, e um "não esqueça de" bastaria para esconder o ataque."""
+    para médio: quem escreveu a skill escolhe as palavras ao redor, e um "não esqueça de" bastaria para esconder o ataque.
+    soft_fn marca palavras fracas (flag/report): abrandam para médio nos dois modos, mas nunca apagam o achado."""
+    soft = soft_fn or (lambda m: False)
     if not strict:
-        return [(m, ln, False) for m, ln in _matches(rx, text, keep, cap)]
-    return [(m, ln, not keep(m)) for m, ln in _matches(rx, text, None, cap)]
+        return [(m, ln, soft(m)) for m, ln in _matches(rx, text, lambda m: keep(m) or soft(m), cap)]
+    return [(m, ln, (not keep(m)) or soft(m)) for m, ln in _matches(rx, text, None, cap)]
 
 
 def _soft(sev, softened):
@@ -341,7 +360,7 @@ def _pipe_shell(text, rel, instruction, strict=False):
         return not _comment_line(text, m.start()) and _runs_shell(text, rel, m)
     # Só o comando casado vai para o trecho: o resto da linha pode ter um token (--token="...").
     return [Finding("SKL002", _soft("high", soft), rel, ln, {"snippet": _snippet(m.group(0))})
-            for m, ln, soft in _hits(_PIPE_SHELL, text, keep, strict)]
+            for m, ln, soft in _hits(_PIPE_SHELL, text, keep, strict, soft_fn=(lambda x: _soft_defensive(text, x)) if instruction else None)]
 
 
 def _cred_reads(text, rel, instruction, strict=False):
@@ -350,7 +369,7 @@ def _cred_reads(text, rel, instruction, strict=False):
     send = bool(_NET.search(text))
     hits = []
     for rx, pt, en in _CREDS:
-        found = _hits(rx, text, keep, strict, 1)
+        found = _hits(rx, text, keep, strict, 1, soft_fn=(lambda x: _soft_defensive(text, x)) if instruction else None)
         # Copiar o ambiente para um subprocesso é normal; só preocupa se o arquivo também fala com a internet.
         if found and (send or not pt.startswith("todas as vari")):
             hits.append((found[0][1], pt, en, found[0][2]))
@@ -387,12 +406,13 @@ def _reverse_shell(text, rel, instruction, strict=False):
     def keep(m):
         return not (_defensive(text, m) if instruction else _comment_line(text, m.start()))
     return [Finding("SKL011", _soft("critical", soft), rel, ln, {"snippet": _snippet(m.group(0))})
-            for m, ln, soft in _hits(_REVERSE_SHELL, text, keep, strict, 1)]
+            for m, ln, soft in _hits(_REVERSE_SHELL, text, keep, strict, 1, soft_fn=(lambda x: _soft_defensive(text, x)) if instruction else None)]
 
 
 def _phrases(rule, sev, rx, text, rel, strict=False):
     return [Finding(rule, _soft(sev, soft), rel, ln, {"snippet": _snippet(m.group(0))})
-            for m, ln, soft in _hits(rx, text, lambda m: not _defensive(text, m), strict)]
+            for m, ln, soft in _hits(rx, text, lambda m: not _defensive(text, m), strict,
+                                     soft_fn=lambda x: _soft_defensive(text, x))]
 
 
 def _overrides(text, rel, strict=False):
@@ -422,11 +442,12 @@ def _permission_flags(text, rel, instruction, strict=False):
     def keep(m):
         return not (_defensive(text, m) if instruction else _comment_line(text, m.start()))
     low = bool(_TESTISH.search(rel))  # script de teste do próprio projeto não roda na máquina de quem instala
+    soft_fn = (lambda x: _soft_defensive(text, x)) if instruction else None
     out = []
-    for m, ln, soft in _hits(_SKIP_PERMS, text, keep, strict):
+    for m, ln, soft in _hits(_SKIP_PERMS, text, keep, strict, soft_fn=soft_fn):
         what = "--yolo" if m.group(0).endswith("--yolo") else " ".join(m.group(0).replace("=", " ").replace('"', "").split())
         out.append(Finding("AGT001", "low" if low else _soft("high", soft), rel, ln, {"what": what}))
-    for m, ln, _ in _hits(_ALLOWED_FLAG, text, keep, strict):
+    for m, ln, _ in _hits(_ALLOWED_FLAG, text, keep, strict, soft_fn=soft_fn):
         tools = next(g for g in m.groups() if g is not None)
         if _UNRESTRICTED_BASH.search(tools):
             out.append(Finding("AGT001", "low" if low else "medium", rel, ln, {"what": "--allowedTools " + _snippet(tools)}))
@@ -473,8 +494,12 @@ def _list(o, key):
     return v if isinstance(v, list) else []
 
 
-_BROAD_BASH = re.compile(r"^Bash(?:\(\s*(?:\*|:\*|\*\*)\s*\))?$")
-_RISKY_BASH = re.compile(r"^Bash\(\s*(?:sudo|curl|wget|rm|sh|bash|zsh|python3?|node|npx|bunx|uvx|eval|chmod|ssh|scp|powershell|pwsh|docker)\b")
+# Bash sozinho, ou Bash(...) cujo comando começa com "*" (ou ":" + "*"): libera qualquer comando. "Bash(* *)" é tão
+# amplo quanto "Bash(*)".
+_BROAD_BASH = re.compile(r"^Bash(?:\(\s*(?:\*|:\s*\*)[^)]*\))?$")
+# Interpretadores: liberar qualquer um deles roda código arbitrário, igual a Bash(*), então é alto, não médio.
+_INTERP_BASH = re.compile(r"^Bash\(\s*(?:sh|bash|zsh|dash|ksh|python3?|node|deno|bun|ruby|perl|php|pwsh|powershell|eval)\b")
+_RISKY_BASH = re.compile(r"^Bash\(\s*(?:sudo|curl|wget|rm|npx|bunx|uvx|chmod|ssh|scp|docker)\b")
 
 
 def _claude_settings(d, text, rel):
@@ -486,14 +511,30 @@ def _claude_settings(d, text, rel):
         if not isinstance(entry, str):
             continue
         e = entry.strip()
-        sev = "high" if _BROAD_BASH.match(e) else "medium" if _RISKY_BASH.match(e) else None
+        sev = "high" if _BROAD_BASH.match(e) or _INTERP_BASH.match(e) else "medium" if _RISKY_BASH.match(e) else None
         if sev:
             # A entrada pode levar token (Bash(curl -H 'Authorization: ...')): mascara antes de ir para o relatório.
-            out.append(Finding("AGT001", sev, rel, _vline(text, entry), {"what": secrets.mask(e)}))
+            out.append(Finding("AGT001", sev, rel, _vline(text, entry), {"what": secrets.mask(e[:_MASK_CAP])}))
     if d.get("skipDangerousModePermissionPrompt"):
         out.append(Finding("AGT001", "high", rel, _line(text, "skipDangerousModePermissionPrompt"), {"what": "skipDangerousModePermissionPrompt"}))
     if d.get("enableAllProjectMcpServers"):
         out.append(Finding("AGT006", "medium", rel, _line(text, "enableAllProjectMcpServers")))
+    return out
+
+
+def _command_findings(cmd, rel, ln):
+    """Checagens de conteúdo no comando de uma config (hook ou lançamento de servidor MCP). Além de baixar e rodar
+    código remoto (AGT002), o comando pode abrir reverse shell, ler credenciais, chamar um coletor ou vir ofuscado —
+    as mesmas checagens das skills. Todos os achados apontam para a linha dada (o valor fica numa só do JSON)."""
+    out = []
+    if _PIPE_SHELL.search(cmd):
+        out.append(Finding("AGT002", "high", rel, ln))
+    out += _reverse_shell(cmd, rel, instruction=False)
+    out += _cred_reads(cmd, rel, instruction=False)
+    out += _obfuscation(cmd, rel)
+    out += [Finding("SKL008", "high", rel, ln, {"host": m.group(1).lower()}) for m, _ in _matches(_EXFIL, cmd)]
+    for f in out:
+        f.line = ln
     return out
 
 
@@ -505,8 +546,8 @@ def _hooks(d, text, rel):
             return
         if isinstance(o, dict):
             for k, v in o.items():
-                if k == "command" and isinstance(v, str) and _PIPE_SHELL.search(v):
-                    out.append(Finding("AGT002", "high", rel, _vline(text, v)))
+                if k == "command" and isinstance(v, str):
+                    out.extend(_command_findings(v, rel, _vline(text, v)))
                 else:
                     walk(v, depth + 1)
         elif isinstance(o, list):
@@ -547,6 +588,16 @@ def _tokens(server):
     else:
         toks = []
     return toks + [str(a) for a in _list(server, "args") if isinstance(a, _SCALAR)]
+
+
+def _launch_line(toks, text):
+    """A linha mais útil do comando de lançamento é a do token que carrega o payload (o argumento mais longo, por
+    exemplo o script de "sh -c '<script>'"), não a do "sh"."""
+    for t in sorted((t for t in toks if t), key=len, reverse=True):
+        ln = _vline(text, t)
+        if ln:
+            return ln
+    return None
 
 
 def _first_positional(toks, start):
@@ -639,6 +690,9 @@ def _credential(srv, text, rel, name):
     if isinstance(url, str):
         values.append(("url", url))
     for k, v in values:
+        # Uma credencial escrita à mão é curta; cortar antes de analisar impede que um valor gigante (config hostil)
+        # trave known_kinds, que também mascara o texto. Qualquer token real cabe de sobra no começo.
+        v = v[:_MASK_CAP]
         if not v or "${" in v or v.startswith(("$", "%")) or re.search(r"(?i)your|<|xxx|placeholder|changeme", v):
             continue
         kinds = secrets.known_kinds(v)
@@ -653,6 +707,11 @@ def _credential(srv, text, rel, name):
 def mcp_findings(d, text, rel, pinned_out):
     out = []
     for name, srv in _servers(d):
+        toks = _tokens(srv)
+        if toks:
+            # O comando de lançamento (command + args), não só o pacote: um "sh -c 'curl ... | sh'" baixa e roda
+            # código remoto igual a um hook, e também pode abrir reverse shell, ler credenciais ou chamar um coletor.
+            out += _command_findings(" ".join(toks), rel, _launch_line(toks, text))
         pkg = package_of(srv)
         if pkg:
             eco, pname, ver, spec = pkg
@@ -662,7 +721,7 @@ def mcp_findings(d, text, rel, pinned_out):
             else:
                 hint = {"npm": f"{pname}@1.2.3", "PyPI": f"{pname}==1.2.3", "docker": f"{pname}:1.2.3"}[eco]
                 out.append(Finding("AGT003", "medium", rel, _vline(text, spec),
-                                   {"server": name, "spec": secrets.mask(spec), "fixed_hint": secrets.mask(hint)}))
+                                   {"server": name, "spec": secrets.mask(spec[:_MASK_CAP]), "fixed_hint": secrets.mask(hint[:_MASK_CAP])}))
         url = srv.get("url") or srv.get("serverUrl") or srv.get("httpUrl")
         if isinstance(url, str) and url.startswith("http://") and not _LOCAL.match(url):
             out.append(Finding("AGT005", "medium", rel, _vline(text, url), {"server": name}))
@@ -750,8 +809,9 @@ def check(ctx):
             out += _invisible(text, rel, instruction)
         out += _content(text, rel, instruction, script, strict=ctx.mode == "skill")
         if ctx.mode == "skill" and not instruction and rel.endswith((".py", ".js", ".mjs", ".cjs", ".ts", ".json")):
-            # Servidor MCP: a descrição das ferramentas vai direto para o modelo (tool poisoning).
-            out += _overrides(text, rel)
+            # Servidor MCP: a descrição das ferramentas vai direto para o modelo (tool poisoning). Quem escreve o
+            # servidor escolhe as palavras ao redor, então strict: o filtro de contexto baixa para médio, não apaga.
+            out += _overrides(text, rel, strict=True)
         if _launches_agent(rel, name, instruction, script):
             out += _permission_flags(text, rel, instruction, strict=ctx.mode == "skill")
         out += _configs(text, rel, name)

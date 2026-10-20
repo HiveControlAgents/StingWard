@@ -19,12 +19,15 @@ inputs:
     description: Comment the report on pull requests (needs pull-requests write)
     default: "true"
   sarif:
-    description: Upload SARIF to GitHub code scanning (needs security-events write)
+    description: Upload SARIF to GitHub code scanning (needs security-events write, plus actions read in private repositories)
     default: "true"
+  category:
+    description: Code scanning category for the SARIF. Give each run its own when one workflow audits several folders
+    default: stingward
 
 outputs:
   grade:
-    description: Grade from A to F
+    description: Grade from A to F, or none when no file was read
     value: ${{ steps.scan.outputs.grade }}
 
 runs:
@@ -55,7 +58,7 @@ runs:
           --sarif "$out/stingward.sarif" --markdown "$out/stingward.md" --json "$out/stingward.json"
         code=$?
         echo "exit_code=$code" >> "$GITHUB_OUTPUT"
-        echo "grade=$("$PY" -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["grade"])' "$out/stingward.json")" >> "$GITHUB_OUTPUT"
+        echo "grade=$("$PY" -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["grade"] or "none")' "$out/stingward.json")" >> "$GITHUB_OUTPUT"
         cat "$out/stingward.md" >> "$GITHUB_STEP_SUMMARY"
         exit 0
 
@@ -64,7 +67,7 @@ runs:
       continue-on-error: true
       with:
         sarif_file: ${{ runner.temp }}/stingward/stingward.sarif
-        category: stingward
+        category: ${{ inputs.category }}
 
     - if: ${{ inputs.comment == 'true' && github.event_name == 'pull_request' }}
       shell: bash
@@ -73,14 +76,25 @@ runs:
         GH_TOKEN: ${{ github.token }}
         PR: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
       run: |
         body="$RUNNER_TEMP/stingward/stingward.md"
-        id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-          --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- stingward-report -->"))) | .id' | head -n 1)
-        if [ -n "$id" ]; then
-          gh api -X PATCH "repos/$REPO/issues/comments/$id" -F "body=@$body" >/dev/null
+        err="$RUNNER_TEMP/stingward/gh-error"
+        # No pipe into head: under pipefail a gh stopped by SIGPIPE would end the step. If the list fails, post nothing.
+        if ids=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+          --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- stingward-report -->"))) | .id' 2>"$err"); then
+          id=${ids%%$'\n'*}
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F "body=@$body" >/dev/null 2>"$err" && exit 0
+          else
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -F "body=@$body" >/dev/null 2>"$err" && exit 0
+          fi
+        fi
+        # The report is still in the job summary. Pull requests from forks (and from Dependabot) get a read-only token.
+        if [ "$HEAD_REPO" != "$REPO" ]; then
+          echo "::notice::stingward: this pull request comes from a fork, whose token cannot comment. The report is in the job summary."
         else
-          gh api -X POST "repos/$REPO/issues/$PR/comments" -F "body=@$body" >/dev/null
+          echo "::warning::stingward could not comment on the pull request ($(tail -n 1 "$err")). Give the job permissions: pull-requests: write (Dependabot pull requests always get a read-only token). The report is in the job summary."
         fi
 
     - shell: bash

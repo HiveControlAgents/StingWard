@@ -36,6 +36,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [APP011](#app011) | Rota de IA sem login e sem limite de uso | 🟡 |
 | [APP012](#app012) | Carregar o modelo pode executar código | 🟠 |
 | [APP013](#app013) | Agente pode executar o que o modelo escrever | 🟠 |
+| [APP014](#app014) | Argumento que o modelo escreve na ferramenta chega a shell, código, SQL, caminho ou URL | 🔴 |
 | [COD001](#cod001) | Consulta SQL montada com dado de fora | 🟠 |
 | [COD002](#cod002) | Comando de shell montado com dado de fora | 🔴 |
 | [COD003](#cod003) | Código montado com dado de fora é executado | 🔴 |
@@ -48,7 +49,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [COD010](#cod010) | Número aleatório previsível usado num segredo | 🔵 |
 | [COD011](#cod011) | Senha guardada com hash rápido | 🟡 |
 | [AGT001](#agt001) | Permissão de agente ampla demais | 🟠 |
-| [AGT002](#agt002) | Hook que baixa e executa código | 🟠 |
+| [AGT002](#agt002) | Hook ou servidor MCP que baixa e executa código | 🟠 |
 | [AGT003](#agt003) | Servidor MCP sem versão fixa | 🟡 |
 | [AGT004](#agt004) | Credencial escrita na configuração do MCP | 🔴 |
 | [AGT005](#agt005) | Servidor MCP remoto sem HTTPS | 🟡 |
@@ -70,7 +71,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 <a id="dep001"></a>
 ### DEP001 · Versão de dependência com falhas conhecidas
 
-Consulta no OSV.dev cada pacote e versão dos seus lockfiles (npm, Yarn, pnpm, Bun, `requirements.txt` do pip, Poetry, uv, Pipenv, PDM, módulos Go, Cargo, Bundler, Composer). A severidade vem do alerta (CVSS ou severidade do GitHub); uma CVE no catálogo **KEV da CISA** (explorada agora) sobe para crítica, e um **EPSS** de 50% ou mais (exploração provável nos próximos 30 dias) sobe um nível. Sai um achado por pacote, com a atualização única que resolve todas as falhas conhecidas.
+Consulta no OSV.dev cada pacote e versão dos seus lockfiles (npm, Yarn, pnpm, Bun, `requirements.txt` do pip, Poetry, uv, Pipenv, PDM, módulos Go, Cargo, Bundler, Composer, `packages.lock.json` do NuGet). A severidade vem do alerta (CVSS ou severidade do GitHub); uma CVE no catálogo **KEV da CISA** (explorada agora) sobe para crítica, e um **EPSS** de 50% ou mais (exploração provável nos próximos 30 dias) sobe um nível. Sai um achado por pacote, com a atualização única que resolve todas as falhas conhecidas.
 
 **Como corrigir:** atualize para a versão indicada. Se alguma falha ainda não tem correção, o achado avisa: pense em trocar de pacote.
 **Padrões:** `CWE-1395`
@@ -78,9 +79,9 @@ Consulta no OSV.dev cada pacote e versão dos seus lockfiles (npm, Yarn, pnpm, B
 <a id="dep002"></a>
 ### DEP002 · Pacote malicioso
 
-Registros `MAL-*` do OSV e alertas de "malware" do GitHub: pacotes publicados para roubar dados ou executar código. É ataque, não bug.
+Registros `MAL-*` do OSV e alertas de "malware" do GitHub: pacotes publicados para roubar dados ou executar código. É ataque, não bug. Versão fixada ou travada no lockfile é crítica. Quando é a menor versão de uma faixa sem lockfile (veja o DEP004), só é crítica se toda versão aceita pela faixa é maliciosa; quando o registro cita só algumas versões, a instalada provavelmente é uma posterior e o achado é alto.
 
-**Como corrigir:** remova o pacote, apague `node_modules`/virtualenvs e troque todas as chaves e senhas da máquina e do projeto.
+**Como corrigir:** remova o pacote, apague `node_modules`/virtualenvs e troque todas as chaves e senhas da máquina e do projeto. Quando só a menor versão de uma faixa é maliciosa (alto), suba a versão mínima da faixa para depois dela e faça commit do lockfile; limpe a máquina e troque as chaves só se a versão instalada for uma das maliciosas.
 **Padrões:** `CWE-506` · `LLM04:2026` · `AST02`
 
 <a id="dep003"></a>
@@ -94,7 +95,7 @@ Registros `MAL-*` do OSV e alertas de "malware" do GitHub: pacotes publicados pa
 <a id="dep004"></a>
 ### DEP004 · Faixa de versão aceita versões com falhas
 
-Sem lockfile, uma faixa como `Pillow>=10` ou `"axios": "^1.6.0"` é tudo o que decide a versão, e a menor versão dela continua valendo: quem já tem essa versão instalada fica com ela, e o instalador pode escolhê-la. O Stingward consulta no OSV.dev a menor versão de cada faixa (`>=`, `~=` e `==X.*` no Python; `^`, `~`, `>=`, `1.2.x` e `>=a <b` no npm), no mesmo lote dos pacotes fixados, em `requirements*.txt` e `package.json` sem lockfile ao lado e nas dependências de `[project]` de um `pyproject.toml` sem `poetry.lock`, `uv.lock` ou `pdm.lock`. Pacote fixado em outro arquivo do projeto fica com o DEP001. A versão instalada costuma ser mais nova, então o achado vai no máximo a médio (baixo quando a pior falha fica abaixo de alta), a não ser que o teto da faixa deixe a correção de fora: aí toda versão aceita tem a falha e a severidade é a mesma do DEP001.
+Sem lockfile, uma faixa como `Pillow>=10` ou `"axios": "^1.6.0"` é tudo o que decide a versão, e a menor versão dela continua valendo: quem já tem essa versão instalada fica com ela, e o instalador pode escolhê-la. O Stingward consulta no OSV.dev a menor versão de cada faixa (`>=`, `~=` e `==X.*` no Python; `^` e `~` no Poetry; `^`, `~`, `>=`, `1.2.x` e `>=a <b` no npm), no mesmo lote dos pacotes fixados, em `requirements*.txt` e `*-requirements.txt` (também os `.txt` de uma pasta `requirements/` e os arquivos que eles incluem com `-r` ou `-c`) e `package.json` sem lockfile ao lado e nas dependências de um `pyproject.toml` sem `poetry.lock`, `uv.lock` ou `pdm.lock` (`[project]` e as dependências opcionais, `[dependency-groups]`, o `dev-dependencies` do `[tool.uv]` e, no Poetry, `[tool.poetry.dependencies]`, `dev-dependencies` e os grupos; dependência de git, path ou URL fica de fora). Pacote fixado em outro arquivo do projeto fica com o DEP001. A versão instalada costuma ser mais nova, então o achado vai no máximo a médio (baixo quando a pior falha fica abaixo de alta), a não ser que o teto da faixa deixe a correção de fora: aí toda versão aceita tem a falha e a severidade é a mesma do DEP001.
 
 **Como corrigir:** suba a versão mínima para a indicada, por exemplo troque `Pillow>=10` por `Pillow>=12.3.0`. Se nenhuma versão da faixa tem a correção, amplie a faixa.
 **Padrões:** `CWE-1395`
@@ -104,7 +105,7 @@ Sem lockfile, uma faixa como `Pillow>=10` ou `"axios": "^1.6.0"` é tudo o que d
 <a id="sec001"></a>
 ### SEC001 · Segredo no código
 
-Chaves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord...), chaves privadas, senha em URL, webhooks e atribuições sensíveis. O valor nunca aparece em nenhum formato de relatório, só o tipo e o lugar. Em testes, documentação e exemplos a severidade cai.
+Chaves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord, Replicate, Pinecone, Shopify, Notion, Linear, Resend, Clerk...), segredos de cliente OAuth do Google (`GOCSPX-`, alto: um app instalado leva o seu junto), chaves privadas (também em arquivos `id_rsa`, `.pem`, `.key` e `.p8`), senha em URL, webhooks e atribuições sensíveis. O valor nunca aparece em nenhum formato de relatório, só o tipo e o lugar. Em testes, documentação e exemplos a severidade cai.
 
 **Como corrigir:** mova o valor para variável de ambiente ou cofre de segredos e troque a chave: ela já está no histórico.
 **Padrões:** `CWE-798` · `LLM02:2026`
@@ -112,7 +113,7 @@ Chaves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord...
 <a id="sec002"></a>
 ### SEC002 · `.env` no git
 
-O `.env` está versionado, então todo clone e fork leva as chaves junto.
+O `.env` está versionado, então todo clone e fork leva as chaves junto. O `.env.vault` do dotenv-vault só guarda os ambientes cifrados e é feito para ir ao git: só conta se também tiver um segredo em texto puro. O `.env.keys`, que abre o cofre, continua contando.
 
 **Como corrigir:** `git rm --cached .env`, coloque no `.gitignore` e troque as chaves.
 **Padrões:** `CWE-538`
@@ -120,7 +121,7 @@ O `.env` está versionado, então todo clone e fork leva as chaves junto.
 <a id="sec003"></a>
 ### SEC003 · `.env` fora do `.gitignore`
 
-Ainda não foi para o git, mas o próximo `git add .` leva junto.
+Ainda não foi para o git, mas o próximo `git add .` leva junto. O `.env.vault` (dotenv-vault, cifrado) fica de fora: ele é feito para ir ao git.
 
 **Como corrigir:** adicione `.env` (e `.env.*`) ao `.gitignore`.
 **Padrões:** `CWE-538`
@@ -128,7 +129,7 @@ Ainda não foi para o git, mas o próximo `git add .` leva junto.
 <a id="sec004"></a>
 ### SEC004 · Chave `service_role` do Supabase no código
 
-A chave `service_role` passa por cima do Row Level Security: quem tem a chave lê e altera qualquer tabela.
+A chave `service_role` passa por cima do Row Level Security: quem tem a chave lê e altera qualquer tabela. A chave padrão do Supabase local (a que o `supabase start` cria em toda máquina: emissor `supabase-demo`, assinada com o segredo padrão do CLI) é baixa, com a nota "chave padrão do ambiente local", e não deixa alto um `.env` no git. Qualquer outra chave `service_role` é crítica.
 
 **Como corrigir:** use só no servidor, nunca no front-end, e gere outra no painel do Supabase.
 **Padrões:** `CWE-798`
@@ -202,7 +203,7 @@ Regras do Firestore ou Storage com `allow read, write: if true` (ou a data do mo
 <a id="app009"></a>
 ### APP009 · Saída do modelo chega a código, shell, SQL ou HTML
 
-A resposta de uma chamada de LLM (OpenAI, Anthropic, Gemini, LangChain, AI SDK...) ou os argumentos de uma ferramenta MCP ou do AI SDK chegam a `eval`/`exec`, um comando de shell, um template, uma consulta SQL, ou `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. Uma injeção de prompt em qualquer coisa que o modelo leu vira código no seu servidor ou script no navegador de quem usa o app. Crítico quando a resposta é executada, alto para argumentos de ferramenta e SQL, médio para HTML. `JSON.parse`, `json.loads` e DOMPurify cortam a cadeia.
+A resposta de uma chamada de LLM (OpenAI, Anthropic, Gemini, LangChain, AI SDK...) chega a `eval`/`exec`, um comando de shell, um template, uma consulta SQL, ou `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. Uma injeção de prompt em qualquer coisa que o modelo leu vira código no seu servidor ou script no navegador de quem usa o app. Crítico quando a resposta é executada, alto para SQL, médio para HTML. `JSON.parse`, `json.loads` e DOMPurify cortam a cadeia. Os argumentos que o modelo escreve numa ferramenta ficam com a [APP014](#app014).
 
 **Como corrigir:** trate a saída do modelo como entrada de usuário: peça JSON e valide, mapeie para uma lista fixa de ações, passe os argumentos do shell em lista, rode o SQL com um usuário só de leitura e limpe o HTML com DOMPurify.
 **Padrões:** `CWE-1426` · `LLM10:2026`
@@ -239,22 +240,36 @@ Uma rota do servidor que chama um modelo (`app/api/**/route.ts` do Next.js, serv
 **Como corrigir:** tire a ferramenta, ou rode numa sandbox (container sem segredos e sem rede) e confirme cada execução. Dê aos agentes de SQL um usuário de banco só de leitura.
 **Padrões:** `CWE-94` · `LLM03:2026` · `ASI05`
 
+<a id="app014"></a>
+### APP014 · Argumento que o modelo escreve na ferramenta chega a shell, código, SQL, caminho ou URL
+
+Um servidor MCP ou uma ferramenta de agente passa um dos seus argumentos para uma chamada perigosa. Quem preenche esses argumentos é o modelo de IA, não você nem o seu código, e qualquer coisa que ele leu antes da chamada (uma página, um arquivo, uma issue, um e-mail) pode esconder instruções que mudam o que ele escreve. Contam como argumento de ferramenta: os parâmetros das funções com `@mcp.tool()`/`@server.tool()` do FastMCP e de `mcp.add_tool(f)`, o `arguments` de um handler `@server.call_tool()` de baixo nível, os handlers de `server.tool(...)`, `server.registerTool(...)` e `setRequestHandler(CallToolRequestSchema, ...)` em TypeScript, `@tool` e `BaseTool._run` do LangChain, `tool({ execute })` do AI SDK, e `tool_call.function.arguments` ou `block.input` lidos da resposta da OpenAI ou da Anthropic. O valor passado a um helper do mesmo arquivo, a uma função que a ferramenta importa de outro arquivo do projeto (até dois níveis), ou por uma tabela `{"nome": funcao}`, é seguido.
+
+A severidade segue o sink. Crítico quando o argumento entra no meio de um comando de shell ou de um código escrito no código (`os.system("git log " + ref)`, `` exec(`ls ${dir}`) ``, `["sh", "-c", f"..."]`). Alto quando a ferramenta roda o comando ou o código inteiro que recebe, para SQL montado com o argumento, para pickle ou YAML inseguro e para um caminho que junta o argumento a uma pasta do código (`os.path.join(BASE, nome)`, de onde `../` sai). Médio para qualquer outro caminho, para um endereço que o servidor busca e para HTML. Em skills o achado mantém a severidade cheia; em testes e exemplos cai para baixa, como os outros achados de código.
+
+Não entram: parâmetros tipados como número, booleano, `Literal`, `Enum` do arquivo ou `Field(pattern=...)`, `z.number()`/`z.enum()` do Zod, parâmetros que o framework injeta (`ctx: Context`), lista de argumentos sem shell com o programa escrito no código, argumento que passa antes por uma checagem como `validate_name(arg)` ou `check_path(arg)` (em TypeScript, checagens de caminho como `validatePath(p)`), `shlex.quote`, parâmetros de consulta, `basename`, `resolve()` com checagem de `is_relative_to`/`startsWith`, nome de arquivo fixo dentro de uma pasta que o modelo escolhe, host fixo, lista de hosts permitidos e código que roda no navegador. Uma ferramenta que roda a consulta SQL inteira que recebe é uma ferramenta de SQL por escolha e não entra. Um JSON Schema só com `"type": "string"` não conta como validação.
+
+O CWE e o item do OWASP Top 10 for Agentic Applications dependem do sink: CWE-78 e ASI05 para comandos de shell, CWE-94 e ASI05 para código e templates, CWE-502 e ASI05 para pickle e YAML, CWE-89 e ASI02 para SQL, CWE-22 e ASI02 para caminhos, CWE-918 e ASI02 para URLs, CWE-79 para HTML.
+
+**Como corrigir:** trate todo argumento de ferramenta como entrada não confiável: rode programas com lista de argumentos e sem shell, passe valores de SQL como parâmetro, mantenha caminhos dentro de uma pasta (resolva e confira o prefixo), aceite só os hosts de que a ferramenta precisa e tipe os argumentos do jeito mais estreito possível (número, enum, padrão). Se a ferramenta precisa rodar comandos, peça confirmação a quem usa antes de cada um.
+**Padrões:** `LLM03:2026`
+
 ## Código
 
-Arquivos Python são lidos com `ast` e JavaScript/TypeScript (também o `<script>` de `.vue`, `.svelte` e `.astro`) com padrões justos, seguindo de onde veio cada valor dentro da função: a requisição (Flask, FastAPI, Django, Express, Next.js, Hono...), um argumento da função ou outro servidor. A chamada a um helper seu (`get_file_by_id(id)`) não é seguida, porque devolve outra coisa, nem um parâmetro que o framework já converteu em número, booleano ou UUID (`item_id: int`, `<int:id>`). Bundles minificados ficam de fora, e testes, exemplos e fixtures caem para baixa.
+Arquivos Python são lidos com `ast` e JavaScript/TypeScript (também o `<script>` de `.vue`, `.svelte` e `.astro`) com padrões justos, seguindo de onde veio cada valor dentro da função: a requisição (Flask, FastAPI, Django, Express, Next.js, Hono...), um argumento da função ou outro servidor. A chamada a um helper seu (`get_file_by_id(id)`) não é seguida, porque devolve outra coisa, nem um parâmetro que o framework já converteu em número, booleano ou UUID (`item_id: int`, `<int:id>`). Bundles minificados e bibliotecas de terceiros copiadas para o projeto (cabeçalho `/*! nome vX.Y` ou `@license`, `vendor/`, `third_party/`, `static/js/lib/`) ficam de fora num projeto, mas são lidos no `stingward skill`, onde são o código que roda; testes, exemplos e fixtures caem para baixa.
 
 <a id="cod001"></a>
 ### COD001 · Consulta SQL montada com dado de fora
 
-f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `read_sql`, `pool.query`, `knex.raw`, `$queryRawUnsafe` e parecidos. Alto com dado da requisição, médio com argumento de função no lugar de um valor (`= '{nome}'`, `LIKE`, `IN (...)`). Nome de tabela vindo de constante, parâmetros `?`/`%s`/`$1`, construtores de ORM e templates com tag (`` sql`...` ``, `` $queryRaw`...` ``) não entram.
+f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `read_sql`, `pool.query`, `knex.raw`, `$queryRawUnsafe`, o `.extra(where=..., select=..., tables=...)` do Django e parecidos. Alto com dado da requisição, médio com argumento de função no lugar de um valor (`= '{nome}'`, `LIKE`, `IN (...)`). Médio quando o dado da requisição, a resposta do modelo ou o argumento de uma ferramenta escolhe o nome de uma coluna ou tabela (`ORDER BY {ordem}`, `FROM {tabela}`, `LIMIT {limite}`); nome conferido numa lista fixa ou tirado de um dicionário do código não entra. Nome de tabela vindo de constante, parâmetros `?`/`%s`/`$1`, construtores de ORM e templates com tag (`` sql`...` ``, `` $queryRaw`...` ``) não entram.
 
-**Como corrigir:** passe os valores como parâmetros: `cursor.execute("... WHERE id = %s", (id,))`, `$1` no Postgres, `?` no SQLite, `` sql`...` `` ou `` $queryRaw`...` `` no Prisma.
+**Como corrigir:** passe os valores como parâmetros: `cursor.execute("... WHERE id = %s", (id,))`, `$1` no Postgres, `?` no SQLite, `` sql`...` `` ou `` $queryRaw`...` `` no Prisma. Nome de coluna ou tabela não pode ser parâmetro: escolha numa lista fixa (`ORDENS[chave]`, `if ordem not in PERMITIDAS: abort(400)`).
 **Padrões:** `CWE-89`
 
 <a id="cod002"></a>
 ### COD002 · Comando de shell montado com dado de fora
 
-`os.system`, `subprocess.run(..., shell=True)`, `exec`/`execSync` do `child_process` e parecidos com dado da requisição no comando (crítico), ou argumento de função misturado no texto do comando num app web (médio). Lista de argumentos sem shell (`subprocess.run(["ping", host])`, `execFile`) e ferramentas de linha de comando (click, typer) não entram.
+`os.system`, `subprocess.run(..., shell=True)`, `["sh", "-c", ...]`, `exec`/`execSync` do `child_process`, `spawn(cmd, { shell: true })`, `spawn("sh", ["-c", cmd])`, execa com `shell: true` e parecidos com dado da requisição no comando (crítico), ou argumento de função misturado no texto do comando num app web (médio). Lista de argumentos sem shell (`subprocess.run(["ping", host])`, `execFile`, `spawn("ls", [dir])`) e ferramentas de linha de comando (click, typer) não entram.
 
 **Como corrigir:** rode o programa com uma lista de argumentos e sem shell, e aceite só valores de uma lista conhecida.
 **Padrões:** `CWE-78`
@@ -278,7 +293,7 @@ f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `rea
 <a id="cod005"></a>
 ### COD005 · HTML inserido sem limpar
 
-`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, `{@html}`, `set:html`, `Markup()` ou HTML devolvido como texto por uma rota Flask, com dado da URL ou da requisição (médio). No JavaScript, HTML montado com outras variáveis é baixo. `DOMPurify.sanitize`, `textContent`, JSX comum e HTML constante não entram.
+`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, `{@html}`, `set:html`, `Markup()`, `res.send`/`res.write`/`res.end` do Express, `c.html` do Hono, ou HTML devolvido como texto por uma rota Flask ou por uma rota FastAPI com `response_class=HTMLResponse`, com dado da URL ou da requisição (médio). No JavaScript, HTML montado com outras variáveis é baixo. `DOMPurify.sanitize`, `escapeHtml`, `textContent`, JSX comum, HTML constante, `res.json` e texto sem tag HTML não entram.
 
 **Como corrigir:** mostre como texto (`textContent`, ou a variável direto no JSX) ou limpe antes com `DOMPurify.sanitize` (sanitize-html ou bleach no servidor).
 **Padrões:** `CWE-79`
@@ -302,7 +317,7 @@ f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `rea
 <a id="cod008"></a>
 ### COD008 · Servidor busca uma URL que veio da requisição
 
-`requests.get`, `httpx`, `urlopen`, `fetch`, `axios` e parecidos no servidor quando a requisição decide para onde a URL aponta (a URL inteira ou o começo dela). Host fixo com um valor da requisição no caminho, checagem do host (`urlparse(...).hostname`, lista de permitidos) e código que roda no navegador não entram.
+`requests.get`, `httpx`, `urlopen`, `fetch`, `axios` e parecidos no servidor quando a requisição decide para onde a URL aponta (a URL inteira ou o começo dela). Host fixo com um valor da requisição no caminho, checagem do host (`urlparse(...).hostname`, lista de permitidos) e código que roda no navegador não entram. Alto, ou médio quando o host vem do próprio cabeçalho `Host` ou `X-Forwarded-Host` da requisição (`f"https://{request.headers['Host']}/api"`): o navegador de outra pessoa não escolhe esse valor e o proxy na frente costuma conferir, mas quem chama o servidor direto consegue trocar.
 
 **Como corrigir:** aceite só os domínios de que você precisa, bloqueie endereços privados e locais e não siga redirecionamentos sem conferir.
 **Padrões:** `CWE-918`
@@ -310,7 +325,7 @@ f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `rea
 <a id="cod009"></a>
 ### COD009 · Redirecionamento para um endereço que veio da requisição
 
-`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` com um parâmetro da URL e parecidos. Caminho que começa com um `/...` fixo, `url_for` e checagem do host não entram.
+`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` com um parâmetro da URL e parecidos. Caminho que começa com um `/...` fixo, `url_for` e checagem do host não entram. Começo feito só de barras (`"/" + next`, `` `/${next}` ``, `"//" + host`) entra: com `next = "/evil.com"`, o navegador vai para `//evil.com`, outro site. Também entra o host vindo da requisição logo depois de um esquema fixo (`"https://" + request.args["host"]`, `` `https://${req.body.host}/home` ``), mas não o do cabeçalho `Host` ou `X-Forwarded-Host`: esse é o host do próprio site, que o navegador de outra pessoa não escolhe.
 
 **Como corrigir:** redirecione só para caminhos relativos que começam com uma única `/` ou para domínios de uma lista conhecida.
 **Padrões:** `CWE-601`
@@ -318,7 +333,7 @@ f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `rea
 <a id="cod010"></a>
 ### COD010 · Número aleatório previsível usado num segredo
 
-`Math.random()` ou o `random` do Python atribuído a (ou devolvido por) algo com nome de segredo: `reset_token`, `apiKey`, `password`, `otp`, `verification_code`. Nomes como `token_count`, `delay` ou `session_id` não entram, nem testes.
+`Math.random()` ou o `random` do Python atribuído a (ou devolvido por) algo com nome de segredo: `reset_token`, `apiKey`, `password`, `otp`, `verification_code`, também no nível do módulo e quando o valor é montado num callback (`[...Array(32)].map(() => ...Math.random()...)`). Um id de sessão (`session_id`, `sessionId`, `sid`) conta quando vai para um cookie. Nomes como `token_count` ou `delay`, id de sessão que nunca chega a um cookie e testes não entram.
 
 **Como corrigir:** use `crypto.randomUUID()` ou `crypto.getRandomValues` no JavaScript e o módulo `secrets` no Python (`secrets.token_urlsafe`).
 **Padrões:** `CWE-338`
@@ -342,9 +357,9 @@ MD5, SHA-1 ou SHA-2 (`hashlib.sha256(password...)`, `createHash("sha256").update
 **Padrões:** `CWE-250` · `LLM03:2026` · `ASI03`
 
 <a id="agt002"></a>
-### AGT002 · Hook que baixa e executa código
+### AGT002 · Hook ou servidor MCP que baixa e executa código
 
-Hook que passa `curl` ou `wget` direto para o shell. Quem controla aquela URL roda código na sua máquina toda vez que o hook dispara.
+Um comando de hook, ou o comando que inicia um servidor MCP (por exemplo `sh -c "curl ... | sh"`), que passa `curl` ou `wget` direto para o shell. Quem controla aquela URL roda código na sua máquina toda vez que o hook dispara ou o servidor inicia.
 
 **Como corrigir:** guarde o script no repositório e revise.
 **Padrões:** `CWE-494` · `ASI05`

@@ -56,6 +56,28 @@ class RulesReference(unittest.TestCase):
         for doc in ("README.md", "README.pt-BR.md", "README.es.md"):
             self.assertIn(f"{len(RULES)} ", re.search(r"(?:All|As|Las) \d+ (?:rules|regras|reglas)", _read(doc)).group(0), doc)
 
+    def test_readmes_name_every_audited_ecosystem(self):
+        # Each lockfile DEP001 reads, by the name people know it by. A new lockfile has to be named here and in the READMEs.
+        from stingward import lockfiles
+        names = {"package-lock.json": "npm", "npm-shrinkwrap.json": "npm", "yarn.lock": "Yarn", "pnpm-lock.yaml": "pnpm",
+                 "bun.lock": "Bun", "requirements.txt": "pip", "poetry.lock": "Poetry", "uv.lock": "uv",
+                 "Pipfile.lock": "Pipenv", "pdm.lock": "PDM", "go.mod": "Go", "Cargo.lock": "Cargo",
+                 "Gemfile.lock": "Bundler", "composer.lock": "Composer", "packages.lock.json": "NuGet"}
+        self.assertEqual(set(names), lockfiles.LOCKFILES)
+        for doc in ("README.md", "README.pt-BR.md", "README.es.md"):
+            row = re.search(r"^\| \*\*(?:Dependencies|Dependências|Dependencias)\*\* \|.*$", _read(doc), re.M).group(0)
+            for name in sorted(set(names.values())):
+                with self.subTest(doc=doc, ecosystem=name):
+                    self.assertRegex(row, rf"(?<![\w-]){re.escape(name)}(?![\w-])")
+
+    def test_sarif_names_each_rule_as_the_table_does(self):
+        # O SARIF descreve cada regra com o nome genérico dela, o mesmo da tabela da referência.
+        for doc, i in (("docs/rules.pt-BR.md", 0), ("docs/rules.md", 1)):
+            table = dict(re.findall(r"^\| \[([A-Z]{3}\d{3})\]\(#[a-z]{3}\d{3}\) \| (.+?) \| ", _read(doc), re.M))
+            self.assertEqual(set(table), set(RULES), doc)
+            for rule, name in table.items():
+                self.assertEqual(report.RULE_NAME[rule][i], name.replace("`", ""), (doc, rule))
+
     def test_sarif_links_to_the_rule_entry(self):
         from stingward.model import Context, Finding
         doc = json.loads(report.sarif(Context(root=ROOT, files=[]), [Finding("SKL001", "critical", "a.md", 1, {})], "en"))
@@ -84,6 +106,17 @@ class Links(unittest.TestCase):
             text = _read(doc)
             for anchor in re.findall(r"\]\(#([\w-]+)\)", text):
                 self.assertIn(f'<a id="{anchor}"></a>', text, f"{doc}#{anchor}")
+
+    def test_the_review_docs_say_a_rotated_key_keeps_its_status(self):
+        # A impressão digital usa a linha já mascarada (test_review: test_rotating_the_secret_keeps_the_fingerprint), de
+        # propósito: nada derivado do segredo vai para o arquivo de revisão. Quem revisa precisa saber disso.
+        from stingward import review
+        for doc, label, phrase in (("README.md", "Human review", "check that line again"),
+                                   ("README.pt-BR.md", "Revisão humana", "confira essa linha de novo"),
+                                   ("README.es.md", "Revisión humana", "revisa esa línea de nuevo")):
+            paragraph = re.search(rf"^\*\*{label}:\*\*.*$", _read(doc), re.M).group(0)
+            self.assertIn(phrase, paragraph, doc)
+        self.assertIn("confira essa linha de novo", review.__doc__)
 
     def test_readme_anchors(self):
         for doc, anchors in (("README.md", ["quality", "github-action"]), ("README.pt-BR.md", ["qualidade", "github-action"]),

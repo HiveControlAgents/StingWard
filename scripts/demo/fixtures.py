@@ -1,5 +1,8 @@
-"""Build the two demo projects used in the README: a skill that looks helpful but is not, and an app
-with the mistakes AI assistants often make. Nothing here runs; the files only exist to be audited.
+"""Build the two demo projects used in the README and on the website: a skill that looks helpful but is
+not, and an app with the mistakes AI assistants often make (a key in the browser, open Supabase tables,
+SQL built from the request, a server that fetches any URL, model output run in a shell or shown as HTML,
+AI routes with no login, a worker whose lowest allowed version has known flaws). Nothing here runs; the
+files only exist to be audited, and every key in them is fake.
 
     python scripts/demo/fixtures.py /tmp/stingward-demo
     stingward skill /tmp/stingward-demo/pdf-helper
@@ -78,6 +81,76 @@ create table public.invoices (id uuid primary key, user_id uuid, total numeric);
 alter table public.invoices enable row level security;
 create policy "read invoices" on public.invoices for select using (true);
 """)
+    # The model writes a shell command and the server runs it.
+    _write(root, "app/api/agent/route.ts", """import OpenAI from "openai";
+import { exec } from "child_process";
+
+const openai = new OpenAI();
+
+// The user describes a chore in plain words and the agent does it on the server.
+export async function POST(req: Request) {
+  const { task } = await req.json();
+  const reply = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: "Answer with one shell command that does the task." },
+      { role: "user", content: task },
+    ],
+  });
+  exec(reply.choices[0].message.content ?? "");
+  return Response.json({ ok: true });
+}
+""")
+    _write(root, "app/api/invoices/route.ts", """import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+export async function GET(req: Request) {
+  const user = new URL(req.url).searchParams.get("user");
+  const { rows } = await pool.query(`select * from invoices where user_id = '${user}'`);
+  return Response.json(rows);
+}
+""")
+    _write(root, "app/api/invoices/pdf/route.ts", """import fs from "fs";
+import path from "path";
+
+export async function GET(req: Request) {
+  const file = new URL(req.url).searchParams.get("file") ?? "";
+  const pdf = fs.readFileSync(path.join(process.cwd(), "invoices", file));
+  return new Response(pdf, { headers: { "Content-Type": "application/pdf" } });
+}
+""")
+    _write(root, "app/api/preview/route.ts", """// Link preview for the chat: fetches the page the user pasted and returns its title.
+export async function POST(req: Request) {
+  const { url } = await req.json();
+  const page = await fetch(url);
+  const html = await page.text();
+  const title = html.match(/<title>(.*?)<\\/title>/)?.[1] ?? url;
+  return Response.json({ title });
+}
+""")
+    _write(root, "components/Chat.tsx", """"use client";
+import { useChat } from "@ai-sdk/react";
+
+export default function Chat() {
+  const { messages } = useChat();
+  return messages.map((m) => <div key={m.id} dangerouslySetInnerHTML={{ __html: m.content }} />);
+}
+""")
+    # A Python worker without a lockfile: requests 2.19.0, the lowest version its range allows, has known flaws.
+    _write(root, "worker/requirements.txt", "openai>=1.30\nrequests>=2.19.0\n")
+    _write(root, "worker/summarize.py", '''"""Nightly job: writes a one-line summary of each new support ticket."""
+import requests
+from openai import OpenAI
+
+client = OpenAI()
+
+
+def summarize(ticket_url):
+    ticket = requests.get(ticket_url, timeout=30).json()
+    reply = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": ticket["body"]}])
+    return reply.choices[0].message.content
+''')
 
 
 def main(argv):

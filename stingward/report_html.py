@@ -19,7 +19,7 @@ from . import __version__, gitsafe, report
 from . import _redact as redact
 from .checks import secrets
 from .model import SEV_RANK, SEVERITIES
-from .rules import RULES, STANDARDS
+from .rules import RULES, standards
 
 CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
 GROUPS = ["deps", "secrets", "app", "code", "agents", "skills"]
@@ -52,6 +52,11 @@ H = {
         },
         "warn_offline": "Modo offline: as dependências não foram checadas contra as bases de falhas conhecidas.",
         "warn_osv": "O OSV.dev não respondeu: as dependências não foram checadas contra as bases de falhas conhecidas.",
+        "warn_osv_partial": "A checagem de dependências ficou incompleta: {detail}. Rode de novo mais tarde para completá-la.",
+        "warn_kev": "A lista CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com severidade abaixo da real.",
+        "warn_big": ("{n} arquivo de código ou texto acima de {mb} MB não foi lido e ficou fora desta auditoria. A lista está em {scope}.",
+                     "{n} arquivos de código ou texto acima de {mb} MB não foram lidos e ficaram fora desta auditoria. A lista está em {scope}."),
+        "warn_many": "A pasta tem mais de {n} arquivos: a leitura parou aí, e o resto ficou fora desta auditoria.",
         "warn_only": "Só parte das verificações rodou: {checks}.",
         "toc": "Conteúdo",
         "s_summary": "Resumo executivo", "s_plan": "Plano de correção", "s_findings": "Achados em detalhe", "s_scope": "Escopo e método",
@@ -89,6 +94,9 @@ H = {
         "v_more": ("e mais {n} falha", "e mais {n} falhas"), "v_none": "sem correção",
         "no_findings": "Nenhum achado.",
         "scope_what": "O que foi verificado",
+        "unread_big": ("{n} arquivo de código ou texto passou do limite de {mb} MB e não foi lido:",
+                       "{n} arquivos de código ou texto passaram do limite de {mb} MB e não foram lidos:"),
+        "unread_more": ("e mais {n} arquivo", "e mais {n} arquivos"),
         "files": ("{n} arquivo lido", "{n} arquivos lidos"),
         "pkgs": ("{n} pacote encontrado em lockfiles e configurações de MCP", "{n} pacotes encontrados em lockfiles e configurações de MCP"),
         "pkgs_skipped": "Dependências não verificadas", "rules": "{n} regras",
@@ -100,7 +108,7 @@ H = {
                 "kev": ("CISA KEV", "falhas que atacantes estão explorando agora"),
                 "epss": ("EPSS (FIRST)", "chance de exploração nos próximos 30 dias"),
                 "nvd": ("NVD", "nota de severidade quando o aviso não traz")},
-        "st_ok": "consultado", "st_kev": "consultado, catálogo {v}", "st_fail": "não respondeu", "st_offline": "pulado (modo offline)",
+        "st_ok": "consultado", "st_partial": "consultado em parte: {detail}", "st_kev": "consultado, catálogo {v}", "st_fail": "não respondeu", "st_offline": "pulado (modo offline)",
         "st_off": "não rodou (verificação de dependências desligada)", "st_nopkg": "não foi preciso: nenhum pacote encontrado",
         "st_nocve": "não foi preciso: nenhuma CVE encontrada", "st_noscore": "não foi preciso: todos os avisos tinham nota",
         "st_empty": "consultado, sem resposta útil", "st_na": "não foi preciso",
@@ -117,6 +125,33 @@ H = {
                    "Falhas novas são publicadas todo dia: uma dependência boa hoje pode ter falha amanhã. Rode a verificação de novo com frequência, por exemplo a cada pull request.",
                    "Um achado pode ser alarme falso. Cada um mostra onde está, para você confirmar antes de mexer no código."],
         "footer": "Gerado pelo Stingward {v}, software livre (Apache 2.0).",
+        # revisão humana (--review, --client, --notes)
+        "client": "Preparado para", "review_meta": "Revisão humana", "reviewer_none": "uma pessoa",
+        "status": report.T["pt"]["status"],
+        "s_appendix": "Apêndice: alarmes falsos",
+        "notes_h": "Parecer do analista",
+        "grade_rule": "Depois da revisão humana, alarmes falsos e o que foi corrigido durante a auditoria não contam.",
+        "review_line": "Revisão humana: {counts}.",
+        "first_none_accepted": "Nada crítico ou alto para corrigir agora: o que sobrou nessas severidades é risco aceito, com o motivo junto do achado.",
+        "clean_reviewed": "Depois da revisão, nenhum achado continua valendo: eram alarmes falsos ou foram corrigidos durante a auditoria. Isso não prova que está seguro.",
+        "band_done": "Sem ação planejada: risco aceito ou já corrigido",
+        "status_h": "Situação",
+        "review_h": "Revisão",
+        "appendix_intro": "Quem revisou conferiu estes achados no código e concluiu que não são problema neste projeto. Eles não contam para a nota, para o plano nem para o que corrigir primeiro. Ficam aqui para você ver o que foi descartado e por quê.",
+        "human_h": "Revisão humana",
+        "human_intro": "Depois da varredura automática, {who} conferiu os achados à mão, no código e na configuração, e marcou cada um como confirmado, alarme falso, risco aceito ou corrigido. O comentário de quem revisou aparece junto de cada achado.",
+        "human_rules_h": "Como a revisão muda a nota",
+        "human_rules": ["Contam para a nota os achados confirmados, os riscos aceitos e os que ainda não foram revisados.",
+                        "Alarmes falsos não contam: saem da nota, do plano e da lista do que corrigir primeiro e ficam no apêndice, com o motivo.",
+                        "O que foi corrigido e conferido durante a auditoria não conta para a nota nem entra no que corrigir primeiro, mas continua no relatório, marcado como corrigido.",
+                        "Riscos aceitos continuam contando para a nota, porque o risco existe, mas saem da lista do que corrigir primeiro: a decisão de conviver com eles fica registrada junto do achado."],
+        "method_review": "Uma pessoa conferiu os achados à mão e marcou o resultado de cada um: confirmado, alarme falso, risco aceito ou corrigido.",
+        "method_grade_review": "Damos a nota de A a F pelos achados mais graves que continuam valendo depois da revisão.",
+        "limits_review": ["É uma varredura automática do código e da configuração, conferida por uma pessoa. Não é um teste de invasão: ninguém tentou entrar no app rodando.",
+                          "Ficam de fora o app em funcionamento, as regras de negócio, as configurações do servidor e da nuvem e tudo o que não está nestes arquivos, a não ser o que o parecer do analista disser que foi conferido à parte.",
+                          "Um relatório limpo quer dizer que os erros comuns que a ferramenta conhece não apareceram nesta data. Não quer dizer que o app é seguro.",
+                          "Falhas novas são publicadas todo dia: uma dependência boa hoje pode ter falha amanhã. Rode a verificação de novo com frequência, por exemplo a cada pull request.",
+                          "A revisão humana diminui os alarmes falsos, mas não elimina o erro: é o julgamento de uma pessoa com o que estava disponível nesta data. Se algo não bater com o que você sabe do app, fale com quem revisou."],
     },
     "en": {
         "doc": "Security audit report", "brand_sub": "Security audit",
@@ -137,6 +172,11 @@ H = {
         },
         "warn_offline": "Offline mode: dependencies were not checked against the vulnerability databases.",
         "warn_osv": "OSV.dev did not respond: dependencies were not checked against the vulnerability databases.",
+        "warn_osv_partial": "The dependency check is incomplete: {detail}. Run it again later to complete it.",
+        "warn_kev": "The CISA KEV list did not respond: a vulnerability attackers already exploit may show a lower severity than it should.",
+        "warn_big": ("{n} code or text file over {mb} MB was not read and is not covered by this audit. The list is under {scope}.",
+                     "{n} code or text files over {mb} MB were not read and are not covered by this audit. The list is under {scope}."),
+        "warn_many": "The folder has more than {n} files: reading stopped there, and the rest is not covered by this audit.",
         "warn_only": "Only some checks ran: {checks}.",
         "toc": "Contents",
         "s_summary": "Executive summary", "s_plan": "Remediation plan", "s_findings": "Findings in detail", "s_scope": "Scope and method",
@@ -174,6 +214,9 @@ H = {
         "v_more": ("and {n} more", "and {n} more"), "v_none": "no fix yet",
         "no_findings": "No findings.",
         "scope_what": "What was checked",
+        "unread_big": ("{n} code or text file was over the {mb} MB limit and was not read:",
+                       "{n} code or text files were over the {mb} MB limit and were not read:"),
+        "unread_more": ("and {n} more file", "and {n} more files"),
         "files": ("{n} file read", "{n} files read"),
         "pkgs": ("{n} package found in lockfiles and MCP configs", "{n} packages found in lockfiles and MCP configs"),
         "pkgs_skipped": "Dependencies not checked", "rules": "{n} rules",
@@ -185,7 +228,7 @@ H = {
                 "kev": ("CISA KEV", "vulnerabilities attackers are exploiting now"),
                 "epss": ("EPSS (FIRST)", "likelihood of exploitation in the next 30 days"),
                 "nvd": ("NVD", "severity scores missing from advisories")},
-        "st_ok": "consulted", "st_kev": "consulted, catalog {v}", "st_fail": "did not respond", "st_offline": "skipped (offline mode)",
+        "st_ok": "consulted", "st_partial": "partly answered: {detail}", "st_kev": "consulted, catalog {v}", "st_fail": "did not respond", "st_offline": "skipped (offline mode)",
         "st_off": "not run (dependency check turned off)", "st_nopkg": "not needed: no packages found",
         "st_nocve": "not needed: no CVE found", "st_noscore": "not needed: every advisory had a score",
         "st_empty": "consulted, no useful answer", "st_na": "not needed",
@@ -202,6 +245,33 @@ H = {
                    "New vulnerabilities are published every day: a dependency that is fine today can have a flaw tomorrow. Run the check again often, for example on every pull request.",
                    "A finding can be a false alarm. Each one shows where it is, so you can confirm before changing code."],
         "footer": "Generated by Stingward {v}, open source (Apache 2.0).",
+        # human review (--review, --client, --notes)
+        "client": "Prepared for", "review_meta": "Human review", "reviewer_none": "a person",
+        "status": report.T["en"]["status"],
+        "s_appendix": "Appendix: false positives",
+        "notes_h": "Analyst summary",
+        "grade_rule": "After the human review, false positives and what was fixed during the audit do not count.",
+        "review_line": "Human review: {counts}.",
+        "first_none_accepted": "Nothing critical or high left to fix now: what remains at those levels is accepted risk, with the reason next to the finding.",
+        "clean_reviewed": "After the review, no finding still stands: they were false positives or were fixed during the audit. That does not prove it is safe.",
+        "band_done": "No action planned: accepted risk or already fixed",
+        "status_h": "Status",
+        "review_h": "Review",
+        "appendix_intro": "The reviewer checked these findings in the code and concluded they are not a problem in this project. They do not count toward the grade, the plan or what to fix first. They are listed so you can see what was discarded and why.",
+        "human_h": "Human review",
+        "human_intro": "After the automated scan, {who} checked the findings by hand against the code and configuration and marked each one as confirmed, false positive, accepted risk or fixed. The reviewer's comment appears next to each finding.",
+        "human_rules_h": "How the review changes the grade",
+        "human_rules": ["Confirmed findings, accepted risks and findings not reviewed yet count toward the grade.",
+                        "False positives do not count: they leave the grade, the plan and the fix-first list, and move to the appendix with the reason.",
+                        "What was fixed and verified during the audit does not count toward the grade or the fix-first list, but stays in the report, marked as fixed.",
+                        "Accepted risks still count toward the grade, because the risk is there, but they leave the fix-first list: the decision to live with them is recorded next to the finding."],
+        "method_review": "A person checked the findings by hand and marked the outcome of each one: confirmed, false positive, accepted risk or fixed.",
+        "method_grade_review": "Graded the result from A to F by the most serious findings that still stand after the review.",
+        "limits_review": ["This is an automated scan of the code and configuration, checked by a person. It is not a penetration test: nobody tried to break into the running app.",
+                          "Out of scope: the running app, business logic, server and cloud settings, and anything that is not in these files, except what the analyst summary says was checked separately.",
+                          "A clean report means the common mistakes this tool knows were not found on this date. It does not mean the app is secure.",
+                          "New vulnerabilities are published every day: a dependency that is fine today can have a flaw tomorrow. Run the check again often, for example on every pull request.",
+                          "The human review cuts down false alarms but does not rule out mistakes: it is one person's judgment with what was available on this date. If something does not match what you know about the app, ask the reviewer."],
     },
 }
 MONTHS = {"pt": ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"],
@@ -258,8 +328,9 @@ def _code_html(s, t):
 
 _SECRET_FILE = re.compile(r"(?i)(?:^|/)(?:\.env(?:\.[\w.-]+)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|credentials|id_[a-z0-9_]+|"
                           r"[^/]*\.(?:pem|key|p12|pfx|jks|keystore))$")
-_KEY_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
-_KEY_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY-----")
+# Bloco de chave privada. O do PGP termina em "PRIVATE KEY BLOCK-----".
+_KEY_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")
+_KEY_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")
 _RUN = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
 # Referência a variável de ambiente é nome, não valor: apiKey: process.env.X fica à vista. Só quando ela é o valor
 # inteiro (vem antes de , ; ) } ] ou do fim da linha). Assim process.env.TOKEN = "..." e password: process.env.X ||
@@ -317,7 +388,14 @@ def _fallback(s):
 
 def _mask(raw):
     """Mascara antes de cortar, como os trechos do resto do relatório: segredo cortado ao meio não seria reconhecido."""
-    raw = raw.replace("\x00", "\ufffd")  # o \x00 é reservado às marcas internas do mascaramento
+    s = mask_line(raw)
+    return s if len(s) <= SHOW else s[:SHOW - 1] + "…"
+
+
+def mask_line(raw):
+    """O mascaramento dos trechos, sem cortar. Vale também para a impressão digital dos achados e para o que quem
+    revisou escreveu (comentários e parecer): um segredo colado ali sai mascarado como no trecho de código."""
+    raw = str(raw).replace("\x00", "\ufffd")  # o \x00 é reservado às marcas internas do mascaramento
     refs = []
 
     def keep(m):
@@ -330,38 +408,40 @@ def _mask(raw):
     s = _opaque(_fallback(secrets.mask(raw)))
     if refs:  # o nome volta depois de todas as redes de segurança, que não o veem
         s = re.sub(r"\x00V(\d+)\x00", lambda m: refs[int(m.group(1))] if int(m.group(1)) < len(refs) else "", s)
-    return s if len(s) <= SHOW else s[:SHOW - 1] + "…"
+    return s
 
 
 def evidence(ctx, rel, line):
     """[(número, texto mascarado ou None se a linha é longa demais, tamanho)] da linha e uma de cada lado.
 
     Arquivo de segredos (.env, .npmrc, chave) mostra só a linha do achado. Linha dentro de um bloco de chave
-    privada nunca aparece, mesmo quando o bloco começa fora da janela."""
+    privada nunca aparece, mesmo quando o bloco começa fora da janela.
+
+    O texto vem de ctx.read, o mesmo que as verificações leram: a mesma decodificação e as mesmas linhas (só "\\n"
+    quebra linha), e não o arquivo de novo do disco, que pode ter mudado depois da varredura."""
     if not line:
         return None
     lo, hi = (line, line) if _SECRET_FILE.search(rel) else (max(1, line - 1), line + 1)
+    lines = ctx.read(rel).split("\n")
+    if lines[-1] == "":  # a quebra no fim do arquivo não abre outra linha; arquivo vazio ou ilegível não tem nenhuma
+        lines.pop()
     rows = []
-    try:
-        with open(os.path.join(ctx.root, rel), encoding="utf-8", errors="replace") as fh:
+    in_key = False
+    for n, raw in enumerate(lines, 1):
+        raw = raw.rstrip("\r")
+        in_key = in_key or bool(_KEY_BEGIN.search(raw))
+        inside = in_key
+        if in_key and _KEY_END.search(raw):
             in_key = False
-            for n, raw in enumerate(fh, 1):
-                raw = raw.rstrip("\r\n")
-                in_key = in_key or bool(_KEY_BEGIN.search(raw))
-                inside = in_key
-                if in_key and _KEY_END.search(raw):
-                    in_key = False
-                if n >= lo:
-                    if inside:
-                        rows.append((n, "[REDACTED:private_key]", 0))
-                    elif len(raw) > MAX_LINE:
-                        rows.append((n, None, len(raw)))
-                    else:
-                        rows.append((n, _mask(raw), len(raw)))
-                if n >= hi:
-                    break
-    except OSError:
-        return None
+        if n >= lo:
+            if inside:
+                rows.append((n, "[REDACTED:private_key]", 0))
+            elif len(raw) > MAX_LINE:
+                rows.append((n, None, len(raw)))
+            else:
+                rows.append((n, _mask(raw), len(raw)))
+        if n >= hi:
+            break
     return rows if any(n == line for n, _, _ in rows) else None
 
 
@@ -420,9 +500,11 @@ def _level(findings):
     return "bad" if worst >= SEV_RANK["high"] else "mid" if worst == SEV_RANK["medium"] else "ok"
 
 
-def _verdict(findings, mode, lang, t):
+def _verdict(findings, mode, lang, t, ctx=None):
     level = _level(findings)
-    if mode == "skill":  # o mesmo veredito do texto, sem o emoji
+    if mode == "skill":  # o mesmo veredito do texto, sem o emoji; com arquivo sem ler, "incompleta" (report.verdict)
+        if level != "bad" and report.incomplete(ctx):
+            return "incomplete", report.incomplete_verdict(ctx, lang).split(" ", 1)[1]
         return level, report.T[lang]["verdict_" + level].split(" ", 1)[1]
     return level, t["verdict"]["agents" if mode == "agents" else "project"][level]
 
@@ -441,15 +523,50 @@ def _where_short(entry, t, limit=3):
 
 # --------------------------------------------------------------------------- seções
 
-def _cover(ctx, findings, lang, t, name, target, today, commit, checks):
-    g = report.grade(findings)
-    level, verdict = _verdict(findings, ctx.mode, lang, t)
+def _md_inline(nodes):
+    """Nós do Markdown pequeno (review.inline) em HTML, cada pedaço escapado por _h."""
+    out = []
+    for style, text in nodes:
+        piece = _h(text)
+        if "c" in style:
+            piece = f"<code>{piece}</code>"
+        if "b" in style:
+            piece = f"<strong>{piece}</strong>"
+        out.append(piece)
+    return "".join(out)
+
+
+def _md_html(blocks):
+    out = []
+    for kind, body in blocks:
+        if kind == "p":
+            out.append(f"<p>{_md_inline(body)}</p>")
+        else:
+            out.append("<ul>" + "".join(f"<li>{_md_inline(item)}</li>" for item in body) + "</ul>")
+    return "".join(out)
+
+
+def _status_chip(status, t):
+    cls = status or "todo"
+    return f'<span class="rv rv-{cls}">{_html.escape(t["status"][status])}</span>'
+
+
+def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, audit, findings):
+    empty = report.nothing_read(ctx, findings)  # nada lido: sem nota e sem veredito verde
+    g = "–" if empty else report.grade(valid)
+    level, verdict = ("none", report.nothing_read_text(ctx, lang)) if empty else _verdict(valid, ctx.mode, lang, t, ctx)
+    label = report.T[lang]["no_grade"] if empty else f'{t["grade"]} {g}'
     rows = []
+    if audit is not None and audit.client:
+        rows.append((t["client"], f"<strong>{_h(audit.client)}</strong>"))
     if target and ctx.mode != "agents":
         rows.append((t["target"], f"<code>{_path(target)}</code>"))
     rows.append((t["date"], _html.escape(_date(today, lang))))
     rows.append((t["type"], _html.escape(t["type_of"].get(ctx.mode, ctx.mode))))
-    rows.append((t["found"], _html.escape(report.counts_line(findings, lang) or t["none_found"])))
+    rows.append((t["found"], _html.escape(report.counts_line(valid, lang) or t["none_found"])))
+    if audit is not None and audit.review is not None:
+        who = _h(audit.reviewer) + " · " if audit.reviewer else ""
+        rows.append((t["review_meta"], who + _html.escape(report.review_counts(findings, audit.review, lang) or "0")))
     if commit:
         rows.append((t["commit"], f"<code>{_h(commit)}</code>"))
     rows.append((t["tool"], f"Stingward {_html.escape(__version__)}"))
@@ -459,20 +576,26 @@ def _cover(ctx, findings, lang, t, name, target, today, commit, checks):
         warns.append(t["warn_only"].format(checks=_checks(checks, t)))
     if "deps" in checks and ctx.offline:
         warns.append(t["warn_offline"])
+    elif "deps" in checks and report.osv_partial(ctx):
+        warns.append(t["warn_osv_partial"].format(detail=report._clean(ctx.sources["osv_error"])))
     elif "deps" in checks and ctx.sources.get("osv_error"):
         warns.append(t["warn_osv"])
+    elif "deps" in checks and ctx.sources.get("kev_error"):
+        warns.append(t["warn_kev"])
+    if ctx.too_big:  # código que ninguém leu: uma skill pode esconder o que faz num arquivo grande
+        warns.append(_n(t, "warn_big", len(ctx.too_big), mb=report.size_cap(ctx.mode) // 1_000_000, scope=t["s_scope"]))
+    if ctx.truncated:
+        warns.append(t["warn_many"].format(n=report.thousands(_max_files(), lang)))
     warn = "".join(f'<p class="warn">{_html.escape(w)}</p>' for w in warns)
-    toc = "".join(f'<li><a href="#{a}"><span class="toc-n">{i}</span>{_html.escape(t[k])}</a></li>'
-                  for i, (a, k) in enumerate((("summary", "s_summary"), ("plan", "s_plan"), ("findings", "s_findings"),
-                                              ("scope", "s_scope")), 1))
+    toc = "".join(f'<li><a href="#{a}"><span class="toc-n">{n}</span>{_html.escape(label)}</a></li>' for a, n, label in toc_items)
     return f"""<section class="cover" id="cover">
 <header class="brand">{SHIELD}<span class="brand-name">Stingward</span><span class="brand-sub">{_html.escape(t["brand_sub"])}</span></header>
 <div class="cover-gap"></div>
 <p class="eyebrow">{_html.escape(t["kind"].get(ctx.mode, t["kind"]["project"]))}</p>
 <h1 class="title">{_h(name)}</h1>
 <div class="verdict">
-<div class="grade grade-{g}" role="img" aria-label="{_html.escape(t["grade"])} {g}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
-<p class="verdict-text verdict-{level}">{_html.escape(verdict)}</p>
+<div class="grade grade-{"none" if empty else g}" role="img" aria-label="{_html.escape(label)}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
+<p class="verdict-text verdict-{level}">{_h(verdict)}</p>
 </div>
 {warn}
 <dl class="meta">{meta}</dl>
@@ -481,18 +604,31 @@ def _cover(ctx, findings, lang, t, name, target, today, commit, checks):
 </section>"""
 
 
-def _summary(findings, entries, numbers, lang, t):
-    g = report.grade(findings)
+def _notes_html(audit, t, today, lang):
+    if audit is None or not audit.notes:
+        return ""
+    sign = (f'<p class="sign">{_h(audit.reviewer)} · {_html.escape(_date(today, lang))}</p>' if audit.reviewer else "")
+    return f'<div class="analyst"><h3 class="analyst-h">{_html.escape(t["notes_h"])}</h3><div class="md">{_md_html(audit.notes)}</div>{sign}</div>'
+
+
+def _summary(valid, shown, numbers, lang, t, audit, findings, today, nothing=""):
+    """nothing: o aviso de que nenhum arquivo foi lido, quando for o caso; então não há nota."""
+    g = "–" if nothing else report.grade(valid)
+    reviewed = audit is not None and audit.review is not None
     scale = "".join(f'<li class="grade-{k}{" on" if k == g else ""}"><span class="scale-g">{k}</span>'
                     f'<span class="scale-t">{_html.escape(v)}</span></li>' for k, v in t["scale"].items())
-    c = Counter(f.severity for f in findings)
-    shown = [s for s in reversed(SEVERITIES) if s != "info" or c[s]]
+    c = Counter(f.severity for f in valid)
+    shown_sev = [s for s in reversed(SEVERITIES) if s != "info" or c[s]]
     tiles = "".join(f'<li class="tile tile-{s}{" zero" if not c[s] else ""}"><span class="tile-n">{c[s]}</span>'
                     f'<span class="tile-k">{_html.escape(t["sev"][s])}</span><span class="tile-h">{_html.escape(t["sev_help"][s])}</span></li>'
-                    for s in shown)
-    note = (f'<p class="note">{_html.escape(t["grouped"].format(n=len(findings), problems=_n(t, "problems", len(entries))))}</p>'
-            if len(entries) != len(findings) else "")
-    top = report.urgent(entries)
+                    for s in shown_sev)
+    standing = [e for e in shown if e.status not in report.NOT_COUNTED]
+    note = (f'<p class="note">{_html.escape(t["grouped"].format(n=len(valid), problems=_n(t, "problems", len(standing))))}</p>'
+            if len(standing) != len(valid) else "")
+    if reviewed:
+        note += f'<p class="note review-line">{_html.escape(t["review_line"].format(counts=report.review_counts(findings, audit.review, lang) or "0"))}</p>'
+    intro = t["grade_intro"] + (" " + t["grade_rule"] if reviewed else "")
+    top = report.urgent(shown)
     if top:
         items = "".join(
             f'<li class="first-item sev-line-{e.severity}"><div class="first-head">{_badge(e.severity, t)}'
@@ -500,15 +636,19 @@ def _summary(findings, entries, numbers, lang, t):
             f'<p class="first-impact">{_h(report.impact(e, lang))}</p>'
             f'<p class="first-where"><span>{_html.escape(t["first_where"])}</span>{_where_short(e, t, 2)}</p></li>' for e in top)
         first = f'<h3>{_html.escape(t["first"])}</h3><ol class="first">{items}</ol>'
-    elif findings:
-        first = f'<h3>{_html.escape(t["first"])}</h3><p class="calm">{_html.escape(t["first_none"])}</p>'
+    elif valid:
+        accepted = any(e.status == "accepted_risk" and SEV_RANK[e.severity] >= SEV_RANK["high"] for e in shown)
+        first = f'<h3>{_html.escape(t["first"])}</h3><p class="calm">{_html.escape(t["first_none_accepted" if accepted else "first_none"])}</p>'
+    elif nothing:
+        first = f'<p class="warn">{_html.escape(nothing)}</p>'
     else:
-        first = f'<p class="calm">{_html.escape(t["clean"])}</p>'
+        first = f'<p class="calm">{_html.escape(t["clean_reviewed" if reviewed and findings else "clean"])}</p>'
     return f"""<section id="summary">
 <h2><span class="sec-n">1</span>{_html.escape(t["s_summary"])}</h2>
+{_notes_html(audit, t, today, lang)}
 <div class="grade-box">
-<div class="grade grade-{g}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
-<div><h3 class="grade-h">{_html.escape(t["grade_means"])}</h3><p>{_html.escape(t["grade_intro"])}</p></div>
+<div class="grade grade-{"none" if nothing else g}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
+<div><h3 class="grade-h">{_html.escape(t["grade_means"])}</h3><p>{_html.escape(intro)}</p></div>
 </div>
 <ol class="scale">{scale}</ol>
 <ul class="tiles">{tiles}</ul>
@@ -517,18 +657,32 @@ def _summary(findings, entries, numbers, lang, t):
 </section>"""
 
 
-def _plan(entries, numbers, t):
-    if not entries:
+def _plan(shown, numbers, t, gone=()):
+    """gone: o que foi corrigido durante a auditoria e sumiu da varredura (review.Gone), no grupo sem ação prevista."""
+    if not shown and not gone:
         body = f'<p class="calm">{_html.escape(t["plan_empty"])}</p>'
     else:
         rows = []
-        for sev, group in itertools.groupby(entries, key=lambda e: e.severity):
+        todo = [e for e in shown if e.status in report.TODO]
+        done = [e for e in shown if e.status not in report.TODO]
+        for sev, group in itertools.groupby(todo, key=lambda e: e.severity):
             rows.append(f'<tr class="band band-{sev}"><th colspan="4" scope="colgroup">{_html.escape(t["band"][sev])}</th></tr>')
             for e in group:
                 n = numbers[id(e)]
                 eff = report.effort(e.rule, e.params)
                 rows.append(f'<tr class="sev-line-{e.severity}"><td class="num">{n}</td><td class="problem"><a href="#f{n}">{_h(e.title)}</a></td>'
                             f'<td class="where">{_where_short(e, t)}</td><td class="effort effort-{eff}">{_html.escape(t["effort"][eff])}</td></tr>')
+        if done or gone:
+            rows.append(f'<tr class="band band-done"><th colspan="4" scope="colgroup">{_html.escape(t["band_done"])}</th></tr>')
+            for e in done:
+                n = numbers[id(e)]
+                rows.append(f'<tr class="sev-line-{e.severity}"><td class="num">{n}</td><td class="problem"><a href="#f{n}">{_h(e.title)}</a> '
+                            f'{_badge(e.severity, t)}</td><td class="where">{_where_short(e, t)}</td>'
+                            f'<td class="effort">{_status_chip(e.status, t)}</td></tr>')
+            for e in gone:  # sem ficha em "achados em detalhe": não estão mais no código
+                rows.append(f'<tr class="sev-line-{e.severity}"><td class="num"></td><td class="problem">{_h(e.title)} '
+                            f'{_badge(e.severity, t)}</td><td class="where">{_where_short(e, t)}</td>'
+                            f'<td class="effort">{_status_chip(e.status, t)}</td></tr>')
         body = (f'<p class="legend">{_html.escape(t["effort_legend"])}</p><table class="plan"><thead><tr><th class="num" scope="col">{t["col_n"]}</th>'
                 f'<th scope="col">{_html.escape(t["col_problem"])}</th><th scope="col">{_html.escape(t["col_where"])}</th>'
                 f'<th scope="col">{_html.escape(t["effort_h"])}</th></tr></thead><tbody>{"".join(rows)}</tbody></table>')
@@ -592,7 +746,8 @@ def _row(key, value, cls=""):
 LONG_WHERE = 12  # acima disso a lista de lugares pode quebrar de página
 
 
-def _finding(ctx, entry, n, t):
+def _finding(ctx, entry, n, t, audit=None):
+    reviewed = audit is not None and audit.review is not None
     places = entry.places
     where = "".join(f"<li><code>{_path(p)}</code>{'' if f.line else ' <span>(' + _html.escape(t['whole_file']) + ')</span>'}</li>"
                     for p, f in zip(places[:MAX_PLACES], entry.findings))
@@ -600,47 +755,69 @@ def _finding(ctx, entry, n, t):
         where += f'<li class="more">{_html.escape(_n(t, "more_places", len(places) - MAX_PLACES))}</li>'
     long = len(places) > LONG_WHERE
     where = _row(_html.escape(t["where"]), f'<ul class="places">{where}</ul>', " long" if long else "")
-    rows = [_row(_html.escape(t["evidence"]) if i == 0 else "", block, " cont" if i else "")
-            for i, block in enumerate(_evidence_html(ctx, entry, t))]
+    rows = []
+    comment = audit.comment(entry.comment) if reviewed else []
+    if comment:
+        rows.append(_row(_html.escape(t["review_h"]), f'<div class="md review">{_md_html(comment)}</div>'))
+    rows += [_row(_html.escape(t["evidence"]) if i == 0 else "", block, " cont" if i else "")
+             for i, block in enumerate(_evidence_html(ctx, entry, t))]
     rows += [_row(_html.escape(t[k]), f"<p>{_h(v)}</p>") for k, v in (("why", entry.why), ("fix", entry.fix)) if v.strip()]
     vulns = _vulns_html(entry, t)
     if vulns:
         rows.append(_row("", vulns, " long cont"))
-    std = " · ".join(_link(_std_link(s), s) if _std_link(s) else _h(s) for s in STANDARDS.get(entry.rule, []))
+    std = " · ".join(_link(_std_link(s), s) if _std_link(s) else _h(s) for s in standards(entry.rule, entry.params))
     if std:
         rows.append(_row(_html.escape(t["standards"]), f'<p class="std">{std}</p>'))
     refs = "".join(f"<li>{_link(r)}</li>" for r in entry.refs)
     if refs:
         rows.append(_row(_html.escape(t["refs"]), f'<ul class="refs">{refs}</ul>'))
-    head = (f'<header class="f-head"><span class="f-n">#{n}</span>{_badge(entry.severity, t)}'
+    chip = _status_chip(entry.status, t) if reviewed else ""
+    head = (f'<header class="f-head"><span class="f-n">#{n}</span>{_badge(entry.severity, t)}{chip}'
             f'<span class="f-rule">{_html.escape(t["rule"])} {_html.escape(entry.rule)}</span></header>'
             f'<h4 class="f-title">{_h(entry.title)}</h4>')
     # Na impressão, cabeçalho, título e "onde" ficam na mesma página, a não ser que a lista de lugares seja longa.
     top = f'<div class="f-top">{head}</div>{where}' if long else f'<div class="f-top">{head}{where}</div>'
-    return f"""<article class="finding sev-line-{entry.severity}" id="f{n}">
+    status = f" rv-line-{entry.status or 'todo'}" if reviewed else ""
+    return f"""<article class="finding sev-line-{entry.severity}{status}" id="f{n}">
 {top}
 {"".join(rows)}
 </article>"""
 
 
-def _findings(ctx, entries, numbers, t):
+def _findings(ctx, entries, numbers, t, audit=None):
     if not entries:
         return f"""<section id="findings">
 <h2><span class="sec-n">3</span>{_html.escape(t["s_findings"])}</h2>
 <p class="calm">{_html.escape(t["no_findings"])}</p>
 </section>"""
+    # Primeiro a área do achado mais grave que ainda vale (o corrigido durante a auditoria não puxa a área), depois a
+    # que tem mais desses itens; no empate, a ordem fixa de GROUPS.
     present = {e.group for e in entries}
-    order = [g for g in GROUPS if g in present] + sorted(present - set(GROUPS))
+    fixed = [g for g in GROUPS if g in present] + sorted(present - set(GROUPS))
+
+    def weight(g):
+        standing = [e for e in entries if e.group == g and e.status not in report.NOT_COUNTED]
+        return (-max((SEV_RANK[e.severity] for e in standing), default=-1), -len(standing), fixed.index(g))
+    order = sorted(fixed, key=weight)
     parts = []
     for g in order:
         mine = [e for e in entries if e.group == g]
         label = t["group"].get(g, g.capitalize())
         parts.append(f'<h3 class="area">{_html.escape(label)} <span class="area-n">{len(mine)}</span></h3>')
-        parts += [_finding(ctx, e, numbers[id(e)], t) for e in mine]
+        parts += [_finding(ctx, e, numbers[id(e)], t, audit) for e in mine]
     return f"""<section id="findings">
 <h2><span class="sec-n">3</span>{_html.escape(t["s_findings"])}</h2>
 <p class="lead">{_html.escape(t["ev_note"])}</p>
 {"".join(parts)}
+</section>"""
+
+
+def _appendix(ctx, discarded, numbers, t, audit):
+    articles = "".join(_finding(ctx, e, numbers[id(e)], t, audit) for e in discarded)
+    return f"""<section id="appendix">
+<h2><span class="sec-n">A</span>{_html.escape(t["s_appendix"])}</h2>
+<p class="lead">{_html.escape(t["appendix_intro"])}</p>
+{articles}
 </section>"""
 
 
@@ -653,7 +830,8 @@ def _source_rows(ctx, checks, t):
         elif ctx.offline:
             st = t["st_offline"]
         elif key == "osv":
-            st = t["st_ok"] if s.get("osv") else t["st_fail"] if s.get("osv_error") else t["st_nopkg"]
+            st = (t["st_partial"].format(detail=report._clean(s["osv_error"])) if report.osv_partial(ctx) else
+                  t["st_ok"] if s.get("osv") else t["st_fail"] if s.get("osv_error") else t["st_nopkg"])
         elif not s.get("osv"):
             st = t["st_na"]
         elif key == "kev":
@@ -669,22 +847,74 @@ def _source_rows(ctx, checks, t):
     return "".join(rows)
 
 
-def _scope(ctx, lang, t, checks):
+MAX_UNREAD = 20  # arquivos que o escopo lista pelo nome; o resto vira "e mais N"
+
+
+def _max_files():
+    from . import scan
+    return scan.MAX_FILES
+
+
+def _size(n, lang):
+    """Tamanho legível, com a vírgula decimal em português: 12,4 MB."""
+    for unit, base in (("MB", 1_000_000), ("KB", 1_000)):
+        if n >= base:
+            text = f"{n / base:.1f} {unit}"
+            return text.replace(".", ",") if lang == "pt" else text
+    return f"{n} B"
+
+
+def _unread(ctx, lang, t):
+    """O que a varredura não leu: os arquivos acima do limite de tamanho, com o tamanho de cada um (se ainda estão no
+    disco), e a nota do limite de arquivos. Os nomes vêm do projeto auditado: escapados como qualquer caminho."""
+    out = ""
+    if ctx.too_big:
+        rows = []
+        for rel in ctx.too_big[:MAX_UNREAD]:
+            try:
+                size = f' <span class="size">{_html.escape(_size(os.stat(os.path.join(ctx.root, rel)).st_size, lang))}</span>'
+            except (OSError, ValueError):
+                size = ""
+            rows.append(f"<li><code>{_path(rel)}</code>{size}</li>")
+        if len(ctx.too_big) > MAX_UNREAD:
+            rows.append(f'<li class="more">{_html.escape(_n(t, "unread_more", len(ctx.too_big) - MAX_UNREAD))}</li>')
+        head = _n(t, "unread_big", len(ctx.too_big), mb=report.size_cap(ctx.mode) // 1_000_000)
+        out += f'<p class="warn">{_html.escape(head)}</p><ul class="facts unread">{"".join(rows)}</ul>'
+    if ctx.truncated:
+        out += f'<p class="warn">{_html.escape(t["warn_many"].format(n=report.thousands(_max_files(), lang)))}</p>'
+    return out
+
+
+def _scope(ctx, lang, t, checks, audit=None, findings=()):
     from . import scan  # aqui e não no topo: scan carrega as verificações, que o relatório só usa para ler o .stingwardignore
 
+    reviewed = audit is not None and audit.review is not None
     what = [_n(t, "files", len(ctx.files)),
             _n(t, "pkgs", ctx.sources.get("packages", 0)) if "deps" in checks else t["pkgs_skipped"],
             f'{t["checks"]}: {_checks(checks, t)}', t["rules"].format(n=len(RULES))]
     items = "".join(f"<li>{_html.escape(w)}</li>" for w in what)
     ignored = len(scan.load_ignore(ctx.root)) if ctx.mode == "project" else 0
     ign = f'<p class="warn">{_html.escape(_n(t, "ignore", ignored))}</p>' if ignored else ""
-    method = "".join(f"<li>{_html.escape(m.format(n=len(RULES)))}</li>" for m in t["method"])
-    limits = "".join(f"<li>{_html.escape(m)}</li>" for m in t["limits"])
+    steps = list(t["method"])
+    if reviewed:
+        steps[-1:] = [t["method_review"], t["method_grade_review"]]
+    method = "".join(f"<li>{_html.escape(m.format(n=len(RULES)))}</li>" for m in steps)
+    limits = "".join(f"<li>{_html.escape(m)}</li>" for m in t["limits_review" if reviewed else "limits"])
+    human = ""
+    if reviewed:
+        who = audit.reviewer or t["reviewer_none"]
+        counts = "".join(f"<li>{_html.escape(c)}</li>" for c in report.review_parts(findings, audit.review, lang))
+        rules = "".join(f"<li>{_html.escape(r)}</li>" for r in t["human_rules"])
+        human = (f'<h3>{_html.escape(t["human_h"])}</h3><p>{_h(t["human_intro"].format(who=who))}</p>'
+                 f'<ul class="facts review-counts">{counts}</ul>'
+                 f'<h3>{_html.escape(t["human_rules_h"])}</h3><ul class="limits">{rules}</ul>')
     return f"""<section id="scope">
 <h2><span class="sec-n">4</span>{_html.escape(t["s_scope"])}</h2>
 <h3>{_html.escape(t["scope_what"])}</h3>
 <ul class="facts">{items}</ul>
+{_unread(ctx, lang, t)}
 {ign}
+{human}
 <h3>{_html.escape(t["sources_h"])}</h3>
 <table class="sources"><thead><tr><th scope="col">{_html.escape(t["src_col"])}</th><th scope="col">{_html.escape(t["src_role"])}</th>
 <th scope="col">{_html.escape(t["src_status"])}</th></tr></thead><tbody>{_source_rows(ctx, checks, t)}</tbody></table>
@@ -698,23 +928,34 @@ def _scope(ctx, lang, t, checks):
 
 # --------------------------------------------------------------------------- documento
 
-def render(ctx, findings, lang="pt", target=None, checks=None, today=None):
-    """O relatório inteiro. checks: verificações que rodaram (padrão: todas). today: data do relatório (padrão: hoje)."""
+def render(ctx, findings, lang="pt", target=None, checks=None, today=None, audit=None):
+    """O relatório inteiro. checks: verificações que rodaram (padrão: todas). today: data do relatório (padrão: hoje).
+    audit: a revisão humana (review.Audit), com cliente, parecer e o status e comentário de cada achado."""
     lang = lang if lang in H else "en"
     t = H[lang]
     checks = [c for c in CHECK_ORDER if checks is None or c in checks]
     today = today or datetime.date.today()
-    entries = report.merge(findings, lang)
-    numbers = {id(e): i for i, e in enumerate(entries, 1)}
+    rv = audit.review if audit is not None else None
+    valid = report.counted(findings, rv)
+    shown, discarded = report.split(report.merge(findings, lang, rv))
+    numbers = {id(e): i for i, e in enumerate(shown + discarded, 1)}
+    target = report.shown_target(target) if target else target  # sem o token de uma URL https://token@...
     name = _name(ctx, target, t)
     commit = gitsafe.head(ctx.root) if ctx.mode != "agents" else None
-    body = "\n".join([
-        _cover(ctx, findings, lang, t, name, target, today, commit, checks),
-        _summary(findings, entries, numbers, lang, t),
-        _plan(entries, numbers, t),
-        _findings(ctx, entries, numbers, t),
-        _scope(ctx, lang, t, checks),
-    ])
+    toc = [("summary", 1, t["s_summary"]), ("plan", 2, t["s_plan"]), ("findings", 3, t["s_findings"]), ("scope", 4, t["s_scope"])]
+    if discarded:
+        toc.append(("appendix", "A", t["s_appendix"]))
+    parts = [
+        _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc, audit, findings),
+        _summary(valid, shown, numbers, lang, t, audit, findings, today,
+                 report.nothing_read_text(ctx, lang) if report.nothing_read(ctx, findings) else ""),
+        _plan(shown, numbers, t, audit.gone if audit is not None else ()),
+        _findings(ctx, shown, numbers, t, audit),
+        _scope(ctx, lang, t, checks, audit, findings),
+    ]
+    if discarded:
+        parts.append(_appendix(ctx, discarded, numbers, t, audit))
+    body = "\n".join(parts)
     return f"""<!doctype html>
 <html lang="{"pt-BR" if lang == "pt" else "en"}">
 <head>
@@ -763,6 +1004,7 @@ code{font-family:var(--mono);font-size:.88em;unicode-bidi:isolate;overflow-wrap:
 .note{font-size:13.5px;color:var(--muted);margin-top:12px}
 .warn{margin-top:16px;padding:10px 14px;border:1px solid #e9b44c;border-left:5px solid #c98a00;border-radius:6px;background:#fff8e6;font-size:14px}
 .more{font-size:12.5px;color:var(--muted)}
+.unread{margin-top:10px}.unread .size{color:var(--muted);font-size:13px;white-space:nowrap}
 /* capa */
 .cover{display:flex;flex-direction:column;min-height:1040px;padding-top:44px}
 .brand{display:flex;align-items:center;gap:10px;padding-bottom:18px;border-bottom:4px solid var(--honey)}
@@ -774,11 +1016,12 @@ code{font-family:var(--mono);font-size:.88em;unicode-bidi:isolate;overflow-wrap:
 .title{margin-top:10px;font-size:46px;line-height:1.08;letter-spacing:-.025em;overflow-wrap:anywhere}
 .verdict{display:flex;align-items:center;gap:26px;margin-top:40px;padding:22px 24px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}
 .verdict-text{font-size:19px;line-height:1.4;font-weight:600}
+.verdict-incomplete{color:var(--high)}
 .grade{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;width:112px;height:112px;border:4px solid var(--g);
 border-radius:16px;background:#fff;color:var(--g)}
 .grade-k{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
 .grade-v{font-size:64px;font-weight:800;line-height:.95}
-.grade-A{--g:var(--gA)}.grade-B{--g:var(--gB)}.grade-C{--g:var(--gC)}.grade-D{--g:var(--gD)}.grade-F{--g:var(--gF)}
+.grade-A{--g:var(--gA)}.grade-B{--g:var(--gB)}.grade-C{--g:var(--gC)}.grade-D{--g:var(--gD)}.grade-F{--g:var(--gF)}.grade-none{--g:var(--faint)}
 .meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 32px;margin-top:36px}
 .meta div{padding:10px 0;border-bottom:1px solid var(--line)}
 .meta dt{font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
@@ -813,7 +1056,8 @@ border-radius:16px;background:#fff;color:var(--g)}
 .sev{display:inline-block;padding:1px 7px;border:1.5px solid var(--c);border-radius:4px;background:var(--cb);color:var(--c);font-size:11px;font-weight:800;
 letter-spacing:.07em;text-transform:uppercase;line-height:1.5;white-space:nowrap;vertical-align:1px}
 .first{list-style:none;padding:0;display:grid;gap:10px;counter-reset:first}
-.first-item{position:relative;padding:12px 16px 12px 50px;border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;break-inside:avoid}
+.first-item{position:relative;min-width:0;padding:12px 16px 12px 50px;border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;
+break-inside:avoid;overflow-wrap:anywhere}
 .first-item::before{counter-increment:first;content:counter(first);position:absolute;left:16px;top:11px;font-size:20px;font-weight:800;color:var(--faint)}
 .first-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
 .first-title{font-weight:700;text-decoration:none;font-size:16px;line-height:1.35}
@@ -869,6 +1113,23 @@ font-weight:700;white-space:nowrap}
 .vid{white-space:nowrap;font-family:var(--mono);font-size:12.5px}
 .tag{display:inline-block;margin-left:6px;padding:0 6px;border:1px solid var(--muted);border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap}
 .tag-kev{border-color:var(--crit);color:var(--crit)}
+/* revisão humana */
+.rv{display:inline-block;padding:1px 7px;border:1.5px solid var(--rc);border-radius:4px;background:#fff;color:var(--rc);font-size:11px;font-weight:800;
+letter-spacing:.07em;text-transform:uppercase;line-height:1.5;white-space:nowrap;vertical-align:1px}
+.rv-confirmed{--rc:var(--ink)}.rv-false_positive{--rc:var(--muted)}.rv-accepted_risk{--rc:#6941c6}.rv-fixed{--rc:var(--gA)}
+.rv-todo{--rc:var(--muted);border-style:dashed}
+.finding.rv-line-false_positive,.finding.rv-line-fixed{border-left-color:var(--line)}
+.analyst{margin-bottom:28px;padding:16px 20px;border:1px solid var(--line);border-left:5px solid var(--honey);border-radius:8px;background:#fffcf4}
+.analyst-h{margin:0 0 8px}
+.md p+p,.md p+ul,.md ul+p,.md ul+ul{margin-top:8px}
+.md ul{padding-left:20px;display:grid;gap:4px}
+.md code{padding:0 3px;border-radius:3px;background:var(--soft)}
+.md.review{padding:8px 12px;border-radius:6px;background:var(--soft)}
+.sign{margin-top:12px;font-size:13px;color:var(--muted)}
+.review-line{color:var(--ink);font-weight:600}
+.review-counts{margin-top:10px}
+.band-done{--c:var(--info);--cb:var(--info-bg)}
+.plan .problem .sev{margin-left:4px}
 /* escopo */
 .facts,.limits,.steps{padding-left:20px;display:grid;gap:6px}
 .sources th[scope=row]{white-space:nowrap}
@@ -893,7 +1154,7 @@ section{padding:36px 16px}
 .plan thead{display:none}
 .plan,.plan tbody{display:block}
 .plan tr{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:2px 8px;padding:10px 0;border-bottom:1px solid var(--line)}
-.plan td,.plan th{border:0;padding:0;width:auto}
+.plan td,.plan th,.plan .num,.plan .where,.plan .effort{border:0;padding:0;width:auto}
 .plan .num{grid-row:1/3}
 .plan .problem{grid-column:2;grid-row:1}
 .plan .effort{grid-column:3;grid-row:1;text-align:right}
@@ -926,12 +1187,13 @@ a{text-decoration:none}
 .scale li{font-size:8.5pt;padding:7pt}
 .tiles{display:flex;margin-top:14pt}
 .tile{flex:1 1 0;min-width:0}
-.first-item,.code,tr,.grade-box,.tiles,.scale,.verdict,.ev{break-inside:avoid}
+.first-item,.code,tr,.grade-box,.tiles,.scale,.verdict,.ev,.md p,.md li{break-inside:avoid}
 .first-title{font-size:11pt}
 .finding{padding:11pt 13pt 9pt}
 .f-row{grid-template-columns:28mm minmax(0,1fr)}
 .f-top,.f-row{break-inside:avoid}
 .f-row.long{break-inside:auto}
+.finding>.f-row:last-child,tbody tr:last-child{break-before:avoid}
 table{font-size:9.5pt}
 .code{font-size:8.5pt}
 .toc a{padding:3pt 0}

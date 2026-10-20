@@ -5,15 +5,16 @@ import fnmatch
 import os
 import re
 
-from . import gitsafe
-from .checks import TESTISH, agents, app, code, deps, secrets
-from .model import SEV_RANK, Context
+from . import gitsafe, review
+from .checks import TESTISH, agents, app, code, deps, is_text_source, secrets
+from .model import SEV_RANK, TEXT_BOMS, Context, decode_text
 
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "env", "__pycache__", ".next", ".nuxt", ".svelte-kit", ".turbo",
              "dist", "build", "out", "coverage", ".cache", "target", "vendor", ".pytest_cache", ".mypy_cache", ".tox",
              ".idea", ".gradle", "Pods", ".terraform", ".vercel", ".netlify", ".expo", ".parcel-cache"}
 # Numa skill ou servidor MCP, o que roda costuma ser o build: dist/, build/, out/, vendor/.
 SKILL_SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".tox"}
+MAX_FILES = 50_000
 MAX_BYTES = 2_000_000
 SKILL_MAX_BYTES = 10_000_000
 LOCK_MAX_BYTES = 64_000_000
@@ -26,7 +27,7 @@ _TESTISH = TESTISH
 # Severidade máxima de cada regra em código de teste e exemplo, por modo. Numa skill, payload em tests/ costuma ser
 # exemplo, mas o autor escolhe o nome da pasta: baixa só até médio. Falha de código (injeção, XSS) em teste de skill
 # não roda na máquina de quem instala, então vai a baixo.
-_CODE_RULES = ("COD", "APP009", "APP012", "APP013")
+_CODE_RULES = ("COD", "APP009", "APP012", "APP013", "APP014")
 _TEST_DOWNGRADE = {"project": {"low": ("APP", "SKL001", "COD")},
                    "skill": {"medium": ("SKL002", "SKL004", "SKL005", "SKL007", "SKL008"), "low": _CODE_RULES},
                    "agents": {}}
@@ -34,13 +35,41 @@ _TEST_DOWNGRADE = {"project": {"low": ("APP", "SKL001", "COD")},
 CHECKS = {"deps": deps.check, "secrets": secrets.check, "app": app.check, "code": code.check, "agents": agents.check}
 
 
-def list_files(root: str, max_files: int = 50_000, mode: str = "project"):
+def _walk(root: str, skip):
+    """(pasta, arquivos) na ordem do os.walk, sem descer em link simbólico nem nas pastas de skip.
+
+    Sem recursão: no Python até 3.11 o os.walk é recursivo, e uma skill com mil pastas aninhadas derrubava a
+    varredura com RecursionError."""
+    stack = [root]
+    while stack:
+        d = stack.pop()
+        try:
+            with os.scandir(d) as it:
+                entries = list(it)
+        except OSError:
+            continue
+        dirs, files = [], []
+        for e in entries:
+            try:
+                is_dir = e.is_dir()
+            except OSError:
+                is_dir = False
+            (dirs if is_dir else files).append(e.name)
+        yield d, sorted(files)
+        for name in sorted((x for x in dirs if x not in skip), reverse=True):
+            p = os.path.join(d, name)
+            if not os.path.islink(p):
+                stack.append(p)
+
+
+def list_files(root: str, max_files: int = MAX_FILES, mode: str = "project", too_big=None):
+    """Arquivos a auditar, relativos a root. too_big, se for uma lista, recebe os de código e texto que passaram
+    do limite de tamanho: a auditoria não os cobre, e quem lê o relatório precisa saber."""
     out = []
     skip = SKILL_SKIP_DIRS if mode == "skill" else SKIP_DIRS
     limit = SKILL_MAX_BYTES if mode == "skill" else MAX_BYTES
-    for d, dirs, files in os.walk(root):
-        dirs[:] = sorted(x for x in dirs if x not in skip)
-        for f in sorted(files):
+    for d, files in _walk(root, skip):
+        for f in files:
             p = os.path.join(d, f)
             rel = os.path.relpath(p, root).replace(os.sep, "/")
             try:
@@ -50,13 +79,17 @@ def list_files(root: str, max_files: int = 50_000, mode: str = "project"):
             if not os.path.isfile(p) or os.path.islink(p):
                 continue
             if st.st_size > (LOCK_MAX_BYTES if _LOCKFILE.search(rel) else limit):
+                if too_big is not None and is_text_source(rel, mode):
+                    too_big.append(rel)
                 continue
             # Byte nulo indica binário, mas não basta para pular código: um "/*\0*/" no topo esconderia o arquivo.
+            # Texto em UTF-16 (com BOM) tem um nulo a cada letra ASCII e é texto.
             if not _CODE_EXT.search(rel):
                 try:
                     with open(p, "rb") as fh:
-                        if b"\0" in fh.read(4096):
-                            continue
+                        head = fh.read(4096)
+                    if b"\0" in head and not head.startswith(TEXT_BOMS):
+                        continue
                 except OSError:
                     continue
             out.append(rel)
@@ -77,8 +110,10 @@ def load_ignore(root: str):
     """Linhas do .stingwardignore: `REGRA`, `caminho/glob` ou `REGRA caminho/glob`."""
     rules = []
     try:
-        with open(os.path.join(root, ".stingwardignore"), encoding="utf-8") as fh:
-            for line in fh:
+        # Comentário em Latin-1, BOM no início ou UTF-16 (echo REGRA > .stingwardignore no PowerShell) não podem
+        # derrubar a varredura nem anular as linhas.
+        with open(os.path.join(root, ".stingwardignore"), "rb") as fh:
+            for line in decode_text(fh.read()).split("\n"):
                 line = line.split("#", 1)[0].strip()
                 if not line:
                     continue
@@ -101,7 +136,13 @@ def _ignored(f, rules):
 
 def run(root: str, mode: str = "project", offline: bool = False, only=None, files=None):
     root = os.path.abspath(root)
-    ctx = Context(root=root, files=files if files is not None else list_files(root, mode=mode), offline=offline, mode=mode)
+    too_big, truncated = [], False
+    if files is None:
+        # Um a mais que o limite só para saber se havia mais: parar calado deixaria parte do código fora sem aviso.
+        files = list_files(root, max_files=MAX_FILES + 1, mode=mode, too_big=too_big)
+        truncated = len(files) > MAX_FILES
+        files = files[:MAX_FILES]
+    ctx = Context(root=root, files=files, offline=offline, mode=mode, too_big=too_big, truncated=truncated)
     ctx.git_tracked = git_tracked(root) if mode != "agents" else None
     findings = []
     for name, fn in CHECKS.items():
@@ -127,4 +168,4 @@ def run(root: str, mode: str = "project", offline: bool = False, only=None, file
         seen.add(f.key())
         uniq.append(f)
     uniq.sort(key=lambda f: (-SEV_RANK[f.severity], "kev" not in f.tags, f.rule, f.file, f.line or 0))
-    return ctx, uniq
+    return ctx, review.assign(ctx, uniq)

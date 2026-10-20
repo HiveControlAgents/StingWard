@@ -52,8 +52,9 @@ class Dispatch(LockfileCase):
         yes = ["package-lock.json", "npm-shrinkwrap.json", "web/yarn.lock", "pnpm-lock.yaml", "bun.lock",
                "package.json", "requirements.txt", "requirements-dev.txt", "requirements_test.txt",
                "requirements.prod.txt", "poetry.lock", "uv.lock", "pdm.lock", "Pipfile.lock", "svc/go.mod",
-               "Cargo.lock", "Gemfile.lock", "composer.lock"]
-        no = ["requirements.in", "dev-requirements.txt", "package.json.bak", "Cargo.toml", "pyproject.toml",
+               "Cargo.lock", "Gemfile.lock", "composer.lock", "src/App/packages.lock.json", "dev-requirements.txt",
+               "ci/test-requirements.txt", "docs_requirements.txt"]
+        no = ["requirements.in", "dev-requirements.in", "nonrequirements.txt", "dev-requirements.txt.bak", "package.json.bak", "Cargo.toml", "pyproject.toml",
               "Pipfile", "Gemfile", "go.sum", "bun.lockb", "yarn.lock.orig", "README.md"]
         for rel in yes:
             self.assertTrue(lockfiles.is_dependency_file(rel), rel)
@@ -83,6 +84,29 @@ class Dispatch(LockfileCase):
         for rel, content, want in cases:
             with self.subTest(rel=rel):
                 self.assertEqual(self.pkgs(rel, content, encoding="utf-8-sig"), want)
+
+    def test_utf16_with_bom_is_read(self):
+        # Windows PowerShell 5 writes UTF-16 LE with a BOM for `pip freeze > requirements.txt`.
+        lock = json.dumps({"lockfileVersion": 3, "packages": {"node_modules/ms": {"version": "2.1.3"}}})
+        cases = [("requirements.txt", "requests==2.19.0\r\nflask==0.12\r\n", [("PyPI", "requests", "2.19.0"), ("PyPI", "flask", "0.12")]),
+                 ("package-lock.json", lock, [("npm", "ms", "2.1.3")])]
+        for encoding in ("utf-16", "utf-16-be"):
+            for rel, content, want in cases:
+                with self.subTest(rel=rel, encoding=encoding):
+                    data = content.encode(encoding)
+                    if encoding == "utf-16-be":
+                        data = b"\xfe\xff" + data
+                    (self.root / rel).write_bytes(data)
+                    self.assertEqual([x[:3] for x in lockfiles.parse(self.root, rel)], want)
+        # Bytes, not write_text: on Windows text mode would turn each \r\n into \r\r\n.
+        (self.root / "requirements.txt").write_bytes("requests==2.19.0\r\nflask>=0.12\r\n".encode("utf-16"))
+        self.assertEqual([(r.name, r.floor, r.line) for r in lockfiles.ranges(self.root, "requirements.txt")], [("flask", "0.12", 2)])
+        self.assertEqual(lockfiles.open_ranges(self.root, "requirements.txt"), 1)
+
+    def test_utf16_requirements_are_audited_by_a_scan(self):
+        from stingward import scan
+        (self.root / "requirements.txt").write_bytes("requests==2.19.0\r\nflask==0.12\r\n".encode("utf-16"))
+        self.assertEqual(scan.run(str(self.root), offline=True)[0].sources["packages"], 2)
 
     def test_deeply_nested_json_does_not_crash(self):
         for rel in ("package-lock.json", "package.json", "Pipfile.lock", "composer.lock"):
@@ -631,6 +655,35 @@ class Requirements(LockfileCase):
                 self.assertEqual(self.pkgs(rel, "pytest==7.4.0\n"), [("PyPI", "pytest", "7.4.0")])
         self.assertEqual(self.pkgs("requirements.in", "pytest==7.4.0\n"), [])
 
+    def test_files_in_a_requirements_folder_use_requirements_parser(self):
+        for rel in ("requirements/base.txt", "app/requirements/production.txt"):
+            with self.subTest(rel=rel):
+                self.assertTrue(lockfiles.is_dependency_file(rel))
+                self.assertEqual(self.pkgs(rel, "-r base.txt\ndjango==4.2.0\n"), [("PyPI", "django", "4.2.0")])
+        for rel in ("requirements/README.md", "docs/notes.txt", "requirements.txt/x.txt"):
+            with self.subTest(rel=rel):
+                self.assertFalse(lockfiles.is_dependency_file(rel))
+
+    def test_includes_with_r_and_c_resolve_against_the_file_folder(self):
+        self.write("app/requirements.txt", D('''\
+            -r requirements/prod.txt
+            --requirement=dev-requirements.txt
+            -c ../constraints.txt  # shared pins
+            --constraint  pins.txt
+            -rcompact.txt
+            -r https://example.com/remote.txt
+            -e .
+            django==4.2.0
+            '''))
+        self.assertEqual(lockfiles.requirement_includes(self.root, "app/requirements.txt"), [
+            "app/requirements/prod.txt", "app/dev-requirements.txt", "constraints.txt", "app/pins.txt", "app/compact.txt"])
+
+    def test_include_scan_is_linear(self):
+        self.write("requirements.txt", "-r" + " " * 50000 + "\n")
+        t = time.perf_counter()
+        self.assertEqual(lockfiles.requirement_includes(self.root, "requirements.txt"), [])
+        self.assertLess(time.perf_counter() - t, 0.5)
+
     def test_wildcard_pin_is_not_an_exact_version(self):
         self.assertEqual(self.pkgs("requirements.txt", "django==3.2.*\n"), [])
 
@@ -856,6 +909,167 @@ class TomlLocks(LockfileCase):
 # --------------------------------------------------------------------------- Pipfile.lock
 
 
+class NonRegistrySources(LockfileCase):
+    """Git and local-folder packages do not come from the registry: a private package that shares its name with a
+    public one must not inherit the public one's advisories (or its MAL- record). npm v1 and Gemfile.lock already
+    skip them; every other lockfile has to as well."""
+
+    def test_npm_v3_git_and_local_tarball_entries_skipped(self):
+        lock = {"lockfileVersion": 3, "packages": {
+            "": {"name": "app", "dependencies": {"private-lib": "github:acme/private-lib", "vendored": "file:vendor/vendored-1.0.0.tgz"}},
+            "node_modules/private-lib": {"version": "1.0.0", "resolved": "git+ssh://git@github.com/acme/private-lib.git#0123abcd"},
+            "node_modules/vendored": {"version": "1.0.0", "resolved": "file:vendor/vendored-1.0.0.tgz"},
+            "node_modules/lodash": {"version": "4.17.21", "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz"},
+        }}
+        self.assertEqual(self.pkgs("package-lock.json", json.dumps(lock, indent=2)), [("npm", "lodash", "4.17.21")])
+
+    def test_yarn_classic_git_github_and_tarball_entries_skipped(self):
+        lock = D('''\
+            # yarn lockfile v1
+
+
+            "private-lib@git+ssh://git@github.com/acme/private-lib.git#v1.0.0":
+              version "1.0.0"
+              resolved "git+ssh://git@github.com/acme/private-lib.git#0123abcd"
+
+            forked@github:acme/forked#main:
+              version "2.0.0"
+              resolved "https://codeload.github.com/acme/forked/tar.gz/0123abcd"
+
+            shorthand@acme/shorthand:
+              version "3.0.0"
+              resolved "https://codeload.github.com/acme/shorthand/tar.gz/0123abcd"
+
+            "tarball@https://example.com/tarball-1.0.0.tgz":
+              version "1.0.0"
+              resolved "https://example.com/tarball-1.0.0.tgz"
+
+            lodash@^4.17.21:
+              version "4.17.21"
+            ''')
+        self.assertEqual(self.pkgs("yarn.lock", lock), [("npm", "lodash", "4.17.21")])
+
+    def test_yarn_berry_git_entry_skipped(self):
+        lock = D('''\
+            __metadata:
+              version: 8
+
+            "private-lib@git+ssh://git@github.com/acme/private-lib.git#commit=0123abcd":
+              version: 1.0.0
+              resolution: "private-lib@git+ssh://git@github.com/acme/private-lib.git#commit=0123abcd"
+
+            "lodash@npm:^4.17.21":
+              version: 4.17.21
+              resolution: "lodash@npm:4.17.21"
+            ''')
+        self.assertEqual(self.pkgs("yarn.lock", lock), [("npm", "lodash", "4.17.21")])
+
+    def test_poetry_git_directory_and_file_sources_skipped_private_index_kept(self):
+        lock = D('''\
+            [[package]]
+            name = "private-lib"
+            version = "1.0.0"
+            optional = false
+            python-versions = "*"
+            files = []
+            develop = false
+
+            [package.source]
+            type = "git"
+            url = "https://github.com/acme/private-lib.git"
+            reference = "HEAD"
+            resolved_reference = "0123abcd"
+
+            [[package]]
+            name = "shared"
+            version = "0.1.0"
+            files = []
+            develop = true
+
+            [package.dependencies]
+            requests = ">=2"
+
+            [package.source]
+            type = "directory"
+            url = "../shared"
+
+            [[package]]
+            name = "vendored"
+            version = "1.0.0"
+            files = [
+                {file = "vendored-1.0.0-py3-none-any.whl", hash = "sha256:aaa"},
+            ]
+
+            [package.source]
+            type = "file"
+            url = "vendor/vendored-1.0.0-py3-none-any.whl"
+
+            [[package]]
+            name = "internal-sdk"
+            version = "2.1.0"
+            files = []
+
+            [package.source]
+            type = "legacy"
+            url = "https://pypi.acme.example/simple"
+            reference = "acme"
+
+            [[package]]
+            name = "requests"
+            version = "2.31.0"
+            files = []
+            ''')
+        self.assertEqual(self.pkgs("poetry.lock", lock), [("PyPI", "internal-sdk", "2.1.0"), ("PyPI", "requests", "2.31.0")])
+
+    def test_uv_git_source_skipped(self):
+        lock = 'version = 1\n\n[[package]]\nname = "private-lib"\nversion = "1.0.0"\n' \
+               'source = { git = "https://github.com/acme/private-lib?rev=v1#0123abcd" }\n\n' \
+               '[[package]]\nname = "idna"\nversion = "3.7"\nsource = { registry = "https://pypi.org/simple" }\n'
+        self.assertEqual(self.pkgs("uv.lock", lock), [("PyPI", "idna", "3.7")])
+
+    def test_pdm_git_and_path_packages_skipped(self):
+        lock = D('''\
+            [[package]]
+            name = "private-lib"
+            version = "1.0.0"
+            git = "https://github.com/acme/private-lib.git"
+            ref = "main"
+            revision = "0123abcd"
+            groups = ["default"]
+
+            [[package]]
+            name = "shared"
+            version = "0.1.0"
+            path = "./libs/shared"
+            editable = true
+            groups = ["default"]
+
+            [[package]]
+            name = "certifi"
+            version = "2024.2.2"
+            files = [
+                {file = "certifi-2024.2.2.tar.gz", hash = "sha256:aaa"},
+            ]
+            ''')
+        self.assertEqual(self.pkgs("pdm.lock", lock), [("PyPI", "certifi", "2024.2.2")])
+
+    def test_cargo_git_source_skipped(self):
+        lock = D('''\
+            version = 3
+
+            [[package]]
+            name = "bincode"
+            version = "2.0.1"
+            source = "git+https://github.com/acme/bincode.git?branch=patches#0123abcd"
+
+            [[package]]
+            name = "itoa"
+            version = "1.0.10"
+            source = "registry+https://github.com/rust-lang/crates.io-index"
+            ''')
+        self.assertEqual(self.pkgs("Cargo.lock", lock), [("crates.io", "itoa", "1.0.10")])
+
+
 class PipfileLock(LockfileCase):
     def test_default_and_develop(self):
         lock = {
@@ -1044,6 +1258,30 @@ class GemfileLock(LockfileCase):
 # --------------------------------------------------------------------------- composer.lock
 
 
+class NugetLock(LockfileCase):
+    LOCK = {"version": 1, "dependencies": {
+        "net8.0": {
+            "Newtonsoft.Json": {"type": "Direct", "requested": "[13.0.1, )", "resolved": "13.0.1",
+                                "contentHash": "ppPFpBcvxdsfUonNcvITKqLl3bqxWbDCZIzDWHzjpdAHRFfZe0Dw9HmA0+za13IdyrgJwpkDTDA9fHaxOrt20A=="},
+            "System.Text.Json": {"type": "Transitive", "resolved": "8.0.0"},
+            "Microsoft.Extensions.Logging": {"type": "CentralTransitive", "requested": "[8.0.0, )", "resolved": "8.0.0"},
+            "MyCompany.Shared": {"type": "Project", "dependencies": {"Newtonsoft.Json": "[13.0.1, )"}},
+        },
+        "net8.0/linux-x64": {"System.Text.Json": {"type": "Transitive", "resolved": "8.0.0"}},
+    }}
+
+    def test_packages_lock_json(self):
+        got = self.full("src/App/packages.lock.json", json.dumps(self.LOCK, indent=2))
+        self.assertEqual(sorted(set(x[:3] for x in got)), [
+            ("NuGet", "Microsoft.Extensions.Logging", "8.0.0"), ("NuGet", "Newtonsoft.Json", "13.0.1"),
+            ("NuGet", "System.Text.Json", "8.0.0")])
+        self.assertTrue(lockfiles.is_dependency_file("src/App/packages.lock.json"))
+
+    def test_malformed_does_not_crash(self):
+        self.assertNoCrash("packages.lock.json", ["", "{", "[]", '{"dependencies": []}', '{"dependencies": {"net8.0": []}}',
+                                                  '{"dependencies": {"net8.0": {"A": "x"}}}', DEEP_JSON])
+
+
 class ComposerLock(LockfileCase):
     def test_packages_and_packages_dev(self):
         lock = {
@@ -1108,6 +1346,11 @@ class OpenRanges(LockfileCase):
             ''')
         self.assertEqual(self.ranges("requirements.txt", req), 4)  # requests, flask, numpy, black
         self.assertEqual(self.ranges("requirements-dev.txt", "pytest\n"), 1)
+
+    def test_lines_that_are_not_requirements_are_not_open_versions(self):
+        prose = "The system shall export reports.\nUsers can log in with SSO (single sign-on).\nflask\n"
+        self.assertEqual(self.ranges("docs/functional-requirements.txt", prose), 1)
+        self.assertEqual(self.ranges("requirements.txt", "requests [socks] >= 2\nnumpy; python_version<'3.8'\nDjango\n"), 3)
 
     def test_requirements_marker_with_equals_is_still_open(self):
         self.assertEqual(self.ranges("requirements.txt", 'requests>=2; python_version=="3.8"\n'), 1)
@@ -1235,6 +1478,44 @@ class NpmFloor(unittest.TestCase):
                 self.assertIsNone(lockfiles.npm_floor(spec))
 
 
+class HostileRanges(unittest.TestCase):
+    """A hostile repository chooses the text of its manifests: a range must not make the scan hang."""
+
+    def assertFast(self, fn, arg, limit=1.0):
+        start = time.perf_counter()
+        fn(arg)
+        self.assertLess(time.perf_counter() - start, limit, arg[:40])
+
+    def test_long_version_that_fails_to_parse_is_linear(self):
+        # The old version pattern backtracked exponentially on a long run of letters that ends in a bad character.
+        self.assertFast(lockfiles.python_floor, "foo>=1" + "a" * 26 + "*")
+        self.assertFast(lockfiles.npm_floor, "^1.2.3-" + "a" * 26 + ".")
+        self.assertIsNone(lockfiles.python_floor("foo>=1" + "a" * 26 + "*"))
+        self.assertIsNone(lockfiles.npm_floor("^1.2.3-" + "a" * 26 + "."))
+        # what the pattern accepts did not change
+        self.assertEqual(lockfiles.python_floor("foo>=1.0.0rc1")[3], "1.0.0rc1")
+        self.assertEqual(lockfiles.python_floor("foo>=1.0+local.7")[3], "1.0+local.7")
+        self.assertEqual(lockfiles.npm_floor(">=1.0.0-20210101-abc"), ("1.0.0-20210101-abc", None, False))
+
+    def test_long_poetry_caret_that_fails_to_parse_is_linear(self):
+        for spec in ("^" + "1" * 20000 + "!", "~" + "1" * 20000 + "!", "^1.2." + "3" * 20000 + "!"):
+            self.assertFast(lockfiles._poetry_pep440, spec)
+            self.assertIsNone(lockfiles.python_floor("x" + lockfiles._poetry_pep440(spec)))
+        self.assertEqual(lockfiles._poetry_pep440("^1.2.3b1"), ">=1.2.3b1,<2.0.0")
+        self.assertEqual(lockfiles._poetry_pep440("~=1.4"), "~=1.4")
+
+    def test_long_whitespace_in_requirements_is_linear(self):
+        # Cutting the pip options (--hash...) off a line was quadratic in a long run of spaces.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "requirements.txt").write_text("foo>=1.0" + " " * 60000 + "x\nbar>=2.0   --hash=sha256:abc\n", "utf-8")
+        start = time.perf_counter()
+        got = lockfiles.ranges(root, "requirements.txt")
+        self.assertLess(time.perf_counter() - start, 1.0)
+        self.assertEqual([(r.name, r.req) for r in got], [("bar", "bar>=2.0")])
+
+
 class PyprojectRequirements(unittest.TestCase):
     def test_project_dependencies_and_optional_dependencies(self):
         doc = D('''\
@@ -1295,6 +1576,21 @@ class PyprojectRequirements(unittest.TestCase):
         for doc, want in cases:
             with self.subTest(doc=doc[:50]):
                 self.assertEqual(lockfiles.pyproject_requirements(doc), want)
+
+    def test_dependency_groups_and_uv_dev_dependencies(self):
+        doc = D('''\
+            [dependency-groups]
+            test = ["pytest>=8", "coverage[toml]>=7.4"]
+            dev = [{include-group = "test"}, "ruff>=0.4"]
+
+            [tool.uv]
+            dev-dependencies = ["mypy>=1.8"]
+
+            [tool.uv.sources]
+            mylib = { path = "../mylib" }
+            ''')
+        self.assertEqual(lockfiles.pyproject_requirements(doc), [
+            ("pytest>=8", 2), ("coverage[toml]>=7.4", 2), ("ruff>=0.4", 3), ("mypy>=1.8", 6)])
 
     def test_malformed_lines_are_skipped_not_fatal(self):
         doc = D('''\
@@ -1366,6 +1662,58 @@ class Ranges(LockfileCase):
             ("PyPI", "attrs", "==23.1.0", "attrs==23.1.0", "23.1.0", "23.1.0", True, 6),
             ("PyPI", "pytest", "~=7.4", "pytest~=7.4", "7.4", "8", False, 9)])
 
+    def test_poetry_dependencies(self):
+        doc = D('''\
+            [tool.poetry.dependencies]
+            python = "^3.9"
+            requests = "^2.28"
+            Django = "~4.2.1"
+            attrs = "23.1.0"
+            numpy = ">= 1.24, < 2"
+            urllib3 = { version = "^1.26", extras = ["socks"] }
+            anything = "*"
+            either = "^1.0 || ^2.0"
+            mylib = { path = "../mylib", develop = true }
+            fork = { git = "https://github.com/acme/fork.git", tag = "v1.0" }
+            multi = [{ version = "^1.0", python = "<3.10" }, { version = "^2.0", python = ">=3.10" }]
+            zerover = "^0.2.3"
+            wild = "1.4.*"
+
+            [tool.poetry.dependencies.boto3]
+            version = "~1.34"
+            optional = true
+
+            [tool.poetry.dev-dependencies]
+            black = "^23.1"
+
+            [tool.poetry.group.test.dependencies]
+            pytest = "^7.4"
+
+            [tool.poetry.group.test]
+            optional = true
+            ''')
+        self.assertEqual(self.got("pyproject.toml", doc), [
+            ("PyPI", "requests", "^2.28", 'requests = "^2.28"', "2.28", "3.0.0", False, 3),
+            ("PyPI", "Django", "~4.2.1", 'Django = "~4.2.1"', "4.2.1", "4.3.0", False, 4),
+            ("PyPI", "attrs", "23.1.0", 'attrs = "23.1.0"', "23.1.0", "23.1.0", True, 5),
+            ("PyPI", "numpy", ">= 1.24, < 2", 'numpy = ">= 1.24, < 2"', "1.24", "2", False, 6),
+            ("PyPI", "urllib3", "^1.26", 'version = "^1.26"', "1.26", "2.0.0", False, 7),
+            ("PyPI", "zerover", "^0.2.3", 'zerover = "^0.2.3"', "0.2.3", "0.3.0", False, 13),
+            ("PyPI", "wild", "1.4.*", 'wild = "1.4.*"', "1.4", "1.5", False, 14),
+            ("PyPI", "boto3", "~1.34", 'version = "~1.34"', "1.34", "1.35.0", False, 17),
+            ("PyPI", "black", "^23.1", 'black = "^23.1"', "23.1", "24.0.0", False, 21),
+            ("PyPI", "pytest", "^7.4", 'pytest = "^7.4"', "7.4", "8.0.0", False, 24)])
+        self.assertTrue(lockfiles.ranges(self.root, "pyproject.toml")[2].exact)
+        self.assertEqual(lockfiles.raised(lockfiles.ranges(self.root, "pyproject.toml")[0], "2.32.4"),
+                         'requests = ">=2.32.4,<3.0.0"')
+
+    def test_poetry_and_project_dependencies_together_keep_file_order(self):
+        doc = '[project]\ndependencies = ["flask>=2"]\n[tool.poetry.dependencies]\nrequests = "^2.28"\n' \
+              '[dependency-groups]\ndev = ["ruff>=0.4"]\n'
+        self.write("pyproject.toml", doc)
+        self.assertEqual([(r.name, r.line) for r in lockfiles.ranges(self.root, "pyproject.toml")],
+                         [("flask", 2), ("requests", 4), ("ruff", 6)])
+
     def test_other_and_broken_files(self):
         self.assertEqual(self.got("go.mod", "require x v1.0.0\n"), [])
         self.assertEqual(lockfiles.ranges(self.root, "requirements.txt"), [])  # missing file
@@ -1391,12 +1739,112 @@ class Ranges(LockfileCase):
             with self.subTest(spec=spec):
                 self.assertEqual(raised("package.json", '{"dependencies": {"axios": %s}}' % spec, version), want)
 
+    def test_python_versions_follow_pep_440(self):
+        # In PEP 440 "1.0-1" is the post-release 1.0.post1, after 1.0; the generic order took it for a pre-release.
+        self.write("requirements.txt", "foo>=0.9,<1.0.post1\nbar>=1.0,>=1.0-1\nbaz>=1.0.post1,<=1.0-1\n")
+        foo, bar, baz = lockfiles.ranges(self.root, "requirements.txt")
+        self.assertEqual([lockfiles.in_range(foo, v) for v in ("0.9", "1.0", "1.0-1", "1.0.post1")], [True, True, False, False])
+        self.assertEqual(bar.floor, "1.0-1")
+        self.assertTrue(baz.exact)
+        self.assertEqual(lockfiles.raised(foo, "1.0-1"), "foo>=1.0-1")  # outside the range: it opens
+
     def test_in_range(self):
         self.write("package.json", '{"dependencies": {"a": "^1.6.0", "b": ">=1.0.0 <=1.9.0", "c": ">=2.0.0"}}')
         a, b, c = lockfiles.ranges(self.root, "package.json")
         self.assertEqual([lockfiles.in_range(a, v) for v in ("1.5.9", "1.6.0", "1.99.0", "2.0.0")], [False, True, True, False])
         self.assertEqual([lockfiles.in_range(b, v) for v in ("1.9.0", "1.9.1")], [True, False])
         self.assertTrue(lockfiles.in_range(c, "99.0.0"))
+
+
+# --------------------------------------------------------------------------- what deps.collect reads
+
+
+class Collect(LockfileCase):
+    def collect(self, files):
+        from stingward import scan
+        from stingward.checks import deps
+        from stingward.model import Context
+        for rel, content in files.items():
+            self.write(rel, content if isinstance(content, str) else json.dumps(content))
+        return deps.collect(Context(root=str(self.root), files=scan.list_files(str(self.root))))
+
+    MEMBER = {"name": "web", "dependencies": {"next": "^14.1.0", "react": "^18.2.0"}}
+    LOCK = {"lockfileVersion": 3, "packages": {"": {}, "apps/web": {"name": "web"},
+                                                "node_modules/next": {"version": "14.1.0"},
+                                                "node_modules/react": {"version": "18.2.0"}}}
+
+    def test_workspace_members_are_covered_by_the_root_lockfile(self):
+        layouts = {
+            "npm": {"package.json": {"name": "root", "workspaces": ["apps/*", "packages/*", "!packages/legacy"]},
+                    "package-lock.json": self.LOCK},
+            "yarn object form": {"package.json": {"name": "root", "workspaces": {"packages": ["./apps/*", "packages/**"]}},
+                                 "yarn.lock": 'next@^14.1.0:\n  version "14.1.0"\n'},
+            "pnpm": {"package.json": {"name": "root"}, "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+                     "pnpm-workspace.yaml": "packages:\n  - 'apps/*'   # apps\n  - \"packages/**\"\n  - '!packages/legacy'\ncatalog:\n  react: ^18\n"},
+        }
+        for name, root in layouts.items():
+            with self.subTest(layout=name):
+                tmp = tempfile.TemporaryDirectory()
+                self.addCleanup(tmp.cleanup)
+                self.root = Path(tmp.name)
+                files = dict(root, **{"apps/web/package.json": self.MEMBER, "packages/ui/package.json": self.MEMBER,
+                                      "packages/legacy/package.json": self.MEMBER, "tools/script/package.json": self.MEMBER})
+                _, open_manifests, ranges = self.collect(files)
+                want = ["tools/script/package.json"] if name == "yarn object form" else \
+                    ["packages/legacy/package.json", "tools/script/package.json"]
+                self.assertEqual(sorted(rel for rel, _ in open_manifests), want)
+
+    def test_shrinkwrap_and_nuget_lockfiles_are_audited_but_not_scanned_as_text(self):
+        from stingward import scan
+        token = "gh" + "p_" + "aB3cD5eF7gH9iJ1kL3mN5oP7qR9sT1uVwX2y"
+        shrink = {"lockfileVersion": 3, "packages": {"": {}, "node_modules/left-pad": {
+            "version": "1.3.0", "resolved": f"https://npm.acme.dev/left-pad/-/left-pad-1.3.0.tgz?token={token}"}}}
+        nuget = {"version": 1, "dependencies": {"net8.0": {"Newtonsoft.Json": {"type": "Direct", "resolved": "12.0.1",
+                                                                               "contentHash": token}}}}
+        pkgs, _, _ = self.collect({"npm-shrinkwrap.json": shrink, "package.json": {"name": "app"},
+                                   "src/App/packages.lock.json": nuget})
+        self.assertEqual(sorted(p[:4] for p in pkgs), [
+            ("NuGet", "Newtonsoft.Json", "12.0.1", "src/App/packages.lock.json"),
+            ("npm", "left-pad", "1.3.0", "npm-shrinkwrap.json")])
+        found = scan.run(str(self.root), offline=True, only={"secrets"})[1]
+        self.assertEqual([f.file for f in found if f.rule.startswith("SEC")], [])
+
+    def test_a_folder_below_a_lockfile_without_workspaces_is_not_covered(self):
+        _, open_manifests, _ = self.collect({"package.json": {"name": "root"}, "package-lock.json": self.LOCK,
+                                             "functions/package.json": self.MEMBER})
+        self.assertEqual(open_manifests, [("functions/package.json", 2)])
+
+    def test_unreferenced_dash_requirements_files_are_read(self):
+        pkgs, open_manifests, ranges = self.collect({"dev-requirements.txt": "pytest==7.0.0\nruff>=0.4\n",
+                                                     "ci/test-requirements.txt": "coverage==7.4.0\n"})
+        self.assertEqual(sorted((n, v, f) for _, n, v, f, _ in pkgs), [
+            ("coverage", "7.4.0", "ci/test-requirements.txt"), ("pytest", "7.0.0", "dev-requirements.txt")])
+        self.assertEqual([(r.name, r.floor) for r in ranges], [("ruff", "0.4")])
+        self.assertEqual(open_manifests, [("dev-requirements.txt", 1)])
+
+    def test_poetry_and_dependency_groups_are_read_without_a_lockfile(self):
+        doc = '[tool.poetry.dependencies]\npython = "^3.9"\nrequests = "^2.28"\nattrs = "23.1.0"\n' \
+              '[dependency-groups]\ndev = ["ruff>=0.4"]\n[tool.uv]\ndev-dependencies = ["mypy>=1.8"]\n'
+        pkgs, open_manifests, ranges = self.collect({"pyproject.toml": doc})
+        self.assertEqual([p[:4] for p in pkgs], [("PyPI", "attrs", "23.1.0", "pyproject.toml")])
+        self.assertEqual([(r.name, r.floor) for r in ranges], [("requests", "2.28"), ("ruff", "0.4"), ("mypy", "1.8")])
+        self.assertEqual(open_manifests, [])
+        pkgs, _, ranges = self.collect({"poetry.lock": ""})
+        self.assertEqual((pkgs, ranges), ([], []))
+
+    def test_requirements_folder_and_included_files_are_read(self):
+        pkgs, open_manifests, ranges = self.collect({
+            "requirements.txt": "-r requirements/production.txt\n-c constraints.txt\n-r ../outside.txt\n",
+            "requirements/base.txt": "django==4.2.0\ncelery>=5.3\n",
+            "requirements/production.txt": "-r base.txt\ngunicorn==21.2.0\n",
+            "constraints.txt": "urllib3==1.26.0\n",
+            "lint.txt": "ruff==0.4.0\n",
+        })
+        self.assertEqual(sorted((n, v, f) for _, n, v, f, _ in pkgs), [
+            ("django", "4.2.0", "requirements/base.txt"), ("gunicorn", "21.2.0", "requirements/production.txt"),
+            ("urllib3", "1.26.0", "constraints.txt")])
+        self.assertEqual([(r.name, r.floor, r.file) for r in ranges], [("celery", "5.3", "requirements/base.txt")])
+        self.assertEqual(open_manifests, [("requirements/base.txt", 1)])
 
 
 if __name__ == "__main__":

@@ -21,10 +21,10 @@ RULES = {
         "group": "deps",
         "pt": ("{pkg} {version} é um pacote malicioso ({vuln_id})",
                "O pacote foi publicado para roubar dados ou executar código. Não é um bug: é ataque.",
-               "Remova o pacote agora, apague node_modules/venv e troque todas as chaves e senhas da máquina e do projeto."),
+               "{fix}"),
         "en": ("{pkg} {version} is a malicious package ({vuln_id})",
                "This package was published to steal data or run code. It is not a bug, it is an attack.",
-               "Remove it now, delete node_modules/venv, and rotate every key and password on this machine and project."),
+               "{fix}"),
     },
     "DEP003": {
         "group": "deps",
@@ -74,11 +74,11 @@ RULES = {
     },
     "SEC004": {
         "group": "secrets",
-        "pt": ("Chave service_role do Supabase no código",
-               "Essa chave ignora todas as regras de acesso (RLS). Com ela, qualquer pessoa lê e apaga o banco inteiro.",
+        "pt": ("Chave service_role do Supabase no código{note}",
+               "Essa chave ignora todas as regras de acesso (RLS). Com ela, qualquer pessoa lê e apaga o banco inteiro.{local}",
                "Gere uma chave nova no painel do Supabase (Settings > API), use a service_role só no servidor e a anon no front-end."),
-        "en": ("Supabase service_role key in code",
-               "This key bypasses every access rule (RLS). With it anyone can read and delete the whole database.",
+        "en": ("Supabase service_role key in code{note}",
+               "This key bypasses every access rule (RLS). With it anyone can read and delete the whole database.{local}",
                "Rotate it in the Supabase dashboard (Settings > API), keep service_role server-side only and use the anon key in the frontend."),
     },
     # ------------------------------------------------------------------ apps feitos com IA
@@ -156,13 +156,13 @@ RULES = {
     },
     "APP009": {
         "group": "app",
-        "pt": ("Texto escrito pelo modelo chega a {sink}",
-               "A resposta do modelo, e os argumentos que ele preenche numa ferramenta, podem ser guiados por qualquer coisa que ele leu "
-               "(uma página, um arquivo, a mensagem de alguém). Usar isso direto transforma uma injeção de prompt em {impact}.",
+        "pt": ("Texto escrito pelo modelo chega {sink}",
+               "A resposta do modelo pode ser guiada por qualquer coisa que ele leu (uma página, um arquivo, a mensagem de alguém). "
+               "Usar isso direto transforma uma injeção de prompt em {impact}.",
                "Trate a saída do modelo como entrada de usuário: {fix}"),
         "en": ("Text written by the model reaches {sink}",
-               "The model's answer, and the arguments it fills in for a tool, can be steered by anything it read (a web page, a file, "
-               "someone's message). Using it as is turns a prompt injection into {impact}.",
+               "The model's answer can be steered by anything it read (a web page, a file, someone's message). Using it as is turns "
+               "a prompt injection into {impact}.",
                "Treat model output like user input: {fix}"),
     },
     "APP010": {
@@ -201,17 +201,31 @@ RULES = {
         "pt": ("Agente pode executar o que o modelo escrever ({what})", "{why}", "{fix}"),
         "en": ("Agent can run whatever the model writes ({what})", "{why}", "{fix}"),
     },
+    "APP014": {
+        "group": "app",
+        "pt": ("Argumento que o modelo escreve na ferramenta chega {sink}",
+               "Quem preenche os argumentos desta ferramenta é o modelo de IA, não você nem o seu código. Qualquer coisa que ele "
+               "leu antes de chamá-la (uma página, um arquivo, uma issue, um e-mail) pode esconder instruções que mudam o que ele "
+               "escreve aqui. {detail}",
+               "{fix}"),
+        "en": ("Tool argument written by the model reaches {sink}",
+               "The AI model fills in this tool's arguments, not you or your code. Anything it read before calling the tool (a web "
+               "page, a file, an issue, an email) can hide instructions that change what it writes here. {detail}",
+               "{fix}"),
+    },
     # ------------------------------------------------------------------ falhas no código
     "COD001": {
         "group": "code",
         "pt": ("Consulta SQL montada com {source}",
                "O valor entra no meio do texto do SQL. Quem manda algo como ' OR '1'='1 consegue ler, mudar ou apagar dados do banco.",
                "Passe os valores como parâmetros e deixe o driver juntar: cursor.execute(\"... WHERE id = %s\", (id,)), $1 no "
-               "Postgres, ? no SQLite, sql`...` ou $queryRaw`...` no Prisma."),
+               "Postgres, ? no SQLite, sql`...` ou $queryRaw`...` no Prisma. Nome de coluna ou de tabela não pode ser "
+               "parâmetro: escolha o nome numa lista fixa (SORTS[chave], if order not in ALLOWED: abort(400))."),
         "en": ("SQL query built from {source}",
                "The value goes straight into the SQL text. Someone who sends ' OR '1'='1 can read, change or delete data.",
                "Pass values as parameters and let the driver combine them: cursor.execute(\"... WHERE id = %s\", (id,)), $1 in "
-               "Postgres, ? in SQLite, sql`...` or $queryRaw`...` in Prisma."),
+               "Postgres, ? in SQLite, sql`...` or $queryRaw`...` in Prisma. A column or table name cannot be a parameter: "
+               "pick it from a fixed list (SORTS[key], if order not in ALLOWED: abort(400))."),
     },
     "COD002": {
         "group": "code",
@@ -339,11 +353,13 @@ RULES = {
     },
     "AGT002": {
         "group": "agents",
-        "pt": ("Hook baixa e executa código da internet",
-               "Toda vez que o hook dispara, roda o que estiver naquele endereço hoje, sem revisão.",
+        "pt": ("Hook ou servidor MCP baixa e executa código da internet",
+               "Um comando de hook ou o comando que inicia um servidor MCP passa curl/wget para o shell. Toda vez que o "
+               "hook dispara, ou o servidor inicia, roda o que estiver naquele endereço hoje, sem revisão.",
                "Baixe o script uma vez, revise, guarde no repositório e chame o arquivo local."),
-        "en": ("Hook downloads and runs code from the internet",
-               "Every time the hook fires it runs whatever is at that URL today, unreviewed.",
+        "en": ("Hook or MCP server downloads and runs code from the internet",
+               "A hook command, or the command that launches an MCP server, pipes curl/wget into a shell. Every time the "
+               "hook fires, or the server starts, it runs whatever is at that URL today, unreviewed.",
                "Download the script once, review it, commit it, and call the local file."),
     },
     "AGT003": {
@@ -485,6 +501,28 @@ RULES = {
 }
 
 
+# Na APP014 o CWE e o ASI dependem de onde o argumento chega (params["kind"]): (antes, depois) dos padrões da regra.
+KIND_STANDARDS = {
+    "APP014": {
+        "shell": (["CWE-78"], ["ASI05"]),
+        "code": (["CWE-94"], ["ASI05"]),
+        "template": (["CWE-94"], ["ASI05"]),
+        "deserialize": (["CWE-502"], ["ASI05"]),
+        "sql": (["CWE-89"], ["ASI02"]),
+        "path": (["CWE-22"], ["ASI02"]),
+        "url": (["CWE-918"], ["ASI02"]),
+        "html": (["CWE-79"], []),
+    },
+}
+
+
+def standards(rule: str, params: dict | None = None):
+    """Padrões do achado: os da regra, mais os que dependem do tipo de sink."""
+    base = STANDARDS.get(rule, [])
+    extra = KIND_STANDARDS.get(rule, {}).get((params or {}).get("kind"))
+    return extra[0] + base + extra[1] if extra else list(base)
+
+
 def texts(rule: str, lang: str, params: dict):
     """Devolve (título, por quê, como corrigir) já preenchidos."""
     lang = lang if lang in ("pt", "en") else "en"
@@ -530,6 +568,7 @@ STANDARDS = {
     "APP011": ["CWE-306", "CWE-770", "LLM06:2026"],
     "APP012": ["CWE-502", "CWE-829", "LLM04:2026"],
     "APP013": ["CWE-94", "LLM03:2026", "ASI05"],
+    "APP014": ["LLM03:2026"],
     "COD001": ["CWE-89"],
     "COD002": ["CWE-78"],
     "COD003": ["CWE-94", "CWE-95"],
