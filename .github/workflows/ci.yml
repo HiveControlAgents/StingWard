@@ -52,6 +52,7 @@ jobs:
         run: |
           python -m pip install build
           python -m build
+          STINGWARD_DIST=dist python -m unittest tests.test_e2e.Packaging -v
           python -m pip install dist/*.whl
           stingward --version
           stingward --offline --fail-on never --format json > report.json
