@@ -78,8 +78,9 @@ def is_sensitive_key(key) -> bool:
 # --------------------------------------------------------------------------
 
 _TOKEN_PATTERNS = [
+    # PEM (RSA, EC, OPENSSH, ENCRYPTED...) e o bloco armado do PGP/GPG, que termina em "PRIVATE KEY BLOCK-----".
     ("private_key", re.compile(
-        r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)")),
+        r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|\Z)")),
     # Prefixos com mínimo baixo de propósito: pegam também tokens já truncados.
     ("jwt", re.compile(r"(?<![\w-])eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{3,}(?:\.[A-Za-z0-9_-]*)?")),
     ("aws_access_key", re.compile(r"\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{12,16}\b")),
