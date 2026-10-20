@@ -63,6 +63,10 @@ class HostileInput(Case):
         self.assertFast(secrets._mask_flags, "-" + "key" * 6000)
         self.assertFast(secrets._mask_flags, "--token " + "-key" * 6000)
         self.assertFast(secrets._mask_flags, "a-" * 10000)
+        # The old pattern was cubic here: 36 s for "-key-" over 4 KB, 7 s for "-a" over 20 KB.
+        self.assertFast(secrets._mask_flags, "-key-" * 820)
+        self.assertFast(secrets._mask_flags, "-a" * 10000)
+        self.assertEqual(secrets._mask_flags("-key-" * 820 + " Tr0ub4dor77xK").count("[REDACTED]"), 1)
 
     def test_many_generic_findings_in_one_file_are_linear(self):
         # Each assignment looked through every finding of the file so far to skip a second one on the same line.
