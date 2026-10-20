@@ -84,7 +84,9 @@ def _fetch(target):
         url = f"https://github.com/{target}.git"
     tmp = tempfile.mkdtemp(prefix="stingward-")
     try:
-        cmd = ["git", "clone", "--depth", "1", "--quiet"] + (["--branch", branch] if branch else []) + ["--", url, os.path.join(tmp, "repo")]
+        # As mesmas opções do gitsafe: hooks globais (core.hooksPath, init.templateDir) não rodam no checkout da skill.
+        cmd = ["git", *gitsafe._SAFE, "clone", "--depth", "1", "--quiet"] + (["--branch", branch] if branch else []) + \
+            ["--", url, os.path.join(tmp, "repo")]
         try:
             r = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=CLONE_TIMEOUT,
                                env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_LFS_SKIP_SMUDGE": "1"})
