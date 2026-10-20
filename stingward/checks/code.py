@@ -2053,7 +2053,8 @@ _JS_LLM = re.compile(
     r"\b(?:llm|model|chain|chatModel|agent|executor|runnable)\s*\.\s*(?:invoke|call|predict)\s*\(")
 _JS_WORD = re.compile(r"(?<![\w$.])([A-Za-z_$][\w$]*)(?![\w$])(?!\s*:(?!:))")
 _JS_THIS = re.compile(r"\bthis\s*\.\s*([A-Za-z_$][\w$]*)")
-_JS_CALL_NAME = re.compile(r"([A-Za-z_$][\w$]*)\s*(?:<[^<>()]*>\s*)?\(")
+# Só no começo de um nome: sem o (?<!...), um nome longo sem "(" depois era tentado a partir de cada letra (quadrático).
+_JS_CALL_NAME = re.compile(r"(?<![\w$])([A-Za-z_$][\w$]*)\s*(?:<[^<>()]*>\s*)?\(")
 # Como _PASS no Python: o resultado é o próprio dado (texto, caminho, URL, JSON, markdown virando HTML).
 _JS_PASS = {"String", "decodeURIComponent", "decodeURI", "encodeURI", "join", "resolve", "normalize", "format", "parse",
             "stringify", "URL", "URLSearchParams", "from", "concat", "replace", "replaceAll", "split", "Buffer", "atob", "btoa",
