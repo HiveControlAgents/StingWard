@@ -261,9 +261,9 @@ Python files are read with `ast` and JavaScript/TypeScript (also the `<script>` 
 <a id="cod001"></a>
 ### COD001 · SQL query built from outside input
 
-An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, `read_sql`, `pool.query`, `knex.raw`, `$queryRawUnsafe` and similar. High with request data, medium with a function argument placed where a value goes (`= '{name}'`, `LIKE`, `IN (...)`). Table names from constants, `?`/`%s`/`$1` parameters, ORM builders and tagged templates (`` sql`...` ``, `` $queryRaw`...` ``) are not reported.
+An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, `read_sql`, `pool.query`, `knex.raw`, `$queryRawUnsafe` and similar. High with request data, medium with a function argument placed where a value goes (`= '{name}'`, `LIKE`, `IN (...)`). Medium when request data, model output or a tool argument picks a column or table name (`ORDER BY {order}`, `FROM {table}`, `LIMIT {limit}`); a name checked against a fixed list or taken from a dict in the code is not reported. Table names from constants, `?`/`%s`/`$1` parameters, ORM builders and tagged templates (`` sql`...` ``, `` $queryRaw`...` ``) are not reported.
 
-**Fix:** pass values as parameters: `cursor.execute("... WHERE id = %s", (id,))`, `$1` in Postgres, `?` in SQLite, `` sql`...` `` or `` $queryRaw`...` `` in Prisma.
+**Fix:** pass values as parameters: `cursor.execute("... WHERE id = %s", (id,))`, `$1` in Postgres, `?` in SQLite, `` sql`...` `` or `` $queryRaw`...` `` in Prisma. A column or table name cannot be a parameter: pick it from a fixed list (`SORTS[key]`, `if order not in ALLOWED: abort(400)`).
 **Standards:** `CWE-89`
 
 <a id="cod002"></a>

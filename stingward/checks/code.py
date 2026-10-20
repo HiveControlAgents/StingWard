@@ -190,8 +190,8 @@ class _Out:
         if old is None or SEV_RANK[sev] > SEV_RANK[old.severity]:
             self.items[key] = Finding(rule, sev, self.rel, line, dict(params or {}))
 
-    def tool(self, kind, built, line):
-        self.add("APP014", _tool_sev(kind, built), line, _tool_params(kind, built))
+    def tool(self, kind, built, line, sev=None):
+        self.add("APP014", sev or _tool_sev(kind, built), line, _tool_params(kind, built))
 
     def list(self):
         # O mesmo sink alcançado pelo argumento da ferramenta: fica a APP014, que explica a origem; o achado "veio de um
@@ -277,6 +277,17 @@ _PY_SQL_PART = re.compile(r"(?i)^(?:table|tables|table_name|tablename|schema|col
                           r"select|limit|offset|n|i|idx|count)$")
 _JS_SQL_PART = re.compile(r"(?i)^(?:table|tableName|schema|columns?|cols|fields|order|direction|sortDir|where|whereClause|"
                           r"conditions?|clause|setClause|joins?|sql|query|select|limit|offset|i|idx|n|count)$")
+# Desses nomes, os que guardam um pedaço inteiro de SQL (WHERE montado, a consulta), não um nome de coluna ou tabela.
+_SQL_FRAGMENT = re.compile(r"(?i)^(?:where(?:_?clause)?|conditions?|clause|set_?clause|joins?|filters?_?sql|sql|query)$")
+# Origem mais forte entre achados da mesma consulta com a mesma severidade.
+_SQL_ORIGIN_RANK = {LLM: 3, TOOL: 2, REQ: 1, PARAM: 0}
+
+
+def _sql_best(best, v):
+    """O achado que fica para a consulta: o mais grave e, empatado, o do modelo, da ferramenta, da requisição."""
+    if best is None or (SEV_RANK[v[0]], _SQL_ORIGIN_RANK[v[1]]) > (SEV_RANK[best[0]], _SQL_ORIGIN_RANK[best[1]]):
+        return v
+    return best
 
 
 # Uma string que começa como SQL (para saber se vale procurar consultas no arquivo).
@@ -819,7 +830,9 @@ class _Py:
             if isinstance(n, (ast.Compare, ast.Lambda)):
                 continue
             if isinstance(n, ast.IfExp):
-                stack += [n.body, n.orelse]
+                # x if x in ALLOWED else "id": o valor de fora só passa quando é um dos permitidos.
+                kept = self.allowed_branch(n, env)
+                stack += [n.body, n.orelse] if kept is None else [kept]
                 continue
             if isinstance(n, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
                 stack += [g.iter for g in n.generators]
@@ -897,20 +910,32 @@ class _Py:
         ddl = bool(_SQL_DDL.match(lit))
         best = None
         for i, expr in exprs:
-            if expr is None:
+            if expr is None or self.static(expr, value=True):
                 continue
             o = self.origins(expr, env)
-            before = _lit_before(parts, i)
-            if self.static(expr, value=bool(o & (REQ_ANY | MODEL)) and bool(_VALUE_POS.search(before))):
-                continue
+            value_pos = bool(_VALUE_POS.search(_lit_before(parts, i)))
+            sev = "high"
+            if self.static(expr):
+                # Nome de tabela, coluna, ORDER BY ou LIMIT (table, order, item.model): de origem desconhecida, é o
+                # código escolhendo. Vindo de fora e fora da posição de um dado, quem chama escolhe a coluna ou a tabela
+                # (médio); um pedaço inteiro de SQL (where, sql) continua alto.
+                if not o & (REQ_ANY | MODEL):
+                    continue
+                if not value_pos and not (isinstance(expr, ast.Name) and _SQL_FRAGMENT.search(expr.id)):
+                    sev = "medium"
             if LLM in o:
-                return ("high", LLM)
-            if TOOL in o:
-                return ("high", TOOL)
-            if o & REQ_ANY:
-                best = ("high", REQ)
-            elif PARAM in o and not ddl and _VALUE_POS.search(before):
-                best = best or ("medium", PARAM)
+                v = (sev, LLM)
+            elif TOOL in o:
+                v = (sev, TOOL)
+            elif o & REQ_ANY:
+                v = (sev, REQ)
+            elif PARAM in o and not ddl and value_pos:
+                v = ("medium", PARAM)
+            else:
+                continue
+            if sev == "high" and v[1] in MODEL:
+                return v
+            best = _sql_best(best, v)
         return best
 
     # ------------------------------------------------------------------ percurso
@@ -1032,6 +1057,18 @@ class _Py:
             self.llm_funcs.add(node.name)
         self.body(node.body, env, fn)
         self.strs, self.vals, self.path_env = saved
+
+    def allowed_branch(self, n, env):
+        """O outro lado de x if x in ALLOWED else padrão (e de padrão if x not in ALLOWED else x), com a lista do código,
+        ou None quando o if não confere o próprio valor numa lista."""
+        t = n.test
+        if not (isinstance(t, ast.Compare) and len(t.ops) == 1 and isinstance(t.ops[0], (ast.In, ast.NotIn))):
+            return None
+        key = _guard_key(t.left)
+        kept, checked = (n.orelse, n.body) if isinstance(t.ops[0], ast.In) else (n.body, n.orelse)
+        if not key or key != _guard_key(checked) or self.origins(t.comparators[0], env) & (REQ_ANY | MODEL):
+            return None
+        return kept
 
     def guarded(self, test, env):
         """Nomes que o teste de um if que sai da função confere: x not in ALLOWED, not x.isdigit(),
@@ -1384,7 +1421,7 @@ class _Py:
         if origin == LLM:
             self.out.add("APP009", sev, ln, _llm_params("sql"))
         elif origin == TOOL:
-            self.out.tool("sql", True, ln)
+            self.out.tool("sql", True, ln, sev)
         else:
             self.out.add("COD001", sev, ln, _src(origin))
 
@@ -2371,6 +2408,19 @@ def _opaque_calls(m):
     return "".join(parts)
 
 
+def _close_bracket(m, i):
+    """Posição do ] que fecha o [ em i, ou -1."""
+    depth = 0
+    for b in _BRACKETS.finditer(m, i):
+        if b.group() in "([{":
+            depth += 1
+        else:
+            depth -= 1
+            if depth == 0:
+                return b.start()
+    return -1
+
+
 def _near(hint, full, text, back=60, ahead=200):
     """full.search(text), mas só perto de onde hint (que começa com texto fixo e é rápida) acha um começo possível."""
     for m in hint.finditer(text):
@@ -2733,6 +2783,8 @@ class _Js:
         o = set()
         if "(" in m:
             m = _opaque_calls(m)
+        if "[" in m:
+            m = self.lookups(a, m)
         if self.mcp and _JS_MCP_ARGS.search(m):
             o.add(TOOL)
             m = _JS_MCP_ARGS.sub(" ", m)
@@ -2764,6 +2816,32 @@ class _Js:
                 if v:
                     o |= v
         return o
+
+    def lookups(self, a, m):
+        """Apaga a chave de SORTS[req.query.sort] quando o objeto é do código: o valor sai da tabela, não da requisição.
+        Com o objeto vindo de fora (req.body[campo], linhas[i] de uma lista da requisição), nada muda."""
+        parts, pos, i = [], 0, m.find("[")
+        while i >= 0:
+            j = i - 2 if m[i - 2:i] == "?." else i
+            k = j
+            while k > 0 and j - k < 200 and (m[k - 1] in _WORDCH or m[k - 1] == "." and k > 1 and m[k - 2] in _WORDCH):
+                k -= 1
+            # Só um nome (SORTS, cfg.sorts) colado no [: não f()[x], a[0][x], 3[x] nem o fim de um ...spread.
+            if k < j and m[k] not in "0123456789." and (k == 0 or m[k - 1] not in ".])") and \
+                    not self.origins(a + k, a + j):
+                close = _close_bracket(m, i)
+                if close < 0:
+                    break
+                if _IDENT.search(m, i + 1, close):  # choices[0], rows["id"]: índice fixo, nada a apagar
+                    parts += [m[pos:i + 1], " " * (close - i - 1)]
+                    pos = close
+                    i = m.find("[", close)
+                    continue
+            i = m.find("[", i + 1)
+        if not parts:
+            return m
+        parts.append(m[pos:])
+        return "".join(parts)
 
     def split_plus(self, a, b):
         out, depth, start = [], 0, a
@@ -3323,18 +3401,30 @@ class _Js:
         ddl = bool(_SQL_DDL.match(lit))
         best = None
         for i, (x, y) in exprs:
-            o = self.origins(x, y)
-            before = _lit_before(parts, i)
-            if self.static(x, y, value=bool(o & (REQ_ANY | MODEL)) and bool(_VALUE_POS.search(before))):
+            if self.static(x, y, value=True):
                 continue
+            o = self.origins(x, y)
+            value_pos = bool(_VALUE_POS.search(_lit_before(parts, i)))
+            sev = "high"
+            if self.static(x, y):
+                # Como em _Py.sql_verdict: ORDER BY ${order} vindo de fora é médio; WHERE ${where} continua alto.
+                if not o & (REQ_ANY | MODEL):
+                    continue
+                if not value_pos and not _SQL_FRAGMENT.search(self.code[x:y].strip()):
+                    sev = "medium"
             if LLM in o:
-                return ("high", LLM)
-            if TOOL in o:
-                return ("high", TOOL)
-            if REQ in o:
-                best = ("high", REQ)
-            elif PARAM in o and not ddl and _VALUE_POS.search(before):
-                best = best or ("medium", PARAM)
+                v = (sev, LLM)
+            elif TOOL in o:
+                v = (sev, TOOL)
+            elif REQ in o:
+                v = (sev, REQ)
+            elif PARAM in o and not ddl and value_pos:
+                v = ("medium", PARAM)
+            else:
+                continue
+            if sev == "high" and v[1] in MODEL:
+                return v
+            best = _sql_best(best, v)
         return best
 
     # ------------------------------------------------------------------ sinks
@@ -3394,7 +3484,7 @@ class _Js:
             if origin == LLM:
                 self.out.add("APP009", sev, self.line(m.start(1)), _llm_params("sql"))
             elif origin == TOOL:
-                self.out.tool("sql", True, self.line(m.start(1)))
+                self.out.tool("sql", True, self.line(m.start(1)), sev)
             else:
                 self.out.add("COD001", sev, self.line(m.start(1)), _src(origin))
 

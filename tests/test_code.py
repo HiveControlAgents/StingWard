@@ -174,8 +174,8 @@ class CodeRules(Checks):
         self.silent({"app/api/users/route.ts": src})
 
     def test_cod001_values_named_like_sql_parts(self):
-        """query, count, item.name: entre aspas ou depois de = é valor, não nome de tabela nem pedaço de SQL. Os nomes
-        que parecem pedaço de SQL só ficam de fora fora dessas posições (ORDER BY {order}) ou com origem desconhecida."""
+        """query, count, item.name: entre aspas ou depois de = é valor, não nome de tabela nem pedaço de SQL. Fora dessas
+        posições (ORDER BY {order}, FROM {item.model}), vindos de fora, escolhem a coluna ou a tabela (médio)."""
         py = FLASK + ("import sqlite3\ncur = sqlite3.connect('x').cursor()\n"
                       "@app.get('/s')\ndef s():\n"
                       "    query = request.args.get('query', '')\n"
@@ -205,8 +205,10 @@ class CodeRules(Checks):
                         "  const r2 = await db.query(`SELECT * FROM docs ORDER BY ${order}`)\n"
                         "  res.json(rows)\n})\n")
         self.check({"app.py": py, "main.py": api, "server.py": mcp, "server.js": js},
-                   [("COD001", "app.py", 8, "high"), ("COD001", "app.py", 10, "high"), ("COD001", "main.py", 11, "high"),
-                    ("APP014", "server.py", 7, "high"), ("COD001", "server.js", 6, "high")])
+                   [("COD001", "app.py", 8, "high"), ("COD001", "app.py", 10, "high"), ("COD001", "app.py", 12, "medium"),
+                    ("COD001", "main.py", 11, "high"), ("COD001", "main.py", 12, "medium"),
+                    ("APP014", "server.py", 7, "high"), ("COD001", "server.js", 6, "high"),
+                    ("COD001", "server.js", 8, "medium")])
 
     def test_cod001_names_that_only_end_like_placeholders(self):
         """marks, qmarks, question_marks e questionMarks são placeholders; remarks e bookmarks são o dado do formulário."""
@@ -227,6 +229,60 @@ class CodeRules(Checks):
                         "  await db.query(`INSERT INTO t (b) VALUES ('${bookmarks}')`)\n"
                         "  res.json({})\n})\n")
         self.check({"app.py": py, "server.js": js}, [("COD001", "app.py", 12, "high"), ("COD001", "server.js", 8, "high")])
+
+    def test_cod001_identifiers_from_outside_are_medium(self):
+        """ORDER BY {order}, FROM {table}, LIMIT {limit} com o valor da requisição, do modelo ou da ferramenta: nome de
+        coluna ou tabela escolhido de fora (médio). Um pedaço de SQL inteiro (WHERE {where}) é alto. Argumento de função
+        com esses nomes, valor conferido numa lista e valor tirado de um dicionário do código continuam quietos."""
+        py = FLASK + ("import sqlite3\ncur = sqlite3.connect('x').cursor()\nALLOWED = {'id', 'name'}\n"
+                      "SORTS = {'new': 'created_at DESC', 'old': 'created_at'}\n"
+                      "@app.get('/s')\ndef s():\n"
+                      "    order = request.args.get('order', 'id')\n"
+                      "    table = request.args['table']\n"
+                      "    cur.execute(f'SELECT * FROM {table} ORDER BY {order}')\n"
+                      "    limit = request.args['limit']\n"
+                      "    cur.execute('SELECT * FROM t LIMIT ' + limit)\n"
+                      "    where = request.args['where']\n"
+                      "    cur.execute(f'SELECT * FROM t WHERE {where}')\n"
+                      "    sort = request.args.get('sort')\n"
+                      "    if sort not in ALLOWED:\n"
+                      "        abort(400)\n"
+                      "    col = SORTS[request.args['col']]\n"
+                      "    c2 = request.args.get('c2')\n"
+                      "    columns = c2 if c2 in ALLOWED else 'id'\n"
+                      "    cur.execute(f'SELECT {columns} FROM t ORDER BY {sort}, {col}')\n"
+                      "    return 'x'\n"
+                      "def lib(conn, order, table):\n"
+                      "    return conn.execute(f'SELECT * FROM {table} ORDER BY {order}')\n")
+        tool = FMCP + ("import sqlite3\nconn = sqlite3.connect('d')\n"
+                       "@mcp.tool()\ndef rows(table: str, order: str) -> list:\n"
+                       "    return conn.execute(f'SELECT * FROM {table} ORDER BY {order}').fetchall()\n")
+        llm = OPENAI_PY + ("import sqlite3\nconn = sqlite3.connect('d')\ndef pick(q):\n"
+                           "    r = client.chat.completions.create(model='m', messages=[{'role': 'user', 'content': q}])\n"
+                           "    order = r.choices[0].message.content\n"
+                           "    return conn.execute(f'SELECT * FROM t ORDER BY {order}').fetchall()\n")
+        js = EXPRESS + ("const db = require('./db')\nconst SORTS = { new: 'created_at DESC', old: 'created_at' }\n"
+                        "app.get('/s', async (req, res) => {\n"
+                        "  const order = req.query.order\n"
+                        "  const table = req.query.table\n"
+                        "  await db.query(`SELECT * FROM ${table} ORDER BY ${order}`)\n"
+                        "  const where = req.query.where\n"
+                        "  await db.query(`SELECT * FROM t WHERE ${where}`)\n"
+                        "  const sort = SORTS[req.query.sort] ?? 'id'\n"
+                        "  const col = SORTS[req.query.col]\n"
+                        "  const dir = req.query.dir\n"
+                        "  if (!['asc', 'desc'].includes(dir)) return res.status(400).end()\n"
+                        "  await db.query(`SELECT * FROM t ORDER BY ${sort}, ${col} ${dir}`)\n"
+                        "  res.json({})\n})\n"
+                        "function lib(order, table) {\n  return db.query(`SELECT * FROM ${table} ORDER BY ${order}`)\n}\n")
+        jstool = MCPJS + ("const db = require('./db')\n"
+                          "server.tool('rows', { table: z.string() }, async ({ table }) => {\n"
+                          "  await db.query(`SELECT * FROM ${table}`)\n  return { content: [] }\n})\n")
+        self.check({"app.py": py, "tool.py": tool, "llm.py": llm, "server.js": js, "mcp.ts": jstool},
+                   [("COD001", "app.py", 11, "medium"), ("COD001", "app.py", 13, "medium"),
+                    ("COD001", "app.py", 15, "high"), ("APP014", "tool.py", 7, "medium"),
+                    ("APP009", "llm.py", 8, "medium"), ("COD001", "server.js", 8, "medium"),
+                    ("COD001", "server.js", 10, "high"), ("APP014", "mcp.ts", 9, "medium")])
 
     def test_cod001_js_allowlists_before_the_query(self):
         """ALLOWED.includes(x) ? x : 'name', if (!LISTA.includes(x)) return, if (!/^...$/.test(x)) throw: depois disso o
