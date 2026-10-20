@@ -162,6 +162,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - COD009 now reports a redirect that puts request data right after a fixed `/`, `\` or `//`, such as `redirect(f"/{request.args['next']}")` or `` res.redirect(`/${req.query.next}`) ``: with `next = "/evil.com"` the browser goes to `//evil.com`, another site. A path with more fixed text after the slash (`/users/{id}`) is still not reported.
 - COD001, APP009 and APP014 now check Django's `QuerySet.extra(where=[...], select={...}, tables=[...])`, which puts each piece into the SQL as written, like `RawSQL`: `extra(where=[f"name = '{q}'"])` with `q` from the request was never reported. Pieces with `%s` and `params=[...]`, or fixed text, are not reported.
 - The JavaScript check no longer stops halfway through files with many short declarations, such as generated code with `var a=1;var b=2;` on every line. Each declaration was charged as 400 characters read against the file's limit, even when it ended a few characters later, so the limit ran out and the rest of the file was not checked. It is now charged for what it actually reads.
+- `stingward skill` now reads minified bundles, `.min.js` and `.bundle.js` files and `vendor/` folders with the code checks (COD, APP009 to APP014). They were skipped as in a project, so a skill could hide its code on one long line of a bundle. In a skill they are the code that runs on the machine of whoever installs it. The limit on analysis work per file still applies, and projects still skip them.
 
 ## [0.1.5] - 2026-10-20
 

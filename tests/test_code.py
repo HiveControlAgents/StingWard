@@ -1687,6 +1687,18 @@ class CodeEngine(unittest.TestCase):
         self.assertFalse(code._minified(src))
         self.assertEqual(got(run({"server.js": src})), [("COD003", "server.js", 303, "critical")])
 
+    def test_skill_mode_reads_minified_and_vendored_files(self):
+        """Numa skill, o bundle minificado, o .min.js e a pasta vendor/ são o código que vai rodar: uma linha longa não
+        esconde o eval. Num projeto, continuam de fora (bundle gerado e biblioteca de terceiros)."""
+        server = "const express=require('express');const app=express();app.post('/x',(req,res)=>{eval(req.body.code)});"
+        files = {"dist/server.min.js": "var a=1;" * 3000 + server + "\n",
+                 "bundle.js": "var a=1;" * 5000 + "\n" + server + "\n",
+                 "vendor/lib.js": EXPRESS + "app.post('/x', (req, res) => { eval(req.body.code) })\n"}
+        self.assertEqual(got(run(files, mode="skill")), [("COD003", "bundle.js", 2, "critical"),
+                                                         ("COD003", "dist/server.min.js", 1, "critical"),
+                                                         ("COD003", "vendor/lib.js", 3, "critical")])
+        self.assertEqual(got(run(files)), [])
+
     def test_long_files_are_not_taken_for_minified(self):
         """Um arquivo comum de 4000 linhas é lido até o fim; só linhas realmente longas indicam bundle minificado."""
         src = EXPRESS + "const a = 1 // filler line here\n" * 4000 + "app.post('/x', (req, res) => { eval(req.body.code) })\n"

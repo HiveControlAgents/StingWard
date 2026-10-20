@@ -256,7 +256,7 @@ The CWE and the OWASP Top 10 for Agentic Applications entry depend on the sink: 
 
 ## Code
 
-Python files are read with `ast` and JavaScript/TypeScript (also the `<script>` of `.vue`, `.svelte` and `.astro`) with tight patterns, following where each value came from inside the function: the request (Flask, FastAPI, Django, Express, Next.js, Hono...), a function argument, or another server. A call to your own helper (`get_file_by_id(id)`) is not followed, because it returns something else, and neither is a parameter the framework already turned into a number, boolean or UUID (`item_id: int`, `<int:id>`). Minified bundles are skipped, and tests, examples and fixtures drop to low.
+Python files are read with `ast` and JavaScript/TypeScript (also the `<script>` of `.vue`, `.svelte` and `.astro`) with tight patterns, following where each value came from inside the function: the request (Flask, FastAPI, Django, Express, Next.js, Hono...), a function argument, or another server. A call to your own helper (`get_file_by_id(id)`) is not followed, because it returns something else, and neither is a parameter the framework already turned into a number, boolean or UUID (`item_id: int`, `<int:id>`). Minified bundles are skipped in a project, but read in `stingward skill`, where they are the code that runs; tests, examples and fixtures drop to low.
 
 <a id="cod001"></a>
 ### COD001 · SQL query built from outside input
