@@ -753,6 +753,20 @@ class CodeRules(Checks):
                         "app.get('/b/:id', (req, res) => res.redirect(`/items/${req.params.id}`))\n")
         self.silent({"app.py": py, "server.js": js})
 
+    def test_cod009_protocol_relative_redirect(self):
+        """redirect("/" + next): com next = "/evil.com", o navegador vai para //evil.com, outro site. Só barras (/, \\, //)
+        na frente não prendem o endereço no site; /users/ com mais texto depois da barra prende."""
+        py = FLASK + ("@app.get('/a')\ndef a():\n    return redirect(f\"/{request.args['next']}\")\n"
+                      "@app.get('/b')\ndef b():\n    return redirect('\\\\' + request.args['next'])\n"
+                      "@app.get('/c')\ndef c():\n    return redirect('//' + request.args['host'] + '/home')\n"
+                      "@app.get('/d')\ndef d():\n    return redirect(f\"/users/{request.args['id']}\")\n")
+        js = EXPRESS + ("app.get('/a', (req, res) => res.redirect(`/${req.query.next}`))\n"
+                        "app.get('/b', (req, res) => res.redirect('/' + req.query.next))\n"
+                        "app.get('/c', (req, res) => res.redirect(`/items/${req.query.id}`))\n")
+        self.check({"app.py": py, "server.js": js},
+                   [("COD009", "app.py", 5, "medium"), ("COD009", "app.py", 8, "medium"), ("COD009", "app.py", 11, "medium"),
+                    ("COD009", "server.js", 3, "medium"), ("COD009", "server.js", 4, "medium")])
+
     # ------------------------------------------------------------------ COD010 aleatório
 
     def test_cod010_weak_random_for_secrets(self):
