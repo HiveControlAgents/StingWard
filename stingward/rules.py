@@ -203,7 +203,7 @@ RULES = {
     },
     "APP014": {
         "group": "app",
-        "pt": ("Argumento que o modelo escreve na ferramenta chega a {sink}",
+        "pt": ("Argumento que o modelo escreve na ferramenta chega {sink}",
                "Quem preenche os argumentos desta ferramenta é o modelo de IA, não você nem o seu código. Qualquer coisa que ele "
                "leu antes de chamá-la (uma página, um arquivo, uma issue, um e-mail) pode esconder instruções que mudam o que ele "
                "escreve aqui. {detail}",
