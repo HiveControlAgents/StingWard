@@ -30,14 +30,18 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-python@v5
+    # update-environment: false keeps the caller's own Python on PATH for the rest of their job.
+    - id: python
+      uses: actions/setup-python@v5
       with:
         python-version: "3.12"
+        update-environment: false
 
     - id: scan
       shell: bash
       env:
-        PYTHONPATH: ${{ github.action_path }}
+        PY: ${{ steps.python.outputs.python-path }}
+        STINGWARD_HOME: ${{ github.action_path }}
         STINGWARD_PATH: ${{ inputs.path }}
         STINGWARD_FAIL_ON: ${{ inputs.fail-on }}
         STINGWARD_LANG: ${{ inputs.lang }}
@@ -45,11 +49,13 @@ runs:
         set +e
         out="$RUNNER_TEMP/stingward"
         mkdir -p "$out"
-        python -m stingward scan "$STINGWARD_PATH" --lang "$STINGWARD_LANG" --no-color --fail-on "$STINGWARD_FAIL_ON" \
+        # -I: the audited repo (the current folder) can't shadow stingward or the standard library.
+        "$PY" -I -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from stingward.cli import main; sys.exit(main(sys.argv[1:]))' \
+          "$STINGWARD_HOME" scan "$STINGWARD_PATH" --lang "$STINGWARD_LANG" --no-color --fail-on "$STINGWARD_FAIL_ON" \
           --sarif "$out/stingward.sarif" --markdown "$out/stingward.md" --json "$out/stingward.json"
         code=$?
         echo "exit_code=$code" >> "$GITHUB_OUTPUT"
-        echo "grade=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["grade"])' "$out/stingward.json")" >> "$GITHUB_OUTPUT"
+        echo "grade=$("$PY" -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["grade"])' "$out/stingward.json")" >> "$GITHUB_OUTPUT"
         cat "$out/stingward.md" >> "$GITHUB_STEP_SUMMARY"
         exit 0
 
@@ -70,7 +76,7 @@ runs:
       run: |
         body="$RUNNER_TEMP/stingward/stingward.md"
         id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-          --jq '[.[] | select(.body | startswith("<!-- stingward-report -->"))][0].id // empty')
+          --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- stingward-report -->"))) | .id' | head -n 1)
         if [ -n "$id" ]; then
           gh api -X PATCH "repos/$REPO/issues/comments/$id" -F "body=@$body" >/dev/null
         else

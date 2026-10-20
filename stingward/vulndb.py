@@ -97,16 +97,18 @@ def score_to_sev(score: float) -> str:
 
 
 def severity_of(vuln: dict):
-    """(severidade, nota CVSS ou None)."""
+    """(severidade, nota CVSS ou None). CVSS 4.0 não é calculado aqui: fica o rótulo do aviso ou a nota da NVD."""
     score = None
     for s in vuln.get("severity", []) or []:
-        if s.get("type") in ("CVSS_V3", "CVSS_V31", "CVSS_V30"):
-            score = cvss3_score(s.get("score", ""))
+        if isinstance(s, dict) and s.get("type") in ("CVSS_V3", "CVSS_V31", "CVSS_V30"):
+            score = cvss3_score(s.get("score"))
             if score is not None:
                 break
     label = (vuln.get("database_specific") or {}).get("severity")
     if not label:
         for a in vuln.get("affected", []) or []:
+            if not isinstance(a, dict):
+                continue
             label = (a.get("database_specific") or {}).get("severity") or (a.get("ecosystem_specific") or {}).get("severity")
             if label:
                 break
@@ -115,6 +117,17 @@ def severity_of(vuln: dict):
     if score is not None:
         return score_to_sev(score), score
     return None, None
+
+
+_MALWARE = re.compile(r"\bmalware\b|^(embedded )?malicious (package|code|version|module)", re.I)
+
+
+def is_malicious(vuln: dict) -> bool:
+    """Pacote malicioso, não falha comum: registro MAL- do OSV ou aviso do GitHub de código malicioso (CWE-506)."""
+    if str(vuln.get("id", "")).startswith("MAL-"):
+        return True
+    cwes = (vuln.get("database_specific") or {}).get("cwe_ids") or []
+    return "CWE-506" in cwes or _MALWARE.search(vuln.get("summary") or "") is not None
 
 
 _W = {
@@ -131,9 +144,16 @@ def _roundup(x: float) -> float:
 
 
 def cvss3_score(vector: str):
-    """Nota base CVSS 3.x a partir do vetor (especificação FIRST 3.1)."""
+    """Nota base CVSS 3.x a partir do vetor (especificação FIRST 3.1). O prefixo CVSS:3.x/ é opcional."""
+    if not isinstance(vector, str):
+        return None
+    segs = vector.split("/")
+    if segs[0].startswith("CVSS:"):
+        if not segs[0].startswith("CVSS:3."):
+            return None
+        segs = segs[1:]
     try:
-        parts = dict(p.split(":", 1) for p in vector.split("/")[1:])
+        parts = dict(p.split(":", 1) for p in segs)
         scope_changed = parts["S"] == "C"
         pr = {"N": 0.85, "L": 0.68 if scope_changed else 0.62, "H": 0.5 if scope_changed else 0.27}[parts["PR"]]
         iss = 1 - (1 - _W["C"][parts["C"]]) * (1 - _W["I"][parts["I"]]) * (1 - _W["A"][parts["A"]])
@@ -150,12 +170,27 @@ def cvss3_score(vector: str):
 
 # --------------------------------------------------------------------------- versão corrigida
 
+_PRE = {"dev": 0, "a": 1, "alpha": 1, "b": 2, "beta": 2, "c": 3, "pre": 3, "preview": 3, "rc": 3}
+_POST = ("post", "rev", "r")
+
+
 def _vkey(v: str):
-    v = v.lstrip("vV")
-    out = []
-    for p in re.split(r"[.\-+_]", v):
-        out.append((0, int(p), "") if p.isdigit() else (1, 0, p))
-    return out
+    """Ordem de semver, PEP 440, RubyGems e Go: pré-lançamento (dev, alpha, rc...) antes da final, post depois."""
+    v = v.strip().lstrip("vV").split("+", 1)[0].lower()
+    epoch, _, v = v.rpartition("!")
+    m = re.match(r"\d+(?:\.\d+)*", v)
+    release = [int(x) for x in m.group().split(".")] if m else []
+    while release and release[-1] == 0:  # 1.0 == 1.0.0
+        release.pop()
+    rest = re.findall(r"\d+|[a-z]+", v[m.end():] if m else v)
+    phase = 1 if not rest else 2 if rest[0] in _POST else 0
+    tags = [(0, int(t), "") if t.isdigit() else (1, _PRE.get(t, 2), t) for t in rest]
+    return int(epoch) if epoch.isdigit() else 0, release, phase, tags
+
+
+def _major(v: str):
+    m = re.match(r"\d+", v.strip().lstrip("vV"))
+    return int(m.group()) if m else None
 
 
 def fixed_version(vuln: dict, ecosystem: str, name: str, version: str):
@@ -175,9 +210,12 @@ def fixed_version(vuln: dict, ecosystem: str, name: str, version: str):
     above = sorted({f for f in fixes if _vkey(f) > cur}, key=_vkey)
     if not above:
         return None
-    major = cur[0] if cur else None
-    same = [f for f in above if _vkey(f)[:1] == [major]]
-    return (same or above)[0]
+    same = [f for f in above if _major(f) == _major(version)]
+    fix = (same or above)[0]
+    # O OSV guarda as versões do Go sem o "v", mas go get exige: go get mod@v0.17.0
+    if ecosystem == "Go" and version.startswith("v") and not fix.startswith("v"):
+        fix = "v" + fix
+    return fix
 
 
 def _norm(name: str, eco: str) -> str:

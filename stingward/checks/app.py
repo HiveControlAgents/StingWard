@@ -5,6 +5,7 @@ import re
 
 from ..model import Finding
 from . import is_text_source, line_of
+from .secrets import drop_inline_ignored
 
 _PUBLIC = re.compile(
     r"(?<![A-Za-z0-9_])(NEXT_PUBLIC_|VITE_|REACT_APP_|EXPO_PUBLIC_|NUXT_PUBLIC_|GATSBY_|VUE_APP_|PUBLIC_)([A-Z0-9_]{2,80})")
@@ -43,10 +44,16 @@ _RTDB_OPEN = re.compile(r"""["']\.(?:read|write)["']\s*:\s*(?:true|["']true["'])
 _DEBUG = [
     ("Flask", re.compile(r"\.run\([^)]*\bdebug\s*=\s*True")),
     ("Django", re.compile(r"(?m)^DEBUG\s*=\s*True\b")),
-    ("FastAPI/Uvicorn", re.compile(r"uvicorn\.run\([^)]*\breload\s*=\s*True[^)]*host\s*=\s*['\"]0\.0\.0\.0")),
+    ("FastAPI/Uvicorn", re.compile(r"uvicorn\.run\((?=[^)]*\breload\s*=\s*True)(?=[^)]*\bhost\s*=\s*['\"]0\.0\.0\.0)")),
 ]
 _JWT_NOVERIFY = re.compile(
     r"""verify_signature["']?\s*:\s*False|jwt\.decode\([^)]*verify\s*=\s*False|algorithms\s*[=:]\s*\[\s*["']none["']""", re.I)
+
+# Tabela com dado de pessoa ou dinheiro: leitura pública ainda é vazamento. Catálogo (products, prices, posts) não é.
+_SENSITIVE_TABLE = re.compile(
+    r"user|profile|account|order|payment|message|customer|subscription|invoice|billing|card|address|email|phone|"
+    r"session|token|secret|key|credential|password|auth|private|admin|member|employee|patient|medical|health|"
+    r"transaction|wallet|chat|conversation|contact|lead|salar|payroll|bank|document|upload|file|note")
 
 _CODE_EXT = (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".svelte", ".astro", ".py", ".go", ".rb", ".php", ".cs", ".java", ".kt")
 
@@ -54,6 +61,12 @@ _CODE_EXT = (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".svelte", ".
 def _table(name: str) -> str:
     name = name.replace('"', "").lower()
     return name if "." in name else "public." + name
+
+
+def _policy_sev(op: str, table: str) -> str:
+    if op != "select":
+        return "high"
+    return "medium" if _SENSITIVE_TABLE.search(_table(table).split(".", 1)[1]) else "low"
 
 
 def _uses_supabase(ctx) -> bool:
@@ -137,9 +150,9 @@ def check(ctx):
                 if re.search(r"\b(using|with\s+check)\s*\(\s*true\s*\)", body):
                     op = re.search(r"\bfor\s+(all|select|insert|update|delete)\b", body)
                     op = op.group(1) if op else "all"
-                    out.append(Finding("APP005", "medium" if op == "select" else "high", rel,
+                    out.append(Finding("APP005", _policy_sev(op, m["table"]), rel,
                                        line_of(clean, m.start()), {"policy": f"{m['pname'].strip(chr(34))} ({op})"}))
     for t, (rel, ln) in sql_tables.items():
         if t not in sql_rls:
             out.append(Finding("APP004", "high", rel, ln, {"table": t.split(".", 1)[1]}))
-    return out
+    return drop_inline_ignored(ctx, out)

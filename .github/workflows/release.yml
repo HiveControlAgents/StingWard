@@ -1,30 +1,35 @@
-# Push a tag like v0.1.1 to publish to PyPI and npm and to move the v0 tag used by the Action.
+# Publishes when CI passes on main and the version in the code has no release yet.
+# Every job checks whether its own target already has this version, so re-running it only fills in what is missing.
 name: release
 on:
-  push: { tags: ["v*.*.*"] }
+  workflow_run: { workflows: [ci], types: [completed], branches: [main] }
+  workflow_dispatch: {}
 permissions: { contents: read }
+concurrency: { group: release, cancel-in-progress: false }
 jobs:
   check:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      sha: ${{ steps.v.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ github.event.workflow_run.head_sha || github.sha }}" }
       - uses: actions/setup-python@v5
         with: { python-version: "3.13" }
       - id: v
-        name: Tag matches every version field
+        name: Every version field agrees
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          v="$(python -c 'import stingward; print(stingward.__version__)')"
           for got in \
-            "$(python -c 'import stingward; print(stingward.__version__)')" \
             "$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')" \
             "$(python -c 'import json; print(json.load(open("npm/package.json"))["version"])')" \
             "$(python -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')"; do
-            [ "$got" = "$tag" ] || { echo "version $got does not match tag $tag"; exit 1; }
+            [ "$got" = "$v" ] || { echo "version $got does not match stingward.__version__ $v"; exit 1; }
           done
-          echo "version=$tag" >> "$GITHUB_OUTPUT"
-      - run: python -m unittest discover -s tests -t .
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   pypi:
     needs: check
@@ -32,11 +37,20 @@ jobs:
     environment: { name: pypi, url: "https://pypi.org/project/stingward/" }
     permissions: { id-token: write }  # PyPI trusted publishing, no token stored
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - id: exists
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/stingward/${{ needs.check.outputs.version }}/json")
+          echo "skip=$([ "$code" = 200 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.exists.outputs.skip == 'false'
+        uses: actions/checkout@v4
+        with: { ref: "${{ needs.check.outputs.sha }}" }
+      - if: steps.exists.outputs.skip == 'false'
+        uses: actions/setup-python@v5
         with: { python-version: "3.13" }
-      - run: python -m pip install build && python -m build
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - if: steps.exists.outputs.skip == 'false'
+        run: python -m pip install build && python -m build
+      - if: steps.exists.outputs.skip == 'false'
+        uses: pypa/gh-action-pypi-publish@release/v1
 
   npm:
     needs: check
@@ -44,13 +58,23 @@ jobs:
     environment: { name: npm, url: "https://www.npmjs.com/package/stingward" }
     permissions: { id-token: write }  # npm provenance and trusted publishing
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - id: exists
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/stingward/${{ needs.check.outputs.version }}")
+          echo "skip=$([ "$code" = 200 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.exists.outputs.skip == 'false'
+        uses: actions/checkout@v4
+        with: { ref: "${{ needs.check.outputs.sha }}" }
+      - if: steps.exists.outputs.skip == 'false'
+        uses: actions/setup-node@v4
         with: { node-version: "22", registry-url: "https://registry.npmjs.org" }
-      - run: npm install -g npm@latest  # trusted publishing needs npm 11.5.1+
-      - run: sh scripts/build-npm.sh
-      # First release: set the NPM_TOKEN secret. After it, configure trusted publishing on npmjs.com and delete the secret.
-      - run: npm publish --provenance --access public
+      - if: steps.exists.outputs.skip == 'false'
+        run: npm install -g npm@latest  # trusted publishing needs npm 11.5.1+
+      - if: steps.exists.outputs.skip == 'false'
+        run: sh scripts/build-npm.sh
+      # First release: the NPM_TOKEN secret. After it, trusted publishing on npmjs.com and no secret.
+      - if: steps.exists.outputs.skip == 'false'
+        run: npm publish --provenance --access public
         working-directory: npm
         env: { NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" }
 
@@ -60,8 +84,12 @@ jobs:
     permissions: { contents: write }
     steps:
       - uses: actions/checkout@v4
-      - name: Move the v0 tag that the Action examples use
-        run: git tag -f v0 && git push -f origin v0
+        with: { ref: "${{ needs.check.outputs.sha }}", fetch-depth: 0 }
+      - name: Tag the version and move v0, the tag the Action examples use
+        env: { V: "v${{ needs.check.outputs.version }}" }
+        run: |
+          git rev-parse -q --verify "refs/tags/$V" >/dev/null || { git tag "$V" && git push origin "$V"; }
+          git tag -f v0 "$V" && git push -f origin v0
       - name: GitHub release
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --generate-notes --title "Stingward $GITHUB_REF_NAME"
+        env: { GH_TOKEN: "${{ github.token }}", V: "v${{ needs.check.outputs.version }}" }
+        run: gh release view "$V" >/dev/null 2>&1 || gh release create "$V" --generate-notes --title "Stingward $V"

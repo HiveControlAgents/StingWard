@@ -42,7 +42,7 @@ stingward agents                  # audita ~/.claude, Claude Desktop, Cursor, Co
 
 Cada achado vem com os códigos que times de segurança já usam: CWE, OWASP Top 10 para LLM 2026 (`LLM01:2026`...), OWASP Agentic Skills Top 10 (`AST01`..., rascunho v1) e OWASP Agentic Applications 2026 (`ASI01`...).
 
-O relatório termina com uma nota de A a F e um selo para o README. Para alarme falso, use `.stingwardignore` (`REGRA caminho/glob`) ou um comentário `stingward:ignore` na linha.
+O relatório termina com uma nota de A a F (A: só itens baixos ou nada · B: médios, nenhum alto · C: 1 ou 2 altos · D: 3+ altos · F: algum crítico) e um selo para o README. Código de saída: `0` limpo, `1` achou algo na severidade de `--fail-on` ou acima, `2` erro de uso, `3` o OSV.dev não respondeu e as dependências não foram checadas. Para alarme falso, use `.stingwardignore` (`REGRA caminho/glob`) ou um comentário `stingward:ignore` na linha.
 
 ## Limite
 

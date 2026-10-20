@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
+from urllib.parse import quote
 
 from . import __version__
 from .model import SEV_RANK, SEVERITIES
@@ -54,9 +56,15 @@ def grade(findings):
         return "D"
     if c["high"]:
         return "C"
-    if c["medium"] > 2:
-        return "B"
-    return "A" if not c["medium"] else "B"
+    return "B" if c["medium"] else "A"
+
+
+# Nome de servidor, caminho e trecho vêm do código auditado: sem isso, um ESC[1A apagaria o veredito no terminal.
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
+
+
+def _clean(s):
+    return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}" if ord(m.group()) < 0x100 else f"\\u{ord(m.group()):04x}", str(s))
 
 
 def badge_md(g):
@@ -99,7 +107,7 @@ def counts_line(findings, lang):
 
 def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False, max_low=15):
     t = T[lang]
-    out = [f"stingward {__version__} · {t['title']}: {target or ctx.root}", f"{t['sources']}: {_sources_line(ctx, lang)}", ""]
+    out = [f"stingward {__version__} · {t['title']}: {_clean(target or ctx.root)}", f"{t['sources']}: {_sources_line(ctx, lang)}", ""]
     if show_verdict:
         out += [verdict(findings, lang), ""]
     if not findings:
@@ -112,17 +120,17 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
             if shown_low > max_low:
                 hidden += 1
                 continue
-        title, why, fix = texts(f.rule, lang, f.params)
+        title, why, fix = (_clean(x) for x in texts(f.rule, lang, f.params))
         lab = LABEL[lang][f.severity]
         head = f"{ICON[f.severity]} {lab:<8} {title}"
         if color:
             head = f"{COLOR[f.severity]}{head}\033[0m"
         out.append(head)
-        out.append(f"   {t['where']}: {_where(f)}  [{' · '.join([f.rule] + STANDARDS.get(f.rule, []))}]")
+        out.append(f"   {t['where']}: {_clean(_where(f))}  [{' · '.join([f.rule] + STANDARDS.get(f.rule, []))}]")
         out.append(f"   {t['why']}: {why}")
         out.append(f"   {t['fix']}: {fix}")
         if f.refs:
-            out.append(f"   {f.refs[0]}")
+            out.append(f"   {_clean(f.refs[0])}")
         out.append("")
     if hidden:
         out += [t["more"].format(n=hidden), ""]
@@ -145,7 +153,7 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False):
                 "| | | |", "|---|---|---|"]
         for f in findings[:50]:
             title, _, fix = texts(f.rule, lang, f.params)
-            out.append(f"| {ICON[f.severity]} {LABEL[lang][f.severity]} | {_esc(title)}<br><sub>`{_esc(_where(f))}`</sub> | {_esc(fix)} |")
+            out.append(f"| {ICON[f.severity]} {LABEL[lang][f.severity]} | {_esc(title)}<br><sub>{_esc(_where(f))}</sub> | {_esc(fix)} |")
         if len(findings) > 50:
             out.append(f"| | {t['more'].format(n=len(findings) - 50)} | |")
         out.append("")
@@ -153,8 +161,13 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False):
     return "\n".join(out) + "\n"
 
 
+_MD = {"\\": "\\\\", "|": "\\|", "<": "&lt;", ">": "&gt;", "&": "&amp;", "[": "\\[", "]": "\\]", "`": "\\`",
+       "*": "\\*", "_": "\\_", "!": "\\!", "\n": " ", "\r": " ", "@": "@&#8203;"}
+
+
 def _esc(s):
-    return str(s).replace("|", "\\|").replace("\n", " ")
+    """Texto do código auditado vira texto puro no comentário do PR: sem imagem, link, HTML ou @menção."""
+    return "".join(_MD.get(ch, ch) for ch in _clean(s))
 
 
 def as_json(ctx, findings, lang="pt"):
@@ -172,7 +185,8 @@ _SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low"
 _SARIF_SCORE = {"critical": "9.5", "high": "8.0", "medium": "5.5", "low": "3.0", "info": "0.0"}
 
 
-def sarif(ctx, findings, lang="pt"):
+def sarif(ctx, findings, lang="pt", prefix=""):
+    """prefix: caminho da pasta auditada dentro do repositório, para os alertas do GitHub apontarem o arquivo certo."""
     first = {}
     for f in findings:  # já vêm da mais grave para a menos grave
         first.setdefault(f.rule, f)
@@ -186,7 +200,7 @@ def sarif(ctx, findings, lang="pt"):
     results = []
     for f in findings:
         title, why, fix = texts(f.rule, lang, f.params)
-        loc = {"physicalLocation": {"artifactLocation": {"uri": f.file}}}
+        loc = {"physicalLocation": {"artifactLocation": {"uri": quote(prefix + f.file, safe="/")}}}
         if f.line:
             loc["physicalLocation"]["region"] = {"startLine": f.line}
         results.append({"ruleId": f.rule, "level": _SARIF_LEVEL[f.severity],

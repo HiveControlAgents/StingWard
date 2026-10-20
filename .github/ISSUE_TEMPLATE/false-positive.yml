@@ -1,0 +1,22 @@
+name: False positive or missed problem
+description: Stingward reported something that is fine, or missed something real
+labels: [accuracy]
+body:
+  - type: input
+    id: rule
+    attributes: { label: Rule ID, description: "For example SEC001 or SKL003", placeholder: SKL003 }
+    validations: { required: true }
+  - type: dropdown
+    id: kind
+    attributes: { label: What happened, options: ["False positive (reported, but fine)", "Missed (not reported, but real)"] }
+    validations: { required: true }
+  - type: textarea
+    id: sample
+    attributes:
+      label: Minimal sample
+      description: The smallest snippet that reproduces it. Replace any real key or password with a fake one.
+      render: text
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes: { label: Version, description: Output of `stingward --version` }
