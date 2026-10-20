@@ -1,6 +1,9 @@
 """Dependências com falha conhecida (OSV.dev), priorizadas por CISA KEV e EPSS."""
 from __future__ import annotations
 
+import fnmatch
+import json
+import re
 from pathlib import Path
 
 from .. import lockfiles, vulndb
@@ -15,12 +18,71 @@ _LOCK_FOR = {
 }
 
 
+def _glob_match(path, pattern):
+    """Glob de workspace por pedaço do caminho: "*" fica num pedaço só e "**" vale por qualquer número deles.
+    Programação dinâmica: o glob vem do repositório auditado, e "**/a/**/a/**..." não pode virar busca exponencial."""
+    ok = {len(path)}  # posições de path que casam com o resto do glob, do último pedaço do glob para o primeiro
+    for seg in reversed(pattern):
+        if seg == "**":  # começa em qualquer posição até a última que casa com o resto
+            ok = set(range(max(ok) + 1)) if ok else set()
+        else:
+            ok = {i for i in range(len(path)) if i + 1 in ok and fnmatch.fnmatchcase(path[i], seg)}
+    return 0 in ok
+
+
+def _workspace_globs(ctx, d):
+    """Globs de workspace declarados na pasta d: "workspaces" do package.json (npm, Yarn, Bun) e pnpm-workspace.yaml."""
+    globs = []
+    try:
+        pkg = json.loads(ctx.read(d + "package.json") or "{}")
+    except (ValueError, RecursionError):
+        pkg = {}
+    ws = pkg.get("workspaces") if isinstance(pkg, dict) else None
+    if isinstance(ws, dict):
+        ws = ws.get("packages")
+    if isinstance(ws, list):
+        globs += [g for g in ws if isinstance(g, str)]
+    in_packages = False
+    for line in ctx.read(d + "pnpm-workspace.yaml").split("\n"):
+        if line and not line[0].isspace():
+            in_packages = re.match(r"packages\s*:", line) is not None
+        elif in_packages:
+            m = re.match(r"\s*-\s*([\"']?)([^\"'#]+)\1", line)
+            if m:
+                globs.append(m.group(2).strip())
+    return globs
+
+
+def _workspace_members(ctx, files):
+    """Pastas de pacote que o lockfile de um monorepo, numa pasta acima delas, já trava (membros de workspace)."""
+    dirs = {rel.rsplit("/", 1)[0] + "/" if "/" in rel else "" for rel in files if rel.rsplit("/", 1)[-1] == "package.json"}
+    covered = set()
+    for top in dirs:
+        if not any(top + lk in files for lk in _LOCK_FOR["package.json"]):
+            continue
+        yes, no = [], []
+        for g in _workspace_globs(ctx, top):
+            g = g.strip()
+            neg = g.startswith("!")
+            g = re.sub(r"^(?:\./)+", "", g[1:].strip() if neg else g).rstrip("/")
+            if g:
+                (no if neg else yes).append(g.split("/"))
+        for d in dirs:
+            if d == top or not d.startswith(top):
+                continue
+            sub = d[len(top):].rstrip("/").split("/")
+            if any(_glob_match(sub, g) for g in yes) and not any(_glob_match(sub, g) for g in no):
+                covered.add(d)
+    return covered
+
+
 def collect(ctx):
     """Pacotes fixados (eco, nome, versão, arquivo, linha) sem repetição, os manifestos sem lockfile e as faixas
     de versão (lockfiles.Range) desses manifestos, menos as de pacotes que o projeto já fixa em outro lugar."""
     root = Path(ctx.root)
     files = set(ctx.files)
     pkgs, seen, open_manifests, ranges = [], set(), [], []
+    members = _workspace_members(ctx, files)
 
     def add(item):
         if item[:3] not in seen:
@@ -33,7 +95,8 @@ def collect(ctx):
             continue
         d = rel.rsplit("/", 1)[0] + "/" if "/" in rel else ""
         locks = _LOCK_FOR.get("requirements.txt" if name.startswith("requirements") else name, ())
-        has_lock = any(d + lk in files for lk in locks)
+        # Num monorepo o lockfile fica na raiz e trava também os pacotes dos workspaces.
+        has_lock = any(d + lk in files for lk in locks) or (name == "package.json" and d in members)
         if name in ("package.json", "pyproject.toml") and has_lock:
             continue
         if name in ("package.json", "pyproject.toml") or (name.startswith("requirements") and not has_lock):

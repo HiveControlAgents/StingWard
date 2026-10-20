@@ -40,6 +40,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - Real keys are no longer skipped as placeholders because their random part contains `seu` or `sua` (Portuguese for "your"): about 1 in 100 OpenAI project keys and 1 in 150 Anthropic keys were missed. Those words now count only at the start of a word, as in `SUA_CHAVE` or `sk-sua-chave`.
 - SEC001 no longer reports as a hard-coded value: translated text in i18n files (`"password_complexity_requirement": "数字、大文字..."`, `"Tokens": "...\u200c..."`), the example `1234567890`, a dotted config path (`image_generation.automatic1111.api_auth`), the name of an environment variable (`'DUCKLAKE_S3_SECRET'`, `MOCK_ACCESS_TOKEN`), and keys that are public by design (`sb_publishable_...`, Stripe `pk_live_`/`pk_test_`).
 - A Slack or Discord webhook is no longer missed when something else on its line looks like an example, such as `{ text: "your build finished" }` or `process.env.SLACK_WEBHOOK || "https://hooks.slack.com/..."`: only the webhook's own token is checked for placeholders.
+- DEP003 no longer reports the `package.json` of each workspace member in a monorepo whose lockfile sits at the root (npm, Yarn and Bun `workspaces`, `pnpm-workspace.yaml`, including `**` and `!` globs); a folder that is not a member still gets it.
 
 ## [0.1.5] - 2026-10-20
 

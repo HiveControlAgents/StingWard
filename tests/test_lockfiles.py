@@ -1430,5 +1430,49 @@ class Ranges(LockfileCase):
         self.assertTrue(lockfiles.in_range(c, "99.0.0"))
 
 
+# --------------------------------------------------------------------------- what deps.collect reads
+
+
+class Collect(LockfileCase):
+    def collect(self, files):
+        from stingward import scan
+        from stingward.checks import deps
+        from stingward.model import Context
+        for rel, content in files.items():
+            self.write(rel, content if isinstance(content, str) else json.dumps(content))
+        return deps.collect(Context(root=str(self.root), files=scan.list_files(str(self.root))))
+
+    MEMBER = {"name": "web", "dependencies": {"next": "^14.1.0", "react": "^18.2.0"}}
+    LOCK = {"lockfileVersion": 3, "packages": {"": {}, "apps/web": {"name": "web"},
+                                                "node_modules/next": {"version": "14.1.0"},
+                                                "node_modules/react": {"version": "18.2.0"}}}
+
+    def test_workspace_members_are_covered_by_the_root_lockfile(self):
+        layouts = {
+            "npm": {"package.json": {"name": "root", "workspaces": ["apps/*", "packages/*", "!packages/legacy"]},
+                    "package-lock.json": self.LOCK},
+            "yarn object form": {"package.json": {"name": "root", "workspaces": {"packages": ["./apps/*", "packages/**"]}},
+                                 "yarn.lock": 'next@^14.1.0:\n  version "14.1.0"\n'},
+            "pnpm": {"package.json": {"name": "root"}, "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+                     "pnpm-workspace.yaml": "packages:\n  - 'apps/*'   # apps\n  - \"packages/**\"\n  - '!packages/legacy'\ncatalog:\n  react: ^18\n"},
+        }
+        for name, root in layouts.items():
+            with self.subTest(layout=name):
+                tmp = tempfile.TemporaryDirectory()
+                self.addCleanup(tmp.cleanup)
+                self.root = Path(tmp.name)
+                files = dict(root, **{"apps/web/package.json": self.MEMBER, "packages/ui/package.json": self.MEMBER,
+                                      "packages/legacy/package.json": self.MEMBER, "tools/script/package.json": self.MEMBER})
+                _, open_manifests, ranges = self.collect(files)
+                want = ["tools/script/package.json"] if name == "yarn object form" else \
+                    ["packages/legacy/package.json", "tools/script/package.json"]
+                self.assertEqual(sorted(rel for rel, _ in open_manifests), want)
+
+    def test_a_folder_below_a_lockfile_without_workspaces_is_not_covered(self):
+        _, open_manifests, _ = self.collect({"package.json": {"name": "root"}, "package-lock.json": self.LOCK,
+                                             "functions/package.json": self.MEMBER})
+        self.assertEqual(open_manifests, [("functions/package.json", 2)])
+
+
 if __name__ == "__main__":
     unittest.main()
