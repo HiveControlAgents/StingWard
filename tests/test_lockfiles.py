@@ -631,6 +631,35 @@ class Requirements(LockfileCase):
                 self.assertEqual(self.pkgs(rel, "pytest==7.4.0\n"), [("PyPI", "pytest", "7.4.0")])
         self.assertEqual(self.pkgs("requirements.in", "pytest==7.4.0\n"), [])
 
+    def test_files_in_a_requirements_folder_use_requirements_parser(self):
+        for rel in ("requirements/base.txt", "app/requirements/production.txt"):
+            with self.subTest(rel=rel):
+                self.assertTrue(lockfiles.is_dependency_file(rel))
+                self.assertEqual(self.pkgs(rel, "-r base.txt\ndjango==4.2.0\n"), [("PyPI", "django", "4.2.0")])
+        for rel in ("requirements/README.md", "docs/notes.txt", "requirements.txt/x.txt"):
+            with self.subTest(rel=rel):
+                self.assertFalse(lockfiles.is_dependency_file(rel))
+
+    def test_includes_with_r_and_c_resolve_against_the_file_folder(self):
+        self.write("app/requirements.txt", D('''\
+            -r requirements/prod.txt
+            --requirement=dev-requirements.txt
+            -c ../constraints.txt  # shared pins
+            --constraint  pins.txt
+            -rcompact.txt
+            -r https://example.com/remote.txt
+            -e .
+            django==4.2.0
+            '''))
+        self.assertEqual(lockfiles.requirement_includes(self.root, "app/requirements.txt"), [
+            "app/requirements/prod.txt", "app/dev-requirements.txt", "constraints.txt", "app/pins.txt", "app/compact.txt"])
+
+    def test_include_scan_is_linear(self):
+        self.write("requirements.txt", "-r" + " " * 50000 + "\n")
+        t = time.perf_counter()
+        self.assertEqual(lockfiles.requirement_includes(self.root, "requirements.txt"), [])
+        self.assertLess(time.perf_counter() - t, 0.5)
+
     def test_wildcard_pin_is_not_an_exact_version(self):
         self.assertEqual(self.pkgs("requirements.txt", "django==3.2.*\n"), [])
 
@@ -854,6 +883,167 @@ class TomlLocks(LockfileCase):
 
 
 # --------------------------------------------------------------------------- Pipfile.lock
+
+
+class NonRegistrySources(LockfileCase):
+    """Git and local-folder packages do not come from the registry: a private package that shares its name with a
+    public one must not inherit the public one's advisories (or its MAL- record). npm v1 and Gemfile.lock already
+    skip them; every other lockfile has to as well."""
+
+    def test_npm_v3_git_and_local_tarball_entries_skipped(self):
+        lock = {"lockfileVersion": 3, "packages": {
+            "": {"name": "app", "dependencies": {"private-lib": "github:acme/private-lib", "vendored": "file:vendor/vendored-1.0.0.tgz"}},
+            "node_modules/private-lib": {"version": "1.0.0", "resolved": "git+ssh://git@github.com/acme/private-lib.git#0123abcd"},
+            "node_modules/vendored": {"version": "1.0.0", "resolved": "file:vendor/vendored-1.0.0.tgz"},
+            "node_modules/lodash": {"version": "4.17.21", "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz"},
+        }}
+        self.assertEqual(self.pkgs("package-lock.json", json.dumps(lock, indent=2)), [("npm", "lodash", "4.17.21")])
+
+    def test_yarn_classic_git_github_and_tarball_entries_skipped(self):
+        lock = D('''\
+            # yarn lockfile v1
+
+
+            "private-lib@git+ssh://git@github.com/acme/private-lib.git#v1.0.0":
+              version "1.0.0"
+              resolved "git+ssh://git@github.com/acme/private-lib.git#0123abcd"
+
+            forked@github:acme/forked#main:
+              version "2.0.0"
+              resolved "https://codeload.github.com/acme/forked/tar.gz/0123abcd"
+
+            shorthand@acme/shorthand:
+              version "3.0.0"
+              resolved "https://codeload.github.com/acme/shorthand/tar.gz/0123abcd"
+
+            "tarball@https://example.com/tarball-1.0.0.tgz":
+              version "1.0.0"
+              resolved "https://example.com/tarball-1.0.0.tgz"
+
+            lodash@^4.17.21:
+              version "4.17.21"
+            ''')
+        self.assertEqual(self.pkgs("yarn.lock", lock), [("npm", "lodash", "4.17.21")])
+
+    def test_yarn_berry_git_entry_skipped(self):
+        lock = D('''\
+            __metadata:
+              version: 8
+
+            "private-lib@git+ssh://git@github.com/acme/private-lib.git#commit=0123abcd":
+              version: 1.0.0
+              resolution: "private-lib@git+ssh://git@github.com/acme/private-lib.git#commit=0123abcd"
+
+            "lodash@npm:^4.17.21":
+              version: 4.17.21
+              resolution: "lodash@npm:4.17.21"
+            ''')
+        self.assertEqual(self.pkgs("yarn.lock", lock), [("npm", "lodash", "4.17.21")])
+
+    def test_poetry_git_directory_and_file_sources_skipped_private_index_kept(self):
+        lock = D('''\
+            [[package]]
+            name = "private-lib"
+            version = "1.0.0"
+            optional = false
+            python-versions = "*"
+            files = []
+            develop = false
+
+            [package.source]
+            type = "git"
+            url = "https://github.com/acme/private-lib.git"
+            reference = "HEAD"
+            resolved_reference = "0123abcd"
+
+            [[package]]
+            name = "shared"
+            version = "0.1.0"
+            files = []
+            develop = true
+
+            [package.dependencies]
+            requests = ">=2"
+
+            [package.source]
+            type = "directory"
+            url = "../shared"
+
+            [[package]]
+            name = "vendored"
+            version = "1.0.0"
+            files = [
+                {file = "vendored-1.0.0-py3-none-any.whl", hash = "sha256:aaa"},
+            ]
+
+            [package.source]
+            type = "file"
+            url = "vendor/vendored-1.0.0-py3-none-any.whl"
+
+            [[package]]
+            name = "internal-sdk"
+            version = "2.1.0"
+            files = []
+
+            [package.source]
+            type = "legacy"
+            url = "https://pypi.acme.example/simple"
+            reference = "acme"
+
+            [[package]]
+            name = "requests"
+            version = "2.31.0"
+            files = []
+            ''')
+        self.assertEqual(self.pkgs("poetry.lock", lock), [("PyPI", "internal-sdk", "2.1.0"), ("PyPI", "requests", "2.31.0")])
+
+    def test_uv_git_source_skipped(self):
+        lock = 'version = 1\n\n[[package]]\nname = "private-lib"\nversion = "1.0.0"\n' \
+               'source = { git = "https://github.com/acme/private-lib?rev=v1#0123abcd" }\n\n' \
+               '[[package]]\nname = "idna"\nversion = "3.7"\nsource = { registry = "https://pypi.org/simple" }\n'
+        self.assertEqual(self.pkgs("uv.lock", lock), [("PyPI", "idna", "3.7")])
+
+    def test_pdm_git_and_path_packages_skipped(self):
+        lock = D('''\
+            [[package]]
+            name = "private-lib"
+            version = "1.0.0"
+            git = "https://github.com/acme/private-lib.git"
+            ref = "main"
+            revision = "0123abcd"
+            groups = ["default"]
+
+            [[package]]
+            name = "shared"
+            version = "0.1.0"
+            path = "./libs/shared"
+            editable = true
+            groups = ["default"]
+
+            [[package]]
+            name = "certifi"
+            version = "2024.2.2"
+            files = [
+                {file = "certifi-2024.2.2.tar.gz", hash = "sha256:aaa"},
+            ]
+            ''')
+        self.assertEqual(self.pkgs("pdm.lock", lock), [("PyPI", "certifi", "2024.2.2")])
+
+    def test_cargo_git_source_skipped(self):
+        lock = D('''\
+            version = 3
+
+            [[package]]
+            name = "bincode"
+            version = "2.0.1"
+            source = "git+https://github.com/acme/bincode.git?branch=patches#0123abcd"
+
+            [[package]]
+            name = "itoa"
+            version = "1.0.10"
+            source = "registry+https://github.com/rust-lang/crates.io-index"
+            ''')
+        self.assertEqual(self.pkgs("Cargo.lock", lock), [("crates.io", "itoa", "1.0.10")])
 
 
 class PipfileLock(LockfileCase):
@@ -1235,6 +1425,37 @@ class NpmFloor(unittest.TestCase):
                 self.assertIsNone(lockfiles.npm_floor(spec))
 
 
+class HostileRanges(unittest.TestCase):
+    """A hostile repository chooses the text of its manifests: a range must not make the scan hang."""
+
+    def assertFast(self, fn, arg, limit=1.0):
+        start = time.perf_counter()
+        fn(arg)
+        self.assertLess(time.perf_counter() - start, limit, arg[:40])
+
+    def test_long_version_that_fails_to_parse_is_linear(self):
+        # The old version pattern backtracked exponentially on a long run of letters that ends in a bad character.
+        self.assertFast(lockfiles.python_floor, "foo>=1" + "a" * 26 + "*")
+        self.assertFast(lockfiles.npm_floor, "^1.2.3-" + "a" * 26 + ".")
+        self.assertIsNone(lockfiles.python_floor("foo>=1" + "a" * 26 + "*"))
+        self.assertIsNone(lockfiles.npm_floor("^1.2.3-" + "a" * 26 + "."))
+        # what the pattern accepts did not change
+        self.assertEqual(lockfiles.python_floor("foo>=1.0.0rc1")[3], "1.0.0rc1")
+        self.assertEqual(lockfiles.python_floor("foo>=1.0+local.7")[3], "1.0+local.7")
+        self.assertEqual(lockfiles.npm_floor(">=1.0.0-20210101-abc"), ("1.0.0-20210101-abc", None, False))
+
+    def test_long_whitespace_in_requirements_is_linear(self):
+        # Cutting the pip options (--hash...) off a line was quadratic in a long run of spaces.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "requirements.txt").write_text("foo>=1.0" + " " * 60000 + "x\nbar>=2.0   --hash=sha256:abc\n", "utf-8")
+        start = time.perf_counter()
+        got = lockfiles.ranges(root, "requirements.txt")
+        self.assertLess(time.perf_counter() - start, 1.0)
+        self.assertEqual([(r.name, r.req) for r in got], [("bar", "bar>=2.0")])
+
+
 class PyprojectRequirements(unittest.TestCase):
     def test_project_dependencies_and_optional_dependencies(self):
         doc = D('''\
@@ -1397,6 +1618,64 @@ class Ranges(LockfileCase):
         self.assertEqual([lockfiles.in_range(a, v) for v in ("1.5.9", "1.6.0", "1.99.0", "2.0.0")], [False, True, True, False])
         self.assertEqual([lockfiles.in_range(b, v) for v in ("1.9.0", "1.9.1")], [True, False])
         self.assertTrue(lockfiles.in_range(c, "99.0.0"))
+
+
+# --------------------------------------------------------------------------- what deps.collect reads
+
+
+class Collect(LockfileCase):
+    def collect(self, files):
+        from stingward import scan
+        from stingward.checks import deps
+        from stingward.model import Context
+        for rel, content in files.items():
+            self.write(rel, content if isinstance(content, str) else json.dumps(content))
+        return deps.collect(Context(root=str(self.root), files=scan.list_files(str(self.root))))
+
+    MEMBER = {"name": "web", "dependencies": {"next": "^14.1.0", "react": "^18.2.0"}}
+    LOCK = {"lockfileVersion": 3, "packages": {"": {}, "apps/web": {"name": "web"},
+                                                "node_modules/next": {"version": "14.1.0"},
+                                                "node_modules/react": {"version": "18.2.0"}}}
+
+    def test_workspace_members_are_covered_by_the_root_lockfile(self):
+        layouts = {
+            "npm": {"package.json": {"name": "root", "workspaces": ["apps/*", "packages/*", "!packages/legacy"]},
+                    "package-lock.json": self.LOCK},
+            "yarn object form": {"package.json": {"name": "root", "workspaces": {"packages": ["./apps/*", "packages/**"]}},
+                                 "yarn.lock": 'next@^14.1.0:\n  version "14.1.0"\n'},
+            "pnpm": {"package.json": {"name": "root"}, "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+                     "pnpm-workspace.yaml": "packages:\n  - 'apps/*'   # apps\n  - \"packages/**\"\n  - '!packages/legacy'\ncatalog:\n  react: ^18\n"},
+        }
+        for name, root in layouts.items():
+            with self.subTest(layout=name):
+                tmp = tempfile.TemporaryDirectory()
+                self.addCleanup(tmp.cleanup)
+                self.root = Path(tmp.name)
+                files = dict(root, **{"apps/web/package.json": self.MEMBER, "packages/ui/package.json": self.MEMBER,
+                                      "packages/legacy/package.json": self.MEMBER, "tools/script/package.json": self.MEMBER})
+                _, open_manifests, ranges = self.collect(files)
+                want = ["tools/script/package.json"] if name == "yarn object form" else \
+                    ["packages/legacy/package.json", "tools/script/package.json"]
+                self.assertEqual(sorted(rel for rel, _ in open_manifests), want)
+
+    def test_a_folder_below_a_lockfile_without_workspaces_is_not_covered(self):
+        _, open_manifests, _ = self.collect({"package.json": {"name": "root"}, "package-lock.json": self.LOCK,
+                                             "functions/package.json": self.MEMBER})
+        self.assertEqual(open_manifests, [("functions/package.json", 2)])
+
+    def test_requirements_folder_and_included_files_are_read(self):
+        pkgs, open_manifests, ranges = self.collect({
+            "requirements.txt": "-r requirements/production.txt\n-c constraints.txt\n-r ../outside.txt\n",
+            "requirements/base.txt": "django==4.2.0\ncelery>=5.3\n",
+            "requirements/production.txt": "-r base.txt\ngunicorn==21.2.0\n",
+            "constraints.txt": "urllib3==1.26.0\n",
+            "dev-requirements.txt": "pytest==7.0.0\n",
+        })
+        self.assertEqual(sorted((n, v, f) for _, n, v, f, _ in pkgs), [
+            ("django", "4.2.0", "requirements/base.txt"), ("gunicorn", "21.2.0", "requirements/production.txt"),
+            ("urllib3", "1.26.0", "constraints.txt")])
+        self.assertEqual([(r.name, r.floor, r.file) for r in ranges], [("celery", "5.3", "requirements/base.txt")])
+        self.assertEqual(open_manifests, [("requirements/base.txt", 1)])
 
 
 if __name__ == "__main__":

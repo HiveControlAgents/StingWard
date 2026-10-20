@@ -1,6 +1,9 @@
 """Dependências com falha conhecida (OSV.dev), priorizadas por CISA KEV e EPSS."""
 from __future__ import annotations
 
+import fnmatch
+import json
+import re
 from pathlib import Path
 
 from .. import lockfiles, vulndb
@@ -15,12 +18,86 @@ _LOCK_FOR = {
 }
 
 
+def _glob_match(path, pattern):
+    """Glob de workspace por pedaço do caminho: "*" fica num pedaço só e "**" vale por qualquer número deles.
+    Programação dinâmica: o glob vem do repositório auditado, e "**/a/**/a/**..." não pode virar busca exponencial."""
+    ok = {len(path)}  # posições de path que casam com o resto do glob, do último pedaço do glob para o primeiro
+    for seg in reversed(pattern):
+        if seg == "**":  # começa em qualquer posição até a última que casa com o resto
+            ok = set(range(max(ok) + 1)) if ok else set()
+        else:
+            ok = {i for i in range(len(path)) if i + 1 in ok and fnmatch.fnmatchcase(path[i], seg)}
+    return 0 in ok
+
+
+def _workspace_globs(ctx, d):
+    """Globs de workspace declarados na pasta d: "workspaces" do package.json (npm, Yarn, Bun) e pnpm-workspace.yaml."""
+    globs = []
+    try:
+        pkg = json.loads(ctx.read(d + "package.json") or "{}")
+    except (ValueError, RecursionError):
+        pkg = {}
+    ws = pkg.get("workspaces") if isinstance(pkg, dict) else None
+    if isinstance(ws, dict):
+        ws = ws.get("packages")
+    if isinstance(ws, list):
+        globs += [g for g in ws if isinstance(g, str)]
+    in_packages = False
+    for line in ctx.read(d + "pnpm-workspace.yaml").split("\n"):
+        if line and not line[0].isspace():
+            in_packages = re.match(r"packages\s*:", line) is not None
+        elif in_packages:
+            m = re.match(r"\s*-\s*([\"']?)([^\"'#]+)\1", line)
+            if m:
+                globs.append(m.group(2).strip())
+    return globs
+
+
+def _workspace_members(ctx, files):
+    """Pastas de pacote que o lockfile de um monorepo, numa pasta acima delas, já trava (membros de workspace)."""
+    dirs = {rel.rsplit("/", 1)[0] + "/" if "/" in rel else "" for rel in files if rel.rsplit("/", 1)[-1] == "package.json"}
+    covered = set()
+    for top in dirs:
+        if not any(top + lk in files for lk in _LOCK_FOR["package.json"]):
+            continue
+        yes, no = [], []
+        for g in _workspace_globs(ctx, top):
+            g = g.strip()
+            neg = g.startswith("!")
+            g = re.sub(r"^(?:\./)+", "", g[1:].strip() if neg else g).rstrip("/")
+            if g:
+                (no if neg else yes).append(g.split("/"))
+        for d in dirs:
+            if d == top or not d.startswith(top):
+                continue
+            sub = d[len(top):].rstrip("/").split("/")
+            if any(_glob_match(sub, g) for g in yes) and not any(_glob_match(sub, g) for g in no):
+                covered.add(d)
+    return covered
+
+
+def _requirement_files(ctx, files):
+    """requirements*.txt e os .txt de uma pasta requirements/, mais o que eles incluem com -r ou -c, com
+    qualquer nome (constraints.txt, dev-requirements.txt), desde que o arquivo esteja no projeto."""
+    todo = [rel for rel in ctx.files if "node_modules/" not in rel and lockfiles.is_requirements(rel)]
+    found = set(todo)
+    while todo:
+        for inc in lockfiles.requirement_includes(Path(ctx.root), todo.pop()):
+            # Um lockfile ou package.json citado por engano continua sendo lido pelo leitor dele.
+            if inc in files and inc not in found and not lockfiles.is_dependency_file(inc) and not inc.endswith("pyproject.toml"):
+                found.add(inc)
+                todo.append(inc)
+    return found
+
+
 def collect(ctx):
     """Pacotes fixados (eco, nome, versão, arquivo, linha) sem repetição, os manifestos sem lockfile e as faixas
     de versão (lockfiles.Range) desses manifestos, menos as de pacotes que o projeto já fixa em outro lugar."""
     root = Path(ctx.root)
     files = set(ctx.files)
     pkgs, seen, open_manifests, ranges = [], set(), [], []
+    members = _workspace_members(ctx, files)
+    reqs = _requirement_files(ctx, files)
 
     def add(item):
         if item[:3] not in seen:
@@ -29,25 +106,27 @@ def collect(ctx):
 
     for rel in ctx.files:
         name = rel.rsplit("/", 1)[-1]
-        if "node_modules/" in rel or not (name == "pyproject.toml" or lockfiles.is_dependency_file(rel)):
+        is_req = rel in reqs
+        if "node_modules/" in rel or not (name == "pyproject.toml" or is_req or lockfiles.is_dependency_file(rel)):
             continue
         d = rel.rsplit("/", 1)[0] + "/" if "/" in rel else ""
-        locks = _LOCK_FOR.get("requirements.txt" if name.startswith("requirements") else name, ())
-        has_lock = any(d + lk in files for lk in locks)
+        locks = _LOCK_FOR.get("requirements.txt" if is_req else name, ())
+        # Num monorepo o lockfile fica na raiz e trava também os pacotes dos workspaces.
+        has_lock = any(d + lk in files for lk in locks) or (name == "package.json" and d in members)
         if name in ("package.json", "pyproject.toml") and has_lock:
             continue
-        if name in ("package.json", "pyproject.toml") or (name.startswith("requirements") and not has_lock):
+        if name in ("package.json", "pyproject.toml") or (is_req and not has_lock):
             # pyproject.toml fica fora do DEP003: biblioteca declara faixa de propósito.
-            n = lockfiles.open_ranges(root, rel) if name != "pyproject.toml" else 0
+            n = lockfiles.open_ranges(root, rel, is_req) if name != "pyproject.toml" else 0
             if n:
                 open_manifests.append((rel, n))
-            for r in lockfiles.ranges(root, rel):
+            for r in lockfiles.ranges(root, rel, is_req):
                 if r.exact:  # Pillow (==10.0.0) também é versão fixada
                     add((r.eco, r.name, r.floor, r.file, r.line))
                 else:
                     ranges.append(r)
         if name != "pyproject.toml":
-            for item in lockfiles.parse(root, rel):
+            for item in lockfiles.parse(root, rel, is_req):
                 add(item)
     for item in mcp_packages(ctx):
         add(item)
@@ -86,6 +165,12 @@ def check(ctx):
     ids_per_pkg, ids_per_floor = found[:len(pkgs)], dict(zip(floors, found[len(pkgs):]))
     all_ids = sorted({i for ids in found for i in ids})
     docs = vulndb.osv_vulns(all_ids) if all_ids else {}
+    missing = [i for i in all_ids if i not in docs]
+    if missing:
+        # Verificação incompleta não pode passar no portão de CI: osv_error faz a CLI sair com 3, e os pacotes
+        # desses avisos continuam no relatório (assess abaixo).
+        ctx.sources["osv_error"] = (f"{len(missing)} vulnerability detail(s) could not be fetched from OSV.dev: "
+                                    + ", ".join(missing[:10]) + (" ..." if len(missing) > 10 else ""))
 
     cves = {a for d in docs.values() for a in [d.get("id", "")] + (d.get("aliases") or []) if a.startswith("CVE-")}
     try:
@@ -104,11 +189,14 @@ def check(ctx):
         """(falhas, avisos de malware) de uma versão, com a severidade já ajustada por KEV e EPSS."""
         nonlocal nvd_budget
         seen_alias = set()
-        vulns, malware = [], []
+        vulns, malware, missing = [], [], []
         # Malicioso primeiro, depois GHSA (texto melhor), depois o resto.
         order = sorted(ids, key=lambda i: (not i.startswith("MAL-"), not i.startswith("GHSA-"), i))
         for vid in order:
             v = docs.get(vid)
+            if vid not in docs:
+                missing.append(vid)
+                continue
             if not v or v.get("withdrawn"):
                 continue
             aliases = {vid, *(v.get("aliases") or [])}
@@ -137,6 +225,17 @@ def check(ctx):
             vulns.append({"id": vcves[0] if vcves else vid, "osv": vid, "severity": sev, "cvss": score,
                           "summary": _summary(v), "kev": in_kev[0] if in_kev else None,
                           "epss": best[0] if best else None, "fixed": vulndb.fixed_version(v, eco, name, version)})
+        # O detalhe que não baixou (a rede falhou depois das novas tentativas) não pode sumir calado: o ID basta
+        # para avisar, sem severidade nem correção conhecidas, e um MAL- continua sendo pacote malicioso.
+        for vid in missing:
+            if vid in seen_alias:
+                continue
+            seen_alias.add(vid)
+            if vid.startswith("MAL-"):
+                malware.append(vid)
+                continue
+            vulns.append({"id": vid, "osv": vid, "severity": "medium", "cvss": None, "summary": "", "kev": None,
+                          "epss": None, "fixed": None, "details": False})
         return vulns, malware
 
     def malicious(name, version, rel, line, advisories):
@@ -160,10 +259,15 @@ def check(ctx):
         if malware:
             out.append(malicious(r.name, r.floor, r.file, r.line, malware))
         if vulns:
-            vulns = [dict(x, spans=vulndb.affects_whole_range(docs[x["osv"]], r.eco, r.name, r.floor, r.upper, r.inclusive))
+            vulns = [dict(x, spans=vulndb.affects_whole_range(docs.get(x["osv"], {}), r.eco, r.name, r.floor, r.upper, r.inclusive))
                      for x in vulns]
             out.append(_range_finding(r, vulns, kev))
     return out
+
+
+def _named(x):
+    """ID e resumo do aviso; sem resumo (aviso sem texto ou detalhe que não baixou), só o ID."""
+    return f"{x['id']} ({x['summary']})" if x["summary"] else x["id"]
 
 
 def _rank(x):
@@ -197,9 +301,24 @@ def _others(vulns):
 
 
 def _target(vulns):
-    """A menor versão que corrige tudo o que tem correção, e quantas falhas ainda não têm."""
+    """A menor versão que corrige tudo o que tem correção, e quantas falhas ainda não têm (o aviso sem detalhe
+    não conta: dele não se sabe se tem correção)."""
     fixes = [x["fixed"] for x in vulns if x["fixed"]]
-    return (max(fixes, key=vulndb._vkey) if fixes else None), len(vulns) - len(fixes)
+    unfixed = sum(1 for x in vulns if not x["fixed"] and x.get("details", True))
+    return (max(fixes, key=vulndb._vkey) if fixes else None), unfixed
+
+
+_MISSING = ("O OSV.dev não mandou os detalhes de {ids}: veja o aviso no link e rode de novo.",
+            "OSV.dev did not send the details of {ids}: read the advisory at the link and run again.")
+
+
+def _with_missing(vulns, fix_pt, fix_en, alone):
+    """Junta à correção o aviso dos detalhes que não vieram; alone: não há outra correção a dizer."""
+    ids = ", ".join(x["id"] for x in vulns if not x.get("details", True))
+    if not ids:
+        return fix_pt, fix_en
+    pt, en = _MISSING[0].format(ids=ids), _MISSING[1].format(ids=ids)
+    return (pt, en) if alone else (f"{fix_pt} {pt}", f"{fix_en} {en}")
 
 
 _UNFIXED = (" {n} falha(s) ainda sem correção: veja se dá para trocar de pacote.",
@@ -222,11 +341,11 @@ def _package_finding(eco, name, version, rel, line, vulns, kev):
     tags, exploit_pt, exploit_en = _exploit(vulns, kev)
     n = len(vulns)
     if n == 1:
-        head_pt = head_en = f"{worst['id']} ({worst['summary']})"
+        head_pt = head_en = f"{_named(worst)}"
         why_pt, why_en = "Esta versão tem uma falha pública conhecida.", "This version has a publicly known vulnerability."
     else:
-        head_pt = f"{n} falhas conhecidas; a pior é {worst['id']} ({worst['summary']})"
-        head_en = f"{n} known vulnerabilities; worst is {worst['id']} ({worst['summary']})"
+        head_pt = f"{n} falhas conhecidas; a pior é {_named(worst)}"
+        head_en = f"{n} known vulnerabilities; worst is {_named(worst)}"
         others_pt, others_en = _others(vulns)
         why_pt, why_en = f"Esta versão tem falhas públicas. Outras: {others_pt}.", f"This version has public vulnerabilities. Others: {others_en}."
     target, unfixed = _target(vulns)
@@ -237,6 +356,7 @@ def _package_finding(eco, name, version, rel, line, vulns, kev):
             fix_en += _UNFIXED[1].format(n=unfixed)
     else:
         fix_pt, fix_en = _NO_FIX
+    fix_pt, fix_en = _with_missing(vulns, fix_pt, fix_en, alone=not target and not unfixed)
     return Finding("DEP001", worst["severity"], rel, line, {
         "pkg": name, "version": version, "ecosystem": eco, "fixed": target or "", "vulns": vulns,
         "headline_pt": head_pt, "headline_en": head_en, "why_pt": why_pt, "why_en": why_en,
@@ -258,8 +378,8 @@ def _range_finding(r, vulns, kev):
     n, floor = len(vulns), r.floor
     lead = whole[0] if whole else worst
     if whole:
-        head_pt = f"toda versão aceita tem a {lead['id']} ({lead['summary']})"
-        head_en = f"every version it allows has {lead['id']} ({lead['summary']})"
+        head_pt = f"toda versão aceita tem a {_named(lead)}"
+        head_en = f"every version it allows has {_named(lead)}"
         why_pt = f"Toda versão que essa faixa aceita tem a {lead['id']}, então a que estiver instalada também tem."
         why_en = f"Every version this range allows has {lead['id']}, so whichever one is installed has it too."
         if n > 1:
@@ -267,11 +387,11 @@ def _range_finding(r, vulns, kev):
             why_en += f" Version {floor}, the lowest, has {n} known vulnerabilities" + (f"; worst is {worst['id']}." if worst is not lead else ".")
     else:
         if n == 1:
-            head_pt = f"a menor versão aceita ({floor}) tem a {worst['id']} ({worst['summary']})"
-            head_en = f"the lowest version it allows ({floor}) has {worst['id']} ({worst['summary']})"
+            head_pt = f"a menor versão aceita ({floor}) tem a {_named(worst)}"
+            head_en = f"the lowest version it allows ({floor}) has {_named(worst)}"
         else:
-            head_pt = f"a menor versão aceita ({floor}) tem {n} falhas conhecidas; a pior é {worst['id']} ({worst['summary']})"
-            head_en = f"the lowest version it allows ({floor}) has {n} known vulnerabilities; worst is {worst['id']} ({worst['summary']})"
+            head_pt = f"a menor versão aceita ({floor}) tem {n} falhas conhecidas; a pior é {_named(worst)}"
+            head_en = f"the lowest version it allows ({floor}) has {n} known vulnerabilities; worst is {_named(worst)}"
         why_pt = (f"Sem lockfile, a faixa é a única regra: quem já tem a versão {floor} instalada continua com ela, porque ela "
                   "cabe na faixa, e a instalação pode escolhê-la para atender outros pacotes.")
         why_en = (f"Without a lockfile the range is the only rule: a machine that already has version {floor} keeps it, "
@@ -296,6 +416,7 @@ def _range_finding(r, vulns, kev):
             fix_en += _UNFIXED[1].format(n=unfixed)
     else:
         fix_pt, fix_en = _NO_FIX
+    fix_pt, fix_en = _with_missing(vulns, fix_pt, fix_en, alone=not target and not unfixed)
     return Finding("DEP004", sev, r.file, r.line, {
         "pkg": r.name, "spec": r.spec, "floor": floor, "upper": r.upper or "", "ecosystem": r.eco,
         "fixed": target or "", "whole_range": bool(whole), "vulns": vulns,

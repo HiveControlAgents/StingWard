@@ -114,7 +114,8 @@ class SecretRules(RuleTest):
         ("Google API key", GOOGLE, "medium"),
         ("Meta/Facebook token", META, "high"),
         ("Twilio key", TWILIO, "high"),
-        ("private key", PEM_BEGIN, "critical"),
+        # One line with \n escapes, as in a service account JSON; the header alone is code that handles keys.
+        ("private key", PEM_BEGIN + "\\nMIIEowIBAAKCAQEA7bq9m3kKx1Zq8W3e5R7t9Y1u3I5o7P9a1S3\\n" + PEM_END, "critical"),
         ("Discord webhook", DISCORD, "high"),
         ("Slack webhook", SLACK_HOOK, "high"),
         ("password in URL", URL_PW, "high"),
