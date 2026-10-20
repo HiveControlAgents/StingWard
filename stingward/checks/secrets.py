@@ -205,11 +205,39 @@ def _mask_flags(text: str) -> str:
     return "".join(out) + text[pos:]
 
 
+# Rede extra do mask(): o detector exige o formato exato, mas o relatório não pode mostrar um token com comprimento
+# fora do padrão nem de um serviço que o detector ainda não conhece. Só prefixo de serviço com rabo aleatório.
+_LOOSE_TOKEN = re.compile(
+    r"\b(?:hf_|gsk_|xai-|sbp_|npm_|r8_|ntn_|lin_api_|shp(?:at|ss|ca|pa)_|do[opr]_v1_)[A-Za-z0-9]{16,}"
+    r"|\b(?:glpat-|sb_secret_|GOCSPX-|pcsk_)[A-Za-z0-9_-]{16,}|\bre_[A-Za-z0-9]{8}_[A-Za-z0-9]{16,}"
+    r"|\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}")
+# Credencial em URL (?key=) e na linha de comando: curl -u usuario:senha, sshpass -p, mysql -psenha.
+_QUERY_KEY = re.compile(r"([?&;]key=)([^&\s#\"']{8,})")
+_USER_PASS = re.compile(r"(?<!\S)(?:--user[=\s]\s*|-u\s*)[^\s:\"']+:([^\s\"']{4,})")
+_SSHPASS = re.compile(r"\bsshpass\s+-p\s*([^\s\"']+)")
+_MYSQL = re.compile(r"\b(?:mysql|mysqldump|mysqladmin|mariadb|mariadb-dump)\b")
+_MYSQL_PW = re.compile(r"(?<!\S)-p([^\s\"']{4,})")
+
+
+def _mask_loose(text: str) -> str:
+    def redact_group(m):
+        g = m.lastindex
+        if m.re is _USER_PASS and m.group(g).isdigit():  # docker run -u 1000:1000
+            return m.group(0)
+        return m.group(0)[:m.start(g) - m.start()] + "[REDACTED]" + m.group(0)[m.end(g) - m.start():]
+    text = _LOOSE_TOKEN.sub(lambda m: m.group(0)[:4] + "\u2026", text)
+    for rx in (_QUERY_KEY, _USER_PASS, _SSHPASS):
+        text = rx.sub(redact_group, text)
+    if _MYSQL.search(text):
+        text = _MYSQL_PW.sub(redact_group, text)
+    return text
+
+
 def mask(text: str) -> str:
     """Texto seguro para o relatório: token vira prefixo + reticências e o resto que o _redact reconhece vira [REDACTED:tipo]."""
     for _, rx in TOKEN_PATTERNS[1:]:
         text = rx.sub(lambda m: m.group(0)[:4] + "\u2026", text)
-    text = _mask_flags(text)
+    text = _mask_flags(_mask_loose(text))
     return redact.sanitize_text(text)
 
 

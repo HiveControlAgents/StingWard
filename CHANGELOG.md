@@ -45,6 +45,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - The `.txt` files of a `requirements/` folder (`requirements/base.txt`, `requirements/production.txt`) and the files a requirements file includes with `-r` or `-c` (`constraints.txt`, `dev-requirements.txt`) are now read for DEP001, DEP003 and DEP004. Before, a project with that layout had none of its pins audited.
 - An advisory that OSV.dev lists for a package but whose details could not be downloaded is no longer dropped without a word: the package still gets a DEP001 or DEP004 (medium, with a note to check the advisory and run again), and a `MAL-` record still gets DEP002. The run counts as incomplete, like an OSV.dev outage: the CLI exits with 3, so a CI gate cannot pass on it. A headline no longer ends in empty parentheses when an advisory has no summary.
 - The private-key body check also reads PGP blocks (`PRIVATE KEY BLOCK`, with armor headers such as `Version:` and the blank line before the body): a real block is critical, a header alone in a README or doc is not reported, and a key header the check does not know no longer stops the scan.
+- Text, Markdown and JSON reports no longer show a token whose length is off the documented format (`hf_`, `gsk_`, `xai-`, `sbp_`, `SG.`...) or from a service the detector does not know yet (`GOCSPX-`, `r8_`, `pcsk_`, `shpat_`, `ntn_`, `lin_api_`), nor a password in `?key=`, `curl -u user:password`, `sshpass -p` or `mysql -ppassword`, for example in an AGT001 permission entry.
 
 ## [0.1.5] - 2026-10-20
 
