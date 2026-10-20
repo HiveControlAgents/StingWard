@@ -57,6 +57,28 @@ class HostileInput(Case):
         files = {".env": "API_SECRET=" + R36 + " " * 3 + "\n"}
         self.assertEqual(brief(scan_files(files, tracked=files), "SEC002"), [("SEC002", ".env", None, "high")])
 
+    def test_masking_command_line_flags_is_linear(self):
+        # mask() runs on code excerpts; "-keykeykey..." made the flag pattern backtrack quadratically (5 s for 18 KB).
+        self.assertFast(secrets._mask_flags, "-" + "key" * 6000)
+        self.assertFast(secrets._mask_flags, "--token " + "-key" * 6000)
+        self.assertFast(secrets._mask_flags, "a-" * 10000)
+
+    def test_command_line_flags_are_still_masked(self):
+        pw = "Tr0ub4dor" + "77xK"
+        cases = [
+            (f"run --api-key {pw} --verbose", "run --api-key [REDACTED] --verbose"),
+            (f"run --token={pw}", "run --token=[REDACTED]"),
+            (f"run -p --db-password '{pw}'", "run -p --db-password '[REDACTED]'"),
+            (f'x --name demo --auth-token="{pw}"', 'x --name demo --auth-token="[REDACTED]"'),
+            (f"cli --Client-Secret {pw}", "cli --Client-Secret [REDACTED]"),
+            ("run --token short --port 8080", "run --token short --port 8080"),
+            (f"run --name {pw}", f"run --name {pw}"),
+        ]
+        for raw, want in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(secrets.mask(raw), want)
+        self.assertNotIn(pw, secrets.mask(f"foo-token={pw}"))
+
 
 if __name__ == "__main__":
     unittest.main()
