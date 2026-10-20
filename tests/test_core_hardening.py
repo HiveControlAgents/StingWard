@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -405,6 +406,48 @@ class TextWithABom(unittest.TestCase):
         self._write("a.txt", "x = 1\n\ufeffy\n")
         ctx = scan.Context(self.tmp.name, ["a.txt"])
         self.assertEqual(ctx.read("a.txt"), "x = 1\n\ufeffy\n")
+
+
+
+class DeepFolders(unittest.TestCase):
+    def test_folder_deeper_than_the_recursion_limit(self):
+        """No Python até 3.11 o os.walk é recursivo: uma skill com centenas de pastas aninhadas derrubava a varredura."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        p = tmp.name
+        try:
+            for _ in range(400):
+                p = os.path.join(p, "a")
+                os.mkdir(p)
+            with open(os.path.join(p, "x.js"), "w") as fh:
+                fh.write("x\n")
+        except OSError:
+            self.skipTest("this system does not allow paths this long")
+        old = sys.getrecursionlimit()
+        sys.setrecursionlimit(300)
+        try:
+            files = scan.list_files(tmp.name)
+        finally:
+            sys.setrecursionlimit(old)
+        self.assertEqual(files, ["a/" * 400 + "x.js"])
+
+    def test_walk_order_and_symlinks_match_os_walk(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        for rel in ("b/z.txt", "b/a/y.txt", "a.txt", "c/node_modules/x.js", "c/d/w.txt", "node_modules/n.js"):
+            os.makedirs(os.path.join(tmp.name, os.path.dirname(rel)), exist_ok=True)
+            with open(os.path.join(tmp.name, rel), "w") as fh:
+                fh.write("x\n")
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        with open(os.path.join(outside.name, "secret.txt"), "w") as fh:
+            fh.write("x\n")
+        try:
+            os.symlink(outside.name, os.path.join(tmp.name, "linked"), target_is_directory=True)
+            os.symlink(os.path.join(outside.name, "secret.txt"), os.path.join(tmp.name, "b", "l.txt"))
+        except (OSError, NotImplementedError):
+            pass
+        self.assertEqual(scan.list_files(tmp.name), ["a.txt", "b/z.txt", "b/a/y.txt", "c/d/w.txt"])
 
 
 if __name__ == "__main__":

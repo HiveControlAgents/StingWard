@@ -34,13 +34,39 @@ _TEST_DOWNGRADE = {"project": {"low": ("APP", "SKL001", "COD")},
 CHECKS = {"deps": deps.check, "secrets": secrets.check, "app": app.check, "code": code.check, "agents": agents.check}
 
 
+def _walk(root: str, skip):
+    """(pasta, arquivos) na ordem do os.walk, sem descer em link simbólico nem nas pastas de skip.
+
+    Sem recursão: no Python até 3.11 o os.walk é recursivo, e uma skill com mil pastas aninhadas derrubava a
+    varredura com RecursionError."""
+    stack = [root]
+    while stack:
+        d = stack.pop()
+        try:
+            with os.scandir(d) as it:
+                entries = list(it)
+        except OSError:
+            continue
+        dirs, files = [], []
+        for e in entries:
+            try:
+                is_dir = e.is_dir()
+            except OSError:
+                is_dir = False
+            (dirs if is_dir else files).append(e.name)
+        yield d, sorted(files)
+        for name in sorted((x for x in dirs if x not in skip), reverse=True):
+            p = os.path.join(d, name)
+            if not os.path.islink(p):
+                stack.append(p)
+
+
 def list_files(root: str, max_files: int = 50_000, mode: str = "project"):
     out = []
     skip = SKILL_SKIP_DIRS if mode == "skill" else SKIP_DIRS
     limit = SKILL_MAX_BYTES if mode == "skill" else MAX_BYTES
-    for d, dirs, files in os.walk(root):
-        dirs[:] = sorted(x for x in dirs if x not in skip)
-        for f in sorted(files):
+    for d, files in _walk(root, skip):
+        for f in files:
             p = os.path.join(d, f)
             rel = os.path.relpath(p, root).replace(os.sep, "/")
             try:
