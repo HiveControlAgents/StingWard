@@ -36,6 +36,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A token or password in the address given to `stingward skill` (`https://x-access-token:<token>@github.com/...`) no longer shows up in the text and HTML reports or in the download error, and the git message in that error is masked and loses terminal escape sequences sent by the server.
 - An answer from OSV.dev, CISA KEV, EPSS or the NVD in the wrong shape (an empty `{}` from a proxy or captive portal, a list, a missing field) counts as that source failing. An empty `{}` from OSV.dev used to read as "no vulnerabilities": the CI gate passed with exit code 0 and the answer stayed in the cache for six hours; other shapes crashed with a traceback. Now OSV.dev gives exit code 3 as when it is down, a KEV failure shows in the report, and a wrong answer is never cached (one already in the cache is fetched again).
 - The "OSV.dev did not respond" notice is printed whenever it happens, also when findings already set exit code 1 or with `--fail-on never`; it used to show only when it changed the exit code. A CISA KEV failure now prints a notice too, since vulnerabilities on that list are raised to critical.
+- Files that start with a UTF-8 byte order mark (Notepad, PowerShell) are audited. An `.mcp.json` or agent settings file saved that way could not be parsed and was skipped without a word.
 
 ## [0.1.5] - 2026-10-20
 
