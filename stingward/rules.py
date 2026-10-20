@@ -306,13 +306,17 @@ RULES = {
 def texts(rule: str, lang: str, params: dict):
     """Devolve (título, por quê, como corrigir) já preenchidos."""
     lang = lang if lang in ("pt", "en") else "en"
-    spec = RULES[rule][lang]
+    return tuple(fill(t, lang, params) for t in RULES[rule][lang])
+
+
+def fill(template: str, lang: str, params: dict) -> str:
+    """Preenche {nome} com os parâmetros do achado; campo que falta vira texto vazio."""
     safe = _Defaults(params)
     # Parâmetros que dependem do idioma vêm como nome_pt / nome_en.
     for k, v in params.items():
         if k.endswith("_" + lang):
             safe[k[:-3]] = v
-    return tuple(t.format_map(safe) for t in spec)
+    return template.format_map(safe)
 
 
 class _Defaults(dict):

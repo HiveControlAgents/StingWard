@@ -69,7 +69,7 @@ Las 32 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.m
 1. **Lista tus archivos**, saltando carpetas de dependencias y de build como `node_modules` y `dist`. Al auditar una skill de terceros sí lee el build, porque es lo que realmente se ejecuta.
 2. **Lee los lockfiles** y consulta a [OSV.dev](https://osv.dev) por todos los paquetes y versiones en una sola llamada. Las CVEs de [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) pasan a críticas; [EPSS](https://www.first.org/epss/) y [NVD](https://nvd.nist.gov) completan la probabilidad y las notas que faltan.
 3. **Ejecuta las revisiones** de secretos, errores de apps, configuración de agentes y contenido de skills, según el contexto: carpetas de pruebas, documentación y ejemplos pesan menos, y en una skill de terceros un texto tranquilizador puede bajar un hallazgo a medio, pero nunca esconderlo.
-4. **Escribe el informe**: veredicto, hallazgos del peor al mejor con dónde, por qué y cómo corregir, una nota de A a F y un distintivo.
+4. **Escribe el informe**: veredicto, qué corregir primero, hallazgos del peor al mejor con dónde, por qué y cómo corregir (el mismo problema en varios archivos aparece una vez, con todos los lugares), una nota de A a F y un distintivo. `--html ARCH` escribe también un informe en un solo archivo, para entregar o imprimir en PDF (en inglés o portugués): resumen, plan de corrección con el esfuerzo estimado, hallazgos con el fragmento de código (secretos enmascarados) y alcance y método.
 
 Solo los nombres y versiones de los paquetes salen de tu máquina (a `api.osv.dev`, `www.cisa.gov`, `api.first.org` y `services.nvd.nist.gov`). Tu código nunca sale. Las respuestas se guardan en caché unas horas en `~/.cache/stingward`.
 
@@ -109,8 +109,8 @@ Comenta el informe en el PR (y actualiza el mismo comentario en cada ejecución)
 | Opción | |
 |---|---|
 | `--lang en\|pt` | Idioma del informe (por defecto: `STINGWARD_LANG`, luego el idioma del sistema) |
-| `--format text\|json\|markdown\|sarif` | Qué va a la salida estándar |
-| `--json ARCH`, `--markdown ARCH`, `--sarif ARCH` | Escribe también estos archivos, en la misma ejecución |
+| `--format text\|json\|markdown\|sarif\|html` | Qué va a la salida estándar |
+| `--json ARCH`, `--markdown ARCH`, `--sarif ARCH`, `--html ARCH` | Escribe también estos archivos, en la misma ejecución |
 | `--fail-on critical\|high\|medium\|low\|never` | Código de salida 1 en esta severidad o mayor (por defecto `high`) |
 | `--only deps,secrets,app,agents` | Ejecuta solo algunas revisiones |
 | `--offline` | No consulta las bases en línea (las dependencias no se revisan) |

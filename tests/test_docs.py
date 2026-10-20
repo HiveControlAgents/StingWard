@@ -178,7 +178,7 @@ class Demos(unittest.TestCase):
         self.assertTrue({"APP001", "APP002", "APP003", "APP004", "APP005", "SEC003"} <= rules, rules)
 
     def test_the_fake_key_never_shows(self):
-        for fmt in ("text", "json", "markdown", "sarif"):
+        for fmt in ("text", "json", "markdown", "sarif", "html"):
             _, out = _cli([self.path("my-saas"), "--offline", "--format", fmt])
             self.assertNotIn(FAKE_KEY_PART, out, fmt)
 

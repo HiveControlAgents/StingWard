@@ -14,7 +14,7 @@ Security fixes go into the latest release. Upgrade with `pipx upgrade stingward`
 
 ## Scope
 
-Stingward reads untrusted content by design. These are in scope: code execution or file writes caused by audited content, findings that audited content can hide or downgrade below what the docs promise, secrets reaching any report format, terminal or markdown injection through reports, and anything that sends more than package names and versions off the machine.
+Stingward reads untrusted content by design. These are in scope: code execution or file writes caused by audited content, findings that audited content can hide or downgrade below what the docs promise, secrets reaching any report format, terminal, markdown or HTML injection through reports, and anything that sends more than package names and versions off the machine.
 
 Findings that Stingward reports about *your* project are not vulnerabilities in Stingward. False positives and misses are welcome as [regular issues](https://github.com/HiveControlAgents/StingWard/issues/new?template=false-positive.yml).
 

@@ -7,9 +7,11 @@ comando: deixar o git procurar o repositório a partir dali executaria esse coma
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 
 _SAFE = ["-c", "core.fsmonitor=false", "-c", "safe.bareRepository=explicit", "-c", f"core.hooksPath={os.devnull}"]
+_SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 
 def top(root: str):
@@ -44,3 +46,12 @@ def run(root: str, *args: str, timeout: int = 30):
         return subprocess.run(cmd, capture_output=True, timeout=timeout, env=env)
     except (OSError, subprocess.SubprocessError):
         return None
+
+
+def head(root: str):
+    """Commit atual do repositório de root, ou None. Só rev-parse: status e log podem rodar filtros e o gpg da config do repo."""
+    r = run(root, "rev-parse", "--verify", "--quiet", "HEAD^{commit}", timeout=10)
+    if r is None or r.returncode != 0:
+        return None
+    sha = r.stdout.decode("ascii", "replace").strip()
+    return sha if _SHA.fullmatch(sha) else None
