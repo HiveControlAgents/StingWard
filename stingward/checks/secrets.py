@@ -220,7 +220,7 @@ def _generic(line, n, rel, low, out):
             continue
         if redact._entropy(val) < 3.3 or not re.search(r"\d", val) or re.fullmatch(r"[\w-]+\.(?:js|ts|py|json|html)", val):
             continue
-        if any(f.line == n for f in out):
+        if out and out[-1].line == n:  # as linhas vêm em ordem: um achado desta linha é sempre o último da lista
             continue
         out.append(Finding("SEC001", "low" if low else "high", rel, n, _kind(None, key)))
 

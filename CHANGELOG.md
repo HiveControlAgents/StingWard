@@ -32,6 +32,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A long run of spaces on a line of `requirements*.txt` no longer slows the scan down quadratically.
 - A committed `.env` with a long run of spaces inside a value no longer slows the scan down quadratically (60 000 spaces took 15 seconds).
 - Masking of command-line options such as `--api-key` in code excerpts is linear: a long hyphenated word made it quadratic.
+- A file with thousands of hard-coded values (generated config, fixtures) is scanned for secrets in linear time: 40 000 such lines took 44 seconds.
 
 ## [0.1.5] - 2026-10-20
 
