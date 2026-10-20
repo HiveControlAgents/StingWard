@@ -116,6 +116,9 @@ Comenta el informe en el PR (y actualiza el mismo comentario en cada ejecución)
 | `--only deps,secrets,app,code,agents` | Ejecuta solo algunas revisiones |
 | `--offline` | No consulta las bases en línea (las dependencias no se revisan) |
 | `--no-color` | Texto sin colores |
+| `--review-template ARCH` | Escribe el archivo de la revisión humana: una entrada por hallazgo, conservando lo que ya se revisó |
+| `--review ARCH` | Aplica la revisión humana: un estado y un comentario para cada hallazgo |
+| `--client NOMBRE`, `--notes ARCH` | "Preparado para" en la portada y el resumen del analista (párrafos, listas con `-`, `**negrita**`, `` `código` ``) |
 
 | Código de salida | Significado |
 |---|---|
@@ -131,6 +134,8 @@ Entorno: `STINGWARD_LANG` define el idioma por defecto, `NVD_API_KEY` sube el l�
 ```markdown
 [![stingward: A](https://img.shields.io/badge/stingward-A-brightgreen)](https://github.com/HiveControlAgents/StingWard)
 ```
+
+**Revisión humana:** para una auditoría que entregas a otra persona, escribe el archivo de revisión con `stingward . --review-template revision.json`. Cada entrada apunta a un hallazgo por su `fingerprint` (que también sale en el JSON y el SARIF), que no cambia cuando se editan otras partes del archivo. Pon en `status` `confirmed`, `false_positive`, `accepted_risk` o `fixed`, escribe el `comment` y ejecuta `stingward . --review revision.json --client "Nombre del cliente" --notes notas.md --html informe.html`. Los falsos positivos pasan a un apéndice; ellos y lo que se corrigió durante la auditoría salen de la nota, de la lista de qué corregir primero y de `--fail-on`. Los riesgos aceptados siguen contando para la nota, pero salen de la lista de qué corregir primero. Los informes de texto y Markdown también siguen la revisión. Los comentarios y el resumen se escapan y pasan por el mismo enmascaramiento de secretos que los fragmentos de código.
 
 **Falsos positivos:** agrega una línea a `.stingwardignore` en la raíz del proyecto (`REGLA ruta/glob`, `REGLA` o `ruta/glob`), o escribe `stingward:ignore` en un comentario en la línea. Si una regla está mal, [avísanos](https://github.com/HiveControlAgents/StingWard/issues/new?template=false-positive.yml) con un ejemplo mínimo.
 
