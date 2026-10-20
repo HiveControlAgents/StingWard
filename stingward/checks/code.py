@@ -1225,6 +1225,11 @@ class _Py:
         cmd = _arg(call, 0, "args", "cmd", "command")
         if cmd is None or _const_str(cmd):
             return
+        if not shell and isinstance(cmd, (ast.List, ast.Tuple)) and _interp_c(cmd.elts, self._dot):
+            # [sys.executable, "-c", texto], ["node", "-e", texto]: o texto é código, como em exec().
+            if not _const_str(cmd.elts[2]):
+                self.report_code(cmd.elts[2], "code", _interp_name(cmd.elts, self._dot), env, ln)
+            return
         if not shell and isinstance(cmd, (ast.List, ast.Tuple)) and _shell_c(cmd.elts):
             # ["sh", "-c", texto]: o texto vai para o shell do mesmo jeito que com shell=True.
             shell, cmd = True, cmd.elts[2]
@@ -1261,6 +1266,9 @@ class _Py:
         code = _arg(call, 0, "source")
         if code is None or _const_str(code):
             return
+        self.report_code(code, kind, sink, env, ln)
+
+    def report_code(self, code, kind, sink, env, ln):
         o = self.origins(code, env)
         built = _builds_string(code) or (isinstance(code, ast.Name) and code.id in self.strs)
         if LLM in o:
@@ -1642,6 +1650,34 @@ def _bind(target, origins, env):
 
 _SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh"}
 _SHELL_FLAGS = {"-c", "-lc", "-ic", "-ec", "-xc", "/c", "/C", "-Command", "-command", "-NoProfile -Command"}
+
+
+# Interpretador que roda o texto da opção como código: python -c, node -e, ruby -e, php -r.
+_INTERP = [(re.compile(r"(?:python[\d.]*w?|py|pypy3?)(?:\.exe)?"), {"-c"}),
+           (re.compile(r"(?:node|nodejs|bun)(?:\.exe)?"), {"-e", "--eval", "-p", "--print"}),
+           (re.compile(r"(?:ruby|perl|rscript)(?:\.exe)?"), {"-e"}), (re.compile(r"php(?:\.exe)?"), {"-r"})]
+_INTERP_SELF = {"sys.executable": "-c", "process.execPath": "-e"}
+
+
+def _interp_flag(prog, flag):
+    """prog: o programa sem pasta ("python3", "node") ou o executável atual (sys.executable, process.execPath)."""
+    if prog in _INTERP_SELF:
+        return flag == _INTERP_SELF[prog] or prog == "process.execPath" and flag in ("--eval", "-p", "--print")
+    name = prog.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return any(rx.fullmatch(name) and flag in flags for rx, flags in _INTERP)
+
+
+def _interp_name(elts, dot):
+    prog = elts[0].value if _const_str(elts[0]) else dot(elts[0])
+    return prog.replace("\\", "/").rsplit("/", 1)[-1] + " " + elts[1].value
+
+
+def _interp_c(elts, dot):
+    """[sys.executable, "-c", texto], ["node", "-e", texto]: o terceiro item é código que o interpretador roda."""
+    if len(elts) < 3 or not _const_str(elts[1]) or isinstance(elts[2], ast.Starred):
+        return False
+    prog = elts[0].value if _const_str(elts[0]) else dot(elts[0])
+    return bool(prog) and _interp_flag(prog, elts[1].value)
 
 
 def _shell_c(elts):
@@ -3261,6 +3297,18 @@ class _Js:
             bool(re.search(r"""\bshell\s*:\s*(?:true\b|['"`])""", rest))
         argv = self.args(args[1][0] + 1) if len(args) > 1 and self.code[args[1][0]] == "[" else []
         spans = [args[0]]
+        interp = self.interp_c(args[0], argv[0]) if not shell and fn in _CP_ARGV and len(argv) >= 2 else None
+        if interp:
+            # execFile("python3", ["-c", texto]), spawn(process.execPath, ["-e", texto]): o texto é código.
+            parts = self.pieces(*argv[1])
+            if parts and not all(k == "lit" for k, _ in parts):
+                o = set()
+                for k, p in parts:
+                    if k == "expr":
+                        o |= self.origins(*p)
+                built = any(k == "lit" for k, _ in parts)
+                self.report_exec(o, built, "code", m, "COD003", dict(_src(REQ), sink=interp))
+            return
         if not shell and fn in _CP_ARGV and len(argv) >= 2 and self.shell_c(args[0], argv[0]):
             # spawn("sh", ["-c", cmd]), execFile("bash", ["-lc", cmd]): o terceiro item vai inteiro para o shell.
             shell, spans = True, [argv[1]]
@@ -3282,6 +3330,20 @@ class _Js:
             o = self.origins(a, b) if not (first and first[0][0] == "lit") else set()
             built = False
         self.report_exec(o, built, "shell", m, "COD002", _src(REQ))
+
+    def interp_c(self, prog, flag):
+        """"python3 -c" para execFile("python3", ["-c", ...]) ou spawn(process.execPath, ["-e", ...]); senão None."""
+        p = self.code[prog[0]:prog[1]].strip()
+        f = self.code[flag[0]:flag[1]].strip()
+        if len(f) < 3 or f[0] not in "'\"`" or f[-1] != f[0]:
+            return None
+        if len(p) >= 3 and p[0] in "'\"`" and p[-1] == p[0]:
+            p = p[1:-1]
+        elif re.sub(r"\s", "", p) != "process.execPath":
+            return None
+        else:
+            p = "process.execPath"
+        return p.replace("\\", "/").rsplit("/", 1)[-1] + " " + f[1:-1] if _interp_flag(p, f[1:-1]) else None
 
     def shell_c(self, prog, flag):
         p = self.code[prog[0]:prog[1]].strip()
