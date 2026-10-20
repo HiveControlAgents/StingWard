@@ -1292,6 +1292,19 @@ class CodeEngine(unittest.TestCase):
         self.assertLess(time.time() - t, 1)
         self.assertEqual([(f.rule, f.severity) for f in found], [("COD001", "high")])
 
+    def test_whole_file_searches_stay_linear(self):
+        """'use server' depois de espaços e export const GET: sem "=": cada começo de linha lia o resto do arquivo."""
+        blobs = {"lib/a.js": "const u = req.query.u\nfetch(u)\n" + (" " * 240 + "\n") * 1990,
+                 "lib/b.ts": "import OpenAI from 'openai'\n" + ("export const GET:" + " " * 200 + "\n") * 1990}
+        for rel, src in blobs.items():
+            with self.subTest(rel=rel):
+                t = time.time()
+                code.scan_js(rel, src)
+                self.assertLess(time.time() - t, 1)
+        js = code._Js("app/actions.ts", "// x\n  'use server'\nexport async function a() {}\n", {})
+        self.assertTrue(js.server_side())
+        self.assertTrue(code._JS_ROUTE_FN.search("export const GET: RequestHandler = async (req) => {}"))
+
     def test_line_numbers_follow_comments_and_strings(self):
         src = EXPRESS + ("/* a comment\n   eval(req.body.a)\n*/\n"
                          "const s = `multi\nline ${1}\ntext`\n"
