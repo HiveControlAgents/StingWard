@@ -49,7 +49,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [COD010](#cod010) | Predictable random number used for a secret | 🔵 |
 | [COD011](#cod011) | Password hashed with a fast hash | 🟡 |
 | [AGT001](#agt001) | Agent permission too broad | 🟠 |
-| [AGT002](#agt002) | Hook downloads and runs remote code | 🟠 |
+| [AGT002](#agt002) | Hook or MCP server downloads and runs remote code | 🟠 |
 | [AGT003](#agt003) | MCP server without a pinned version | 🟡 |
 | [AGT004](#agt004) | Credential hard-coded in MCP config | 🔴 |
 | [AGT005](#agt005) | Remote MCP server over plain HTTP | 🟡 |
@@ -357,9 +357,9 @@ MD5, SHA-1 or SHA-2 (`hashlib.sha256(password...)`, `createHash("sha256").update
 **Standards:** `CWE-250` · `LLM03:2026` · `ASI03`
 
 <a id="agt002"></a>
-### AGT002 · Hook downloads and runs remote code
+### AGT002 · Hook or MCP server downloads and runs remote code
 
-A hook that pipes `curl` or `wget` into a shell. Whoever controls that URL runs code on your machine every time the hook fires.
+A hook command, or the command that launches an MCP server (for example `sh -c "curl ... | sh"`), that pipes `curl` or `wget` into a shell. Whoever controls that URL runs code on your machine every time the hook fires or the server starts.
 
 **Fix:** pin the script in the repository and review it.
 **Standards:** `CWE-494` · `ASI05`

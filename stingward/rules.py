@@ -351,11 +351,13 @@ RULES = {
     },
     "AGT002": {
         "group": "agents",
-        "pt": ("Hook baixa e executa código da internet",
-               "Toda vez que o hook dispara, roda o que estiver naquele endereço hoje, sem revisão.",
+        "pt": ("Hook ou servidor MCP baixa e executa código da internet",
+               "Um comando de hook ou o comando que inicia um servidor MCP passa curl/wget para o shell. Toda vez que o "
+               "hook dispara, ou o servidor inicia, roda o que estiver naquele endereço hoje, sem revisão.",
                "Baixe o script uma vez, revise, guarde no repositório e chame o arquivo local."),
-        "en": ("Hook downloads and runs code from the internet",
-               "Every time the hook fires it runs whatever is at that URL today, unreviewed.",
+        "en": ("Hook or MCP server downloads and runs code from the internet",
+               "A hook command, or the command that launches an MCP server, pipes curl/wget into a shell. Every time the "
+               "hook fires, or the server starts, it runs whatever is at that URL today, unreviewed.",
                "Download the script once, review it, commit it, and call the local file."),
     },
     "AGT003": {
