@@ -89,6 +89,12 @@ jobs:
         run: |
           git rev-parse -q --verify "refs/tags/$V" >/dev/null || { git tag "$V" && git push origin "$V"; }
           git tag -f v0 "$V" && git push -f origin v0
-      - name: GitHub release
+      - name: GitHub release, with this version's CHANGELOG entry as its notes
         env: { GH_TOKEN: "${{ github.token }}", V: "v${{ needs.check.outputs.version }}" }
-        run: gh release view "$V" >/dev/null 2>&1 || gh release create "$V" --generate-notes --title "Stingward $V"
+        run: |
+          gh release view "$V" >/dev/null 2>&1 && exit 0
+          # Relative links in the changelog would break on the release page, so they point at the tagged files.
+          awk -v h="## [${V#v}]" 'index($0, h) == 1 { on = 1; next } on && /^## \[/ { exit } on' CHANGELOG.md \
+            | sed -E "s#\]\(([^):#]+)\)#](https://github.com/$GITHUB_REPOSITORY/blob/$V/\1)#g" > "$RUNNER_TEMP/notes.md"
+          [ -s "$RUNNER_TEMP/notes.md" ] || { echo "CHANGELOG.md has no entry for ${V#v}"; exit 1; }
+          gh release create "$V" --title "Stingward $V" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
