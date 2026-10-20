@@ -58,12 +58,46 @@ class MaskerOnHostileInput(unittest.TestCase):
             "urls": "http://a" * (n // 8),
             "windows": "C:\\a\\" * (n // 5),
             "hyphens": "a.b-" * (n // 4),
+            "at_signs": "x://u:" + "p@" * (n // 2) + "!",
         }
         for name, s in samples.items():
             with self.subTest(sample=name):
                 t = time.perf_counter()
                 redact.sanitize_text(s)
                 self.assertLess(time.perf_counter() - t, 1.5, name)
+
+
+class MaskerFormats(unittest.TestCase):
+    PART = "Demo7Fake9Key0Not4Real"
+
+    def test_password_with_an_at_sign_is_masked_whole(self):
+        from stingward.report_html import mask_line
+        samples = [
+            f"DATABASE_URL=postgres://admin:P@ss{self.PART}@db.example.com:5432/app",
+            f'const url = "mongodb+srv://app:x9@{self.PART}@cluster0.example.net/db"',
+            f"redis://default:a@b@{self.PART}@redis.example.com:6379",
+        ]
+        for s in samples:
+            with self.subTest(sample=s):
+                for out in (redact.sanitize_text(s), mask_line(s)):
+                    self.assertNotIn(self.PART, out)
+                    self.assertIn("[REDACTED:url_password]@", out)
+                    self.assertRegex(out, r"@(db\.example\.com|cluster0|redis\.example\.com)")
+
+    def test_url_password_does_not_swallow_what_follows(self):
+        for s, want in [
+            ('{"a":"postgres://u:pw@h","b":"c@d"}', '{"a":"postgres://u:[REDACTED:url_password]@h","b":"c@d"}'),
+            ("https://user:pw@host/path?email=a@b.com", "https://user:[REDACTED:url_password]@host/path?email=a@b.com"),
+            ("https://host:8080/users/@alice", "https://host:8080/users/@alice"),
+            ("postgres://u:p@ss@localhost/db", "postgres://u:[REDACTED:url_password]@localhost/db"),
+        ]:
+            with self.subTest(sample=s):
+                self.assertEqual(redact.sanitize_text(s), want)
+
+    def test_local_database_with_an_at_sign_in_the_password_is_low(self):
+        from stingward.checks import secrets
+        (m,) = redact._URL_CREDS.finditer("postgres://u:p@ss@localhost/db")
+        self.assertEqual((m["pw"], secrets._url_password(m, m.string)), ("p@ss", "low"))
 
 
 class ErrorsFollowTheLanguage(unittest.TestCase):
