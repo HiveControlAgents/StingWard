@@ -1213,6 +1213,30 @@ class ToolArguments(Checks):
                        "  exec(`ls ${n} ${mode}`)\n  return { content: [] }\n})\n")
         self.check({"server.ts": src}, [("APP014", "server.ts", 8, "high"), ("APP014", "server.ts", 9, "critical")])
 
+    def test_interpreter_with_inline_code(self):
+        """[sys.executable, "-c", código], spawn("node", ["-e", código]): o interpretador roda o texto como código, como
+        exec(). Um arquivo de script do projeto com o valor como argumento continua quieto."""
+        py = FMCP + ("import subprocess, sys\n@mcp.tool()\ndef run_python(code: str) -> str:\n"
+                     "    a = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True).stdout\n"
+                     "    b = subprocess.run(['node', '-e', 'console.log(' + code + ')'], capture_output=True).stdout\n"
+                     "    c = subprocess.run([sys.executable, 'scripts/report.py', code], capture_output=True).stdout\n"
+                     "    return a + b + c\n")
+        flask = FLASK + ("import subprocess\n@app.post('/run')\ndef run():\n"
+                         "    return subprocess.run(['python3', '-c', request.json['code']], capture_output=True).stdout\n")
+        llm = OPENAI_PY + ("import subprocess, sys\ndef go(q):\n"
+                           "    r = client.chat.completions.create(model='m', messages=[{'role': 'user', 'content': q}])\n"
+                           "    subprocess.run([sys.executable, '-c', r.choices[0].message.content])\n")
+        js = MCPJS + ("server.tool('py', { code: z.string() }, async ({ code }) => {\n"
+                      "  execFile('python3', ['-c', code])\n"
+                      "  execFile(process.execPath, ['-e', code])\n"
+                      "  execFile('python3', ['main.py', code])\n"
+                      "  return { content: [] }\n})\n")
+        f = run({"server.py": py, "app.py": flask, "agent.py": llm, "server.ts": js})
+        self.assertEqual(got(f), [("APP009", "agent.py", 6, "critical"), ("APP014", "server.py", 6, "high"),
+                                  ("APP014", "server.py", 7, "critical"), ("APP014", "server.ts", 8, "high"),
+                                  ("APP014", "server.ts", 9, "high"), ("COD003", "app.py", 6, "critical")])
+        self.assertEqual({x.params.get("kind") for x in f if x.rule == "APP014"}, {"code"})
+
     def test_js_register_tool_paths_and_guards(self):
         src = MCPJS + ("const ROOT = '/srv/notes'\n"
                        "server.registerTool('read', { inputSchema: { p: z.string() } }, async ({ p }) => {\n"
