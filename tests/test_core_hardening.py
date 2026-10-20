@@ -48,8 +48,9 @@ class MaskerOnHostileInput(unittest.TestCase):
     """O mascaramento roda em valores que vêm da skill auditada (config de MCP): não pode ficar quadrático."""
 
     def test_long_values_are_masked_in_linear_time(self):
-        n = 40_000
+        n = 200_000
         samples = {
+            "letters": "A" * n,
             "word": "ab1" * (n // 3),
             "dotted": "a." * (n // 2),
             "slashes": "a/" * (n // 2),
@@ -59,12 +60,15 @@ class MaskerOnHostileInput(unittest.TestCase):
             "windows": "C:\\a\\" * (n // 5),
             "hyphens": "a.b-" * (n // 4),
             "at_signs": "x://u:" + "p@" * (n // 2) + "!",
+            "backslashes": "\\" * n,
+            "escaped_quotes": '\\"a\\":' * (n // 6),
+            "assignments": "a=" * (n // 2),
         }
         for name, s in samples.items():
             with self.subTest(sample=name):
                 t = time.perf_counter()
                 redact.sanitize_text(s)
-                self.assertLess(time.perf_counter() - t, 1.5, name)
+                self.assertLess(time.perf_counter() - t, 2.0, name)
 
 
 class MaskerFormats(unittest.TestCase):
@@ -335,6 +339,16 @@ class SkillDownload(unittest.TestCase):
         self.assertNotIn("\x1b", err)
         self.assertNotIn("\x07", err)
         self.assertIn("could not download https://github.com/acme/private-skill", err)
+
+    @unittest.skipUnless(shutil.which("git"), "git is not installed")
+    def test_failed_clone_with_a_token_in_the_url_with_real_git(self):
+        url = f"https://x-access-token:{self.TOKEN}@127.0.0.1:9/org/private-skill"
+        code, out, err = run_main(["skill", url, "--offline", "--lang", "en"])
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("could not download https://127.0.0.1:9/org/private-skill", err)
+        self.assertNotIn(self.TOKEN[4:], err)
+        self.assertNotIn("x-access-token", err)
+        self.assertEqual(os.listdir(self.tmp.name), [])
 
     def test_git_output_that_is_not_utf8_is_not_fatal(self):
         with mock.patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, b"", b"")) as run:

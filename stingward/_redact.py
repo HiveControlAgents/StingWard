@@ -190,10 +190,11 @@ _JSON_PLAIN = re.compile(
     r"""(?<!\\)(?P<q>["'])(?P<key>[^"'\\\s:]{1,64})(?P=q)\s*:\s*"""
     r"""(?:(?P<vq>["'])(?P<sval>(?:\\.|(?!(?P=vq))[^\\\n])*)(?P<close>(?P=vq)|(?=\n)|\Z)"""
     r"""|(?P<nval>-?[\w.+\-]+))""")
-# JSON serializado dentro de string: {\"password\": \"x\"}
+# JSON serializado dentro de string: {\"password\": \"x\"}. Até 8 barras (8 níveis de escape): sem teto, uma
+# sequência longa de barras seria varrida de cada posição até o fim (tempo quadrático).
 _JSON_ESCAPED = re.compile(
-    r"""(?P<q>\\+["'])(?P<key>[^"'\\\s:]{1,64})(?P=q)\s*:\s*"""
-    r"""(?:(?P<vq>\\+["'])(?P<sval>(?:(?!(?P=vq))[^\n])*?)(?P<close>(?P=vq)|(?=\n)|\Z)"""
+    r"""(?P<q>\\{1,8}["'])(?P<key>[^"'\\\s:]{1,64})(?P=q)\s*:\s*"""
+    r"""(?:(?P<vq>\\{1,8}["'])(?P<sval>(?:(?!(?P=vq))[^\n])*?)(?P<close>(?P=vq)|(?=\n)|\Z)"""
     r"""|(?P<nval>-?[\w.+\-]+))""")
 
 
