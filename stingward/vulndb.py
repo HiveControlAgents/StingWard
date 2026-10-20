@@ -20,6 +20,8 @@ EPSS_URL = "https://api.first.org/data/v1/epss?cve={}"
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={}"
 
 HOUR = 3600
+# Páginas por pacote no querybatch (cada uma traz até ~1000 IDs): um token que nunca acaba não prende a varredura.
+OSV_MAX_PAGES = 10
 
 
 def _list_of(d, key):
@@ -38,6 +40,8 @@ def _osv_batch_ok(n):
         for r in results:
             vulns = r.get("vulns") or []
             if not isinstance(vulns, list) or not all(isinstance(v, dict) and isinstance(v.get("id"), str) for v in vulns):
+                return False
+            if not isinstance(r.get("next_page_token") or "", str):
                 return False
         return True
     return ok
@@ -75,20 +79,32 @@ def _osv_record_ok(d):
 
 
 def osv_query(pkgs):
-    """pkgs: lista de (ecossistema, nome, versão). Devolve lista de listas de IDs, na mesma ordem."""
+    """pkgs: lista de (ecossistema, nome, versão). Devolve lista de listas de IDs, na mesma ordem.
+
+    Pacote com muitas falhas vem em páginas: a resposta traz next_page_token, e a página seguinte é a mesma pergunta
+    com page_token. Lidas até OSV_MAX_PAGES por pacote; passado o teto, os IDs já lidos bastam para avisar."""
     out = []
     for i in range(0, len(pkgs), 500):
         chunk = pkgs[i:i + 500]
-        body = {"queries": [{"package": {"ecosystem": e, "name": n}, "version": v} for e, n, v in chunk]}
-        ok = _osv_batch_ok(len(chunk))
-        res = fetch_json(OSV_BATCH, body, ttl=6 * HOUR, valid=ok)
-        if not ok(res):  # respostas fora de ordem atribuiriam a falha ao pacote errado
-            raise NetError(f"{OSV_BATCH}: unexpected response")
-        for r in res["results"]:
-            ids = [v["id"] for v in r.get("vulns") or []]
-            # A resposta pode vir paginada para pacotes com muitas falhas; os IDs da primeira página bastam
-            # para avisar, e o detalhe de cada uma vem de osv_vulns.
-            out.append(ids)
+        queries = [{"package": {"ecosystem": e, "name": n}, "version": v} for e, n, v in chunk]
+        ids = [[] for _ in chunk]
+        todo, tokens = list(range(len(chunk))), {}
+        for _ in range(OSV_MAX_PAGES):
+            batch = [dict(queries[j], page_token=tokens[j]) if j in tokens else queries[j] for j in todo]
+            ok = _osv_batch_ok(len(batch))
+            res = fetch_json(OSV_BATCH, {"queries": batch}, ttl=6 * HOUR, valid=ok)
+            if not ok(res):  # respostas fora de ordem atribuiriam a falha ao pacote errado
+                raise NetError(f"{OSV_BATCH}: unexpected response")
+            pending = []
+            for j, r in zip(todo, res["results"]):
+                ids[j] += [v["id"] for v in r.get("vulns") or [] if v["id"] not in ids[j]]
+                if r.get("next_page_token"):
+                    tokens[j] = r["next_page_token"]
+                    pending.append(j)
+            todo = pending
+            if not todo:
+                break
+        out += ids
     return out
 
 
