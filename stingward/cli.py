@@ -119,12 +119,12 @@ MSG = {
     "pt": {"stale": "stingward: {n} item(ns) de {path} não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu).",
            "todo": "stingward: {n} achado(s) ainda sem status em {path}; eles contam como achados.",
            "masked": "stingward: mascarei algo que parece segredo num comentário ou no parecer. Confira o relatório antes de entregar.",
-           "template": "stingward: arquivo de revisão gravado em {path}: {n} achado(s), {kept} já revisado(s), {stale} que não batem mais com nenhum achado.",
+           "template": "stingward: arquivo de revisão gravado em {path}: {n} achado(s), {kept} já revisado(s), {stale} que não batem mais com nenhum achado (marcados com \"stale\": true e mantidos no fim).",
            "nothing": "stingward: nenhum arquivo foi lido, então não há o que avaliar (código de saída 4). Confira o caminho e, no CI, se o código foi baixado antes (checkout)."},
     "en": {"stale": "stingward: {n} item(s) in {path} match no finding of this scan (the code changed or the finding is gone).",
            "todo": "stingward: {n} finding(s) still have no status in {path}; they count as found.",
            "masked": "stingward: masked something that looks like a secret in a comment or the notes. Check the report before you deliver it.",
-           "template": "stingward: review file written to {path}: {n} finding(s), {kept} already reviewed, {stale} no longer matching any finding.",
+           "template": "stingward: review file written to {path}: {n} finding(s), {kept} already reviewed, {stale} no longer matching any finding (marked \"stale\": true and kept at the end).",
            "nothing": "stingward: no file was read, so there is nothing to grade (exit code 4). Check the path and, in CI, that the code was checked out first."},
 }
 

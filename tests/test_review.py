@@ -223,7 +223,32 @@ class ReviewFile(Case):
             again = json.load(fh)
         self.assertEqual(again["reviewer"], "Ana")
         self.assertEqual((again["findings"][0]["status"], again["findings"][0]["comment"]), ("confirmed", "Checked by hand."))
-        self.assertEqual(again["findings"][-1], {"fingerprint": "0123456789abcdef", "status": "fixed", "comment": "Gone."})
+        self.assertEqual(again["findings"][-1], {"fingerprint": "0123456789abcdef", "status": "fixed", "comment": "Gone.", "stale": True})
+
+    def test_an_item_that_no_longer_matches_is_marked_and_unmarked(self):
+        # O item que não bate mais fica no arquivo (o comentário de quem revisou está nele), marcado "stale": true;
+        # quando o achado volta, a marca sai.
+        doc = self.template()
+        item = next(i for i in doc["findings"] if i["finding"]["where"].startswith("src/db.js"))
+        item.update(status="confirmed", comment="Checked by hand.")
+        self.save_review(doc)
+        write(os.path.join(self.root, "src/db.js"), "const db = connect();\n")
+        code, _, err = run([self.root, "--offline", "--lang", "en", "--review-template", self.path("r.json")])
+        self.assertIn('1 no longer matching any finding (marked "stale": true and kept at the end)', err)
+        with open(self.path("r.json"), encoding="utf-8") as fh:
+            again = json.load(fh)
+        gone = [i for i in again["findings"] if i.get("stale")]
+        self.assertEqual([(i["fingerprint"], i["status"], i["comment"], i["stale"]) for i in gone],
+                         [(item["fingerprint"], "confirmed", "Checked by hand.", True)])
+        self.assertEqual(again["findings"][-1], gone[0])  # no fim do arquivo
+        write(os.path.join(self.root, "src/db.js"), APP["src/db.js"])
+        run([self.root, "--offline", "--lang", "en", "--review-template", self.path("r.json")])
+        with open(self.path("r.json"), encoding="utf-8") as fh:
+            back = json.load(fh)
+        match = next(i for i in back["findings"] if i["fingerprint"] == item["fingerprint"])
+        self.assertNotIn("stale", match)
+        self.assertEqual((match["status"], match["comment"]), ("confirmed", "Checked by hand."))
+        self.assertFalse(any("stale" in i for i in back["findings"]))
 
     def test_a_broken_file_is_not_overwritten(self):
         write(self.path("r.json"), "{not json")

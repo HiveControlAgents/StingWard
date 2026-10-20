@@ -362,17 +362,20 @@ HELP = {
     "pt": ("status: confirmed (confirmado), false_positive (alarme falso), accepted_risk (risco aceito) ou fixed "
            "(corrigido durante a auditoria); vazio = ainda não revisado. comment: texto livre que vai para o relatório, "
            "com **negrito** e `código`. Não cole segredos: eles saem mascarados. O bloco finding é só para você se "
-           "localizar; o Stingward lê fingerprint, status e comment."),
+           "localizar; o Stingward lê fingerprint, status e comment. \"stale\": true marca um item que não bate mais "
+           "com nenhum achado: ele fica no fim, com o seu comentário, e a marca sai se o achado voltar."),
     "en": ("status: confirmed, false_positive, accepted_risk or fixed (fixed during the audit); empty = not reviewed "
            "yet. comment: free text that goes into the report, with **bold** and `code`. Do not paste secrets: they "
            "come out masked. The finding block only helps you find your way; Stingward reads fingerprint, status and "
-           "comment."),
+           "comment. \"stale\": true marks an item that no longer matches any finding: it stays at the end, with your "
+           "comment, and the mark goes away if the finding comes back."),
 }
 
 
 def template(findings, lang, old=None, target=""):
     """O arquivo para quem revisa: um item por achado, na ordem do relatório. Com um arquivo anterior, mantém status
-    e comentário do que já foi revisado e guarda no fim os itens que não batem mais com nenhum achado."""
+    e comentário do que já foi revisado e guarda no fim, marcados "stale": true, os itens que não batem mais com
+    nenhum achado: o comentário de quem revisou está neles. Um item que volta a bater é reescrito, sem a marca."""
     from .rules import texts
     lang = lang if lang in HELP else "en"
     old = old or Review()
@@ -384,7 +387,7 @@ def template(findings, lang, old=None, target=""):
                       "finding": {"rule": f.rule, "severity": f.severity, "where": f"{f.file}:{f.line}" if f.line else f.file,
                                   "title": texts(f.rule, lang, f.params)[0]}})
     kept = sum(1 for f in findings if any(old.entries.get(f.fingerprint, ("", ""))))
-    stale = [item for item in old.raw if str(item.get("fingerprint", "")).strip().lower() not in seen]
+    stale = [dict(item, stale=True) for item in old.raw if str(item.get("fingerprint", "")).strip().lower() not in seen]
     doc = {"stingward_review": 1, "help": HELP[lang], "target": str(target or ""), "reviewer": old.reviewer,
            "findings": items + stale}
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n", kept, len(stale)
