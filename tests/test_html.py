@@ -16,7 +16,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from stingward import cli, gitsafe, report, report_html, vulndb
+from stingward import cli, gitsafe, report, report_html, scan, vulndb
 from stingward.model import Context, Finding
 from stingward.rules import RULES
 
@@ -739,6 +739,66 @@ class Priority(unittest.TestCase):
         first = page.split('class="first"', 1)[1].split("</ol>", 1)[0]
         self.assertEqual(re.findall(r'<p class="first-where"><span>[^<]*</span><code>([^<]+)</code>', first),
                          ["package-lock.json", "config.py:9", ".claude/settings.json:3"])
+
+
+class NotRead(unittest.TestCase):
+    """O que o limite de tamanho e o de arquivos deixaram de fora aparece em todo formato, não só no stderr: uma skill
+    pode esconder o código num arquivo grande, e um relatório pago tem de dizer o que não cobriu."""
+    HOSTILE = ["dist/a\x1b[31m.js", "<img src=x onerror=alert(1)>.md", "lib/x\u202e.js", "[go](https://example.test) @team #12.md"]
+
+    def setUp(self):
+        self.root = tree({"src/app.py": "x = 1\n"})
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.dep = Finding("DEP003", "high", "package.json", None, {"manifest": "package.json", "count": 1})
+
+    def ctx(self, too_big=(), truncated=False, mode="project"):
+        c = ctx_for(self.root, files=["src/app.py"], offline=True, mode=mode)
+        c.too_big, c.truncated = list(too_big), truncated
+        return c
+
+    def test_text_says_it_under_the_sources_line(self):
+        cases = {"pt": ("Fora da auditoria: 2 arquivo(s) acima de 2 MB não foram lidos: dist/big.js, data/huge.json",
+                        f"Fora da auditoria: a pasta tem mais de {scan.MAX_FILES} arquivos"),
+                 "en": ("Not covered: 2 file(s) over 2 MB were not read: dist/big.js, data/huge.json",
+                        f"Not covered: the folder has more than {scan.MAX_FILES} files")}
+        for lang, (big, many) in cases.items():
+            for findings in ([], [self.dep]):
+                with self.subTest(lang=lang, findings=len(findings)):
+                    lines = report.text(self.ctx(["dist/big.js", "data/huge.json"], True), list(findings), lang).splitlines()
+                    self.assertTrue(lines[1].startswith(report.T[lang]["sources"] + ":"))
+                    self.assertEqual(lines[2], big)
+                    self.assertTrue(lines[3].startswith(many), lines[3])
+        self.assertNotIn("Not covered", report.text(self.ctx(), [self.dep], "en"))
+
+    def test_markdown_says_it_with_or_without_findings(self):
+        for findings in ([], [self.dep]):
+            with self.subTest(findings=len(findings)):
+                md = report.markdown(self.ctx(["dist/big.js"]), list(findings), "en")
+                self.assertIn("⚠️ Not covered: 1 file(s) over 2 MB were not read: dist/big.js", md)
+                md = report.markdown(self.ctx(truncated=True), list(findings), "pt")
+                self.assertIn(f"⚠️ Fora da auditoria: a pasta tem mais de {scan.MAX_FILES} arquivos", md)
+        self.assertNotIn("Not covered", report.markdown(self.ctx(), [self.dep], "en"))
+
+    def test_a_long_list_is_cut_like_on_stderr(self):
+        names = [f"dist/f{i}.js" for i in range(8)]
+        line = report.text(self.ctx(names), [], "en").splitlines()[2]
+        self.assertTrue(line.endswith("dist/f0.js, dist/f1.js, dist/f2.js, dist/f3.js, dist/f4.js and 3 more"), line)
+
+    def test_json_has_a_not_read_object(self):
+        doc = json.loads(report.as_json(self.ctx(["dist/big.js"], True), [], "en"))
+        self.assertEqual(doc["not_read"], {"too_big": ["dist/big.js"], "truncated": True})
+        self.assertEqual(list(doc).index("not_read"), list(doc).index("sources") + 1)
+        self.assertEqual(json.loads(report.as_json(self.ctx(), [], "en"))["not_read"], {"too_big": [], "truncated": False})
+
+    def test_hostile_file_names_stay_plain_text(self):
+        ctx = self.ctx(self.HOSTILE)
+        text = report.text(ctx, [], "en")
+        for raw in ("\x1b", "\u202e"):
+            self.assertNotIn(raw, text)
+        md = report.markdown(ctx, [], "en")
+        for raw in ("\x1b", "\u202e", "<img", "[go](", "@team", "#12"):
+            self.assertNotIn(raw, md)
+        self.assertEqual(json.loads(report.as_json(ctx, [], "en"))["not_read"]["too_big"], self.HOSTILE)
 
 
 class NothingRead(unittest.TestCase):

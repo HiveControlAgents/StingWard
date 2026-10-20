@@ -187,7 +187,7 @@ class Fingerprint(Case):
         fps = {f["fingerprint"] for f in scan_json(self.root)}
         self.assertEqual({r["properties"]["fingerprint"] for r in results}, fps)
         doc = json.loads(run([self.root, "--offline", "--format", "json"])[1])
-        self.assertEqual(set(doc), {"tool", "version", "grade", "sources", "findings"})
+        self.assertEqual(set(doc), {"tool", "version", "grade", "sources", "not_read", "findings"})
         self.assertNotIn("review", doc["findings"][0])
 
     def test_hand_built_findings_get_one_too(self):

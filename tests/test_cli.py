@@ -23,7 +23,7 @@ from stingward.rules import RULES
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ANSI = re.compile(r"\x1b\[")
 LANG_VARS = ("STINGWARD_LANG", "LC_ALL", "LC_MESSAGES", "LANG")
-JSON_KEYS = {"tool", "version", "grade", "sources", "findings"}
+JSON_KEYS = {"tool", "version", "grade", "sources", "not_read", "findings"}
 FINDING_KEYS = {"rule", "severity", "file", "line", "fingerprint", "title", "why", "fix", "refs", "tags", "standards", "data"}
 
 GH = "ghp_" + "Ab3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0eF3hJ6"
