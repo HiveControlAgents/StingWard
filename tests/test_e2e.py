@@ -126,3 +126,46 @@ class SkillPermissions(unittest.TestCase):
             self.assertFalse(os.path.exists(marker), "the launcher imported a module from the checked folder")
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertEqual(json.loads(run.stdout)["tool"], "stingward")
+
+
+class SkillReportBack(unittest.TestCase):
+    """O modelo lê o JSON e responde ao usuário. A skill tem de dizer o que o JSON não diz sozinho."""
+
+    def test_the_skill_gives_the_verdict_the_command_line_prints(self):
+        """O JSON não traz o veredito de `skill`: a skill diz a regra e as mesmas palavras do relatório em texto."""
+        _, body = _skill()
+        for key in ("verdict_bad", "verdict_mid", "verdict_ok"):
+            with self.subTest(key=key):
+                self.assertIn(report.T["en"][key].split(" ", 1)[1], body)
+
+    def test_the_skill_says_when_dependencies_were_not_checked(self):
+        """Com --fail-on never o código de saída 3 some; só `sources` mostra que o OSV.dev não respondeu."""
+        _, body = _skill()
+        self.assertIn("`sources.osv`", body)
+        self.assertIn("`sources.osv_error`", body)
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "package-lock.json"), "w", encoding="utf-8") as fh:
+                json.dump({"lockfileVersion": 3, "packages": {"node_modules/left-pad": {"version": "1.3.0"}}}, fh)
+            sources = {}
+            _, out, _ = _cli([tmp, "--offline", "--format", "json", "--fail-on", "never"])
+            sources["offline"] = json.loads(out)["sources"]
+            with mock.patch.object(vulndb, "osv_query", side_effect=vulndb.NetError("timed out")):
+                _, out, _ = _cli([tmp, "--format", "json", "--fail-on", "never"])
+            sources["down"] = json.loads(out)["sources"]
+            with mock.patch.object(vulndb, "osv_query", return_value=[[]]):
+                _, out, _ = _cli([tmp, "--format", "json", "--fail-on", "never"])
+            sources["checked"] = json.loads(out)["sources"]
+        self.assertEqual([s.get("osv") for s in sources.values()], [None, None, True], sources)
+        self.assertIn("osv_error", sources["down"])
+        self.assertEqual({s["packages"] for s in sources.values()}, {1})
+
+    def test_options_the_skill_mentions_exist(self):
+        known = {o for a in cli._parser()._actions for o in a.option_strings}
+        _, body = _skill()
+        for opt in set(re.findall(r"(--[a-z][a-z-]+)", body)):
+            with self.subTest(option=opt):
+                self.assertIn(opt, known)
+
+    def test_the_skill_offers_the_html_report(self):
+        _, body = _skill()
+        self.assertIn("--html", body)
