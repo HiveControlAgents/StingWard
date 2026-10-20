@@ -2,6 +2,8 @@
 
 Segredos falsos são montados por concatenação, para o repositório continuar limpo na própria auditoria.
 """
+import base64
+import json
 import os
 import re
 import tempfile
@@ -336,6 +338,52 @@ class Masking(Case):
                      "sshpass" + " -p" * 30000, "hf_" * 30000, "gsk_" + "a" * 60000):
             with self.subTest(text=text[:12]):
                 self.assertFast(secrets._mask_loose, text, limit=0.5)
+
+
+# =========================================================================== .env no git
+
+def jwt(payload):
+    enc = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
+    return enc({"alg": "HS256", "typ": "JWT"}) + "." + enc(payload) + "." + "Ab3dE5gH7jK9lM1nP3qR5sT7uV9wX1yZ3aB5cD7eF9g"
+
+
+class CommittedEnv(Case):
+    HEX = "03f1e0f2c3b4a5968778695a4b3c2d1e0f9e8d7c6b5a49382716051f2e3d4c5b"
+    CIPHER = "encrypted:BDqDBibm4wsYqMpCjTQ6BsDHmMadg9K3dAt+Z9HPMfLEIRVz50hmLXPXRuDBXaJi/LwWYEVUNiq0HIS" + R36
+
+    def sev(self, name, text):
+        files = {name: text}
+        return [f.severity for f in scan_files(files, tracked=files) if f.rule == "SEC002"]
+
+    def test_public_values_only_is_low(self):
+        anon = jwt({"iss": "supabase", "ref": "abcdefghijklmnop", "role": "anon"})
+        self.assertEqual(self.sev(".env", "NEXT_PUBLIC_SUPABASE_URL=https://abcdefghijklmnop.supabase.co\n"
+                                          f"NEXT_PUBLIC_SUPABASE_ANON_KEY={anon}\nSUPABASE_ANON_KEY=\"{anon}\"\n"), ["low"])
+
+    def test_dotenvx_encrypted_file_is_low(self):
+        text = (f'#/---[DOTENV_PUBLIC_KEY]---/\nDOTENV_PUBLIC_KEY="{self.HEX}"\nDOTENV_PUBLIC_KEY_PRODUCTION="{self.HEX}"\n\n'
+                f'OPENAI_API_KEY="{self.CIPHER}"\nDB_PASSWORD={self.CIPHER}\n')
+        self.assertEqual(self.sev(".env", text), ["low"])
+        self.assertEqual(self.sev(".env.production", text), ["low"])
+
+    def test_plain_urls_under_sensitive_names_are_low(self):
+        for line in ("SUPABASE_AUTH_ADDITIONAL_REDIRECT_URLS=http://localhost:3000,https://app.acme.dev/auth/callback",
+                     "AUTH_CALLBACK=https://app.acme.dev/api/auth/callback", 'OAUTH_REDIRECT_URIS="https://a.acme.dev/cb"'):
+            with self.subTest(line=line):
+                self.assertEqual(self.sev(".env", line + "\n"), ["low"])
+        for line in ("AUTH_WEBHOOK=https://hooks.acme.dev/x?token=Q8w3E5r7T9y1U2",
+                     "DATABASE_PASSWORD_URL=postgres://app:Tr0ub4dor77xK@db.prod.acme.dev/app"):
+            with self.subTest(line=line):
+                self.assertEqual(self.sev(".env", line + "\n"), ["high"])
+
+    def test_real_secrets_stay_high(self):
+        svc = jwt({"iss": "supabase", "ref": "abcdefghijklmnop", "role": "service_role"})
+        for name, text in ((".env", f"SUPABASE_SERVICE_ROLE_KEY={svc}\n"),
+                           (".env.keys", f'DOTENV_PRIVATE_KEY="{self.HEX}"\n'),
+                           (".env", f'OPENAI_API_KEY="{self.CIPHER}"\nSTRIPE_SECRET=Tr0ub4dor77xKq9\n'),
+                           (".env", f"NEXT_PUBLIC_SUPABASE_ANON_KEY={svc}\n")):
+            with self.subTest(text=text[:30]):
+                self.assertEqual(self.sev(name, text), ["high"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -364,10 +364,20 @@ def _env_has_secret(text: str) -> bool:
         key, val = m["key"], m["val"].strip().split(" #", 1)[0].strip().strip("\"'")
         if not val or _PLACEHOLDER.search(val) or val.lower() in _WEAK_PW:
             continue
-        if _tokens(val) or any(_url_password(u, val) == "high" for u in redact._URL_CREDS.finditer(val)):
+        # Valor cifrado pelo dotenvx e a chave pública dele: commitar esse .env é o uso previsto (a privada fica
+        # no .env.keys, que continua contando).
+        if val.startswith("encrypted:") or key.startswith("DOTENV_PUBLIC_KEY"):
+            continue
+        toks = _tokens(val)
+        # A chave anon do Supabase vai para o navegador de propósito; o SEC001 também não a conta.
+        if toks and all(kind == "jwt" and _jwt_role(m.group(0)) in ("anon", "authenticated") for kind, m in toks):
+            continue
+        if toks or any(_url_password(u, val) == "high" for u in redact._URL_CREDS.finditer(val)):
             return True
-        if redact.is_sensitive_key(key) and not re.search(r"(?i)(?:^|_)(?:url|uri|host|port|path|file|dir|user|username|email)$", key) \
-                and not redact._URL_CREDS.search(val):
+        # Endereço puro (sem senha nem query) não é segredo, mesmo num nome como AUTH_CALLBACK ou ..._REDIRECT_URLS.
+        plain_urls = all(re.fullmatch(r"https?://[^\s?#@]+", u.strip()) for u in val.split(","))
+        if redact.is_sensitive_key(key) and not re.search(r"(?i)(?:^|_)(?:url|uri|host|port|path|file|dir|user|username|email)s?$", key) \
+                and not redact._URL_CREDS.search(val) and not plain_urls:
             return True
     return False
 
