@@ -94,7 +94,8 @@ _TOKEN_PATTERNS = [
     ("npm_token", re.compile(r"\bnpm_[A-Za-z0-9]{8,}")),
 ]
 
-_URL_CREDS = re.compile(r"(?P<scheme>\b[a-zA-Z][a-zA-Z0-9+.\-]*://)(?P<user>[^:/\s@\[]*):(?P<pw>[^@\s/]+)@")
+# Esquema com teto de tamanho: sem ele, "a.a.a.a..." testaria cada letra até o fim do texto (tempo quadrático).
+_URL_CREDS = re.compile(r"(?P<scheme>\b[a-zA-Z][a-zA-Z0-9+.\-]{0,30}://)(?P<user>[^:/\s@\[]*):(?P<pw>[^@\s/]+)@")
 _DISCORD_HOOK = re.compile(r"(?P<base>https?://(?:[\w-]+\.)?discord(?:app)?\.com/api/webhooks/\d+/)(?P<tok>[\w-]+)")
 _SLACK_HOOK = re.compile(r"(?P<base>https://hooks\.slack\.com/services/)(?P<tok>[\w/]+)")
 _AUTH_SCHEME = re.compile(r"(?i)\b(?P<s>Bearer|Basic|Digest)\s+(?P<v>[A-Za-z0-9\-._~+/]{8,}=*)")
@@ -146,10 +147,12 @@ def _apply_tokens(s: str, f) -> str:
 # --------------------------------------------------------------------------
 
 _EXT = r"(?:py|js|mjs|cjs|ts|tsx|jsx|go|java|kt|rb|php|rs|cs|scala|swift)"
+# Os padrões só começam no início de um caminho e têm teto de tamanho: valor longo vindo da skill auditada
+# (config de MCP) não pode levar tempo quadrático.
 _FRAME_PATTERNS = [
     re.compile(r'File "[^"\n]+", line \d+'),
-    re.compile(r"(?:https?|file|webpack|node):/{1,3}[^\s()]+?\." + _EXT + r"(?::\d+){1,2}"),
-    re.compile(r"(?:[A-Za-z]:)?(?:[\w.\-@~%]*[/\\])+[\w.\-@%]+\." + _EXT + r"(?::\d+){1,2}"),
+    re.compile(r"(?:https?|file|webpack|node):/{1,3}[^\s()]{1,500}?\." + _EXT + r"(?::\d+){1,2}"),
+    re.compile(r"(?<![\w.\-@~%/\\])(?:[A-Za-z]:)?(?:[\w.\-@~%]*[/\\])+[\w.\-@%]+\." + _EXT + r"(?::\d+){1,2}"),
     re.compile(r"\b[\w$]+\." + _EXT + r":\d+(?::\d+)?"),
 ]
 
@@ -369,7 +372,8 @@ def _apply_structured(s: str, f) -> str:
 # Codificação dupla: decodifica para detectar, troca só o que tinha segredo
 # --------------------------------------------------------------------------
 
-_ENCODED = re.compile(r"[^\s\"'<>]*%[0-9A-Fa-f]{2}[^\s\"'<>]*")
+# Só a partir do começo de cada pedaço: tentar de cada posição seria quadrático num valor longo sem %.
+_ENCODED = re.compile(r"(?<![^\s\"'<>])[^\s\"'<>]*%[0-9A-Fa-f]{2}[^\s\"'<>]*")
 
 
 def _apply_encoded(s: str, f) -> str:

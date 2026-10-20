@@ -27,6 +27,9 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - Text and Markdown reports list the same problem (same rule, title and explanation) once, with every place it was found, and start with a short "fix these first" list when there are critical or high findings. JSON and SARIF still have one record per finding.
 - Test and example code is recognized in more places (`e2e/`, `samples/`, `testdata/`, `__mocks__/`, `cookbooks/`, `test_*.py`, `conftest.py`), and findings there are lowered as they already were in `tests/` and `examples/`.
 
+### Fixed
+- Masking secrets no longer takes quadratic time on long values. A skill whose MCP config carried a 60 KB argument kept `stingward skill` busy for about 100 seconds (hours for a few hundred KB); it now takes about two seconds for 600 KB.
+
 ## [0.1.5] - 2026-10-20
 
 ### Changed
