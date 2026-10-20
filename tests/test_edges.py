@@ -1,0 +1,286 @@
+"""Caminhos menos comuns: cache e novas tentativas na rede, download de skills, relatórios e o motor de segredos."""
+import io
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+import urllib.error
+from contextlib import redirect_stderr, redirect_stdout
+from unittest import mock
+
+from stingward import _ceovul as cv, cli, gitsafe, net, report, scan, vulndb
+from stingward.checks import deps
+from stingward.model import Context, Finding
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _resp(payload):
+    r = mock.MagicMock()
+    r.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+    return r
+
+
+class NetCacheAndRetries(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patcher = mock.patch.dict(os.environ, {"STINGWARD_CACHE": self.tmp.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_second_call_is_served_from_the_cache(self):
+        with mock.patch("urllib.request.urlopen", return_value=_resp({"n": 1})) as op:
+            self.assertEqual(net.fetch_json("https://example.com/a", ttl=60), {"n": 1})
+            self.assertEqual(net.fetch_json("https://example.com/a", ttl=60), {"n": 1})
+        self.assertEqual(op.call_count, 1)
+        self.assertEqual(len(os.listdir(self.tmp.name)), 1)
+
+    def test_body_is_part_of_the_cache_key(self):
+        with mock.patch("urllib.request.urlopen", side_effect=[_resp({"n": 1}), _resp({"n": 2})]) as op:
+            net.fetch_json("https://example.com/a", body={"q": 1}, ttl=60)
+            self.assertEqual(net.fetch_json("https://example.com/a", body={"q": 2}, ttl=60), {"n": 2})
+        self.assertEqual(op.call_count, 2)
+        req = op.call_args[0][0]
+        self.assertEqual(req.get_header("Content-type"), "application/json")
+        self.assertEqual(json.loads(req.data), {"q": 2})
+
+    def test_expired_or_corrupt_cache_is_refetched(self):
+        with mock.patch("urllib.request.urlopen", return_value=_resp({"n": 1})):
+            net.fetch_json("https://example.com/a", ttl=60)
+        (name,) = os.listdir(self.tmp.name)
+        with open(os.path.join(self.tmp.name, name), "w") as fh:
+            fh.write("{broken")
+        with mock.patch("urllib.request.urlopen", return_value=_resp({"n": 3})) as op:
+            self.assertEqual(net.fetch_json("https://example.com/a", ttl=60), {"n": 3})
+        self.assertEqual(op.call_count, 1)
+
+    def test_client_error_is_not_retried(self):
+        err = urllib.error.HTTPError("https://example.com/a", 404, "nope", {}, None)
+        with mock.patch("urllib.request.urlopen", side_effect=err) as op, mock.patch("time.sleep") as sl:
+            with self.assertRaisesRegex(net.NetError, "HTTP 404"):
+                net.fetch_json("https://example.com/a")
+        self.assertEqual((op.call_count, sl.call_count), (1, 0))
+
+    def test_rate_limit_is_retried_then_succeeds(self):
+        err = urllib.error.HTTPError("https://example.com/a", 429, "slow down", {}, None)
+        with mock.patch("urllib.request.urlopen", side_effect=[err, err, _resp({"ok": True})]) as op, \
+                mock.patch("time.sleep") as sl:
+            self.assertEqual(net.fetch_json("https://example.com/a"), {"ok": True})
+        self.assertEqual((op.call_count, sl.call_count), (3, 2))
+
+    def test_three_server_errors_give_up(self):
+        err = urllib.error.HTTPError("https://example.com/a", 503, "down", {}, None)
+        with mock.patch("urllib.request.urlopen", side_effect=err) as op, mock.patch("time.sleep"):
+            with self.assertRaises(net.NetError):
+                net.fetch_json("https://example.com/a")
+        self.assertEqual(op.call_count, 3)
+
+    def test_headers_are_sent(self):
+        with mock.patch("urllib.request.urlopen", return_value=_resp({})) as op:
+            net.fetch_json("https://example.com/a", headers={"apiKey": "k"})
+        req = op.call_args[0][0]
+        self.assertEqual(req.get_header("Apikey"), "k")
+        self.assertIn("stingward", req.get_header("User-agent"))
+
+
+class RemoteSkills(unittest.TestCase):
+    def test_what_counts_as_remote(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertTrue(cli._is_remote("https://github.com/a/b"))
+            self.assertTrue(cli._is_remote("git@github.com:a/b.git"))
+            self.assertTrue(cli._is_remote("owner/repo"))
+            self.assertFalse(cli._is_remote(d))
+            self.assertFalse(cli._is_remote("./missing-folder"))
+            self.assertFalse(cli._is_remote("-x/repo"))
+
+    def _fetch(self, target, returncode=0):
+        with mock.patch("subprocess.run", return_value=subprocess.CompletedProcess([], returncode, "", "fatal: nope")) as run:
+            try:
+                tmp, path = cli._fetch(target)
+            except SystemExit as e:
+                return run.call_args[0][0], e
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        return run.call_args[0][0], path
+
+    def test_owner_repo_becomes_a_github_url(self):
+        cmd, path = self._fetch("owner/repo")
+        self.assertEqual(cmd[-2:-1], ["https://github.com/owner/repo.git"])
+        self.assertEqual(cmd[cmd.index("--") - 1], "--quiet")
+        self.assertTrue(path.endswith(os.path.join("repo", "")))
+
+    def test_tree_url_picks_branch_and_subfolder(self):
+        cmd, path = self._fetch("https://github.com/owner/repo/tree/dev/skills/x")
+        self.assertIn("--branch", cmd)
+        self.assertEqual(cmd[cmd.index("--branch") + 1], "dev")
+        self.assertEqual(cmd[cmd.index("--") + 1], "https://github.com/owner/repo.git")
+        self.assertTrue(path.endswith(os.path.join("repo", "skills/x")))
+
+    def test_url_is_passed_after_double_dash(self):
+        cmd, _ = self._fetch("https://github.com/owner/repo.git")
+        self.assertEqual(cmd[cmd.index("--") + 1], "https://github.com/owner/repo.git")
+
+    def test_failed_clone_is_a_clear_error(self):
+        _, err = self._fetch("owner/repo", returncode=128)
+        self.assertIsInstance(err, SystemExit)
+        self.assertIn("owner/repo", str(err.code))
+
+
+class Reports(unittest.TestCase):
+    def ctx(self, **sources):
+        c = Context(root="/x", files=[], offline=False)
+        c.sources.update(sources)
+        return c
+
+    def test_sources_line(self):
+        self.assertEqual(report._sources_line(self.ctx(packages=3, osv=True, kev="2026.10.16", epss=True, nvd=True), "en"),
+                         "3 package(s) checked · OSV.dev · CISA KEV 2026.10.16 · EPSS (FIRST) · NVD")
+        self.assertIn("CISA KEV", report._sources_line(self.ctx(kev=True), "en"))
+        self.assertNotEqual(report._sources_line(self.ctx(osv_error="down"), "en"), report._sources_line(self.ctx(), "en"))
+
+    def test_many_low_findings_are_folded(self):
+        findings = [Finding("SKL003", "low", f"f{i}.md", 1, {"phrase": "x"}) for i in range(20)]
+        out = report.text(self.ctx(), findings, "en", max_low=5)
+        self.assertIn("f4.md", out)
+        self.assertNotIn("f5.md", out)
+        self.assertIn("and 15 more low-severity item(s)", out)
+
+    def test_color_and_reference_link(self):
+        f = Finding("SEC001", "critical", "a.js", 1, {"kind_en": "key", "kind_pt": "chave"}, refs=["https://osv.dev/x"])
+        out = report.text(self.ctx(), [f], "en", color=True)
+        self.assertIn("\033[1;31m", out)
+        self.assertIn("\033[0m", out)
+        self.assertIn("https://osv.dev/x", out)
+        self.assertNotIn("\033", report.text(self.ctx(), [f], "en", color=False))
+
+    def test_counts_agree_in_number(self):
+        f = [Finding("SEC001", s, "a", 1) for s in ("critical", "critical", "high", "medium", "medium", "low", "info", "info")]
+        self.assertEqual(report.counts_line(f, "pt"), "2 críticos, 1 alto, 2 médios, 1 baixo, 2 info")
+        self.assertEqual(report.counts_line(f, "en"), "2 critical, 1 high, 2 medium, 1 low, 2 info")
+
+    def test_every_format_has_the_grade(self):
+        f = Finding("SEC001", "high", "a.js", 1, {"kind_en": "key", "kind_pt": "chave"})
+        self.assertIn("Grade: C", report.text(self.ctx(), [f], "en"))
+        self.assertIn("stingward-C", report.markdown(self.ctx(), [f], "en"))
+        self.assertEqual(json.loads(report.as_json(self.ctx(), [f], "en"))["grade"], "C")
+
+
+class DepsDegradeGracefully(unittest.TestCase):
+    def check(self, docs, kev=None, kev_error=False):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with open(os.path.join(tmp.name, "package-lock.json"), "w") as fh:
+            json.dump({"lockfileVersion": 3, "packages": {"": {}, "node_modules/left": {"version": "1.0.0"}}}, fh)
+        ctx = Context(tmp.name, ["package-lock.json"])
+        kev_mock = mock.patch.object(vulndb, "kev", side_effect=net.NetError("kev down")) if kev_error else \
+            mock.patch.object(vulndb, "kev", return_value=(kev or {}, "2026.10.16"))
+        with mock.patch.object(vulndb, "osv_query", return_value=[sorted(docs)]), \
+                mock.patch.object(vulndb, "osv_vulns", side_effect=lambda want: {i: docs[i] for i in want}), \
+                kev_mock, mock.patch.object(vulndb, "epss", return_value={}), \
+                mock.patch.object(vulndb, "nvd_severity", return_value=None):
+            return ctx, deps.check(ctx)
+
+    @staticmethod
+    def vuln(vid, fixed=None, sev="HIGH"):
+        events = [{"introduced": "0"}] + ([{"fixed": fixed}] if fixed else [])
+        return {"id": vid, "aliases": [vid.replace("GHSA", "CVE")], "summary": "bad", "database_specific": {"severity": sev},
+                "affected": [{"package": {"ecosystem": "npm", "name": "left"}, "ranges": [{"type": "SEMVER", "events": events}]}]}
+
+    def test_kev_outage_still_reports_the_vulnerability(self):
+        docs = {"GHSA-1": self.vuln("GHSA-1", "1.2.0")}
+        ctx, got = self.check(docs, kev_error=True)
+        self.assertEqual([f.rule for f in got], ["DEP001"])
+        self.assertIn("kev down", ctx.sources["kev_error"])
+
+    def test_partly_unfixed_package_says_so(self):
+        docs = {"GHSA-1": self.vuln("GHSA-1", "1.2.0"), "GHSA-2": self.vuln("GHSA-2")}
+        _, got = self.check(docs)
+        self.assertEqual(got[0].params["fixed"], "1.2.0")
+        self.assertIn("1 issue(s) still unfixed", got[0].params["fix_en"])
+
+    def test_no_fix_at_all(self):
+        _, got = self.check({"GHSA-2": self.vuln("GHSA-2")})
+        self.assertEqual(got[0].params["fixed"], "")
+        self.assertIn("No fixed version yet", got[0].params["fix_en"])
+
+
+class ListingLimits(unittest.TestCase):
+    def test_max_files_stops_early(self):
+        with tempfile.TemporaryDirectory() as d:
+            for i in range(30):
+                with open(os.path.join(d, f"f{i}.py"), "w") as fh:
+                    fh.write("x = 1\n")
+            self.assertEqual(len(scan.list_files(d, max_files=10)), 10)
+
+    def test_git_that_cannot_start_is_not_fatal(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.mkdir(os.path.join(d, ".git"))
+            with mock.patch("subprocess.run", side_effect=OSError("no git")):
+                self.assertIsNone(gitsafe.run(d, "ls-files"))
+                self.assertIsNone(scan.git_tracked(d))
+
+
+class SecretEngine(unittest.TestCase):
+    """O motor que mascara segredos no relatório: tudo que sai dele não pode conter o valor original."""
+
+    TOKEN = "ghp_" + "Zq8vN3kL0pR7tY2wX5mB9cD4eF6gH1jK2lM3"
+
+    def test_masks_common_shapes(self):
+        samples = [
+            f'{{"api_key": "{self.TOKEN}"}}',
+            f'{{\\"password\\": \\"{self.TOKEN}\\"}}',
+            f"Authorization: Bearer {self.TOKEN}",
+            f"export GITHUB_TOKEN={self.TOKEN}",
+            f"postgres://admin:{self.TOKEN}@db.example.com/app",
+            f"GET /api/reset/{self.TOKEN}?x=1",
+            f"https://example.com/cb?token={self.TOKEN}&ok=1",
+            f"url=https%3A%2F%2Fexample.com%2F%3Ftoken%3D{self.TOKEN}",
+        ]
+        for s in samples:
+            with self.subTest(sample=s[:30]):
+                out = cv.sanitize_text(s)
+                self.assertNotIn(self.TOKEN[4:20], out)
+                self.assertIn("[REDACTED:", out)
+
+    def test_idempotent_and_keeps_stack_frames(self):
+        s = f'File "/app/main.py", line 12, in handler\n  token = "{self.TOKEN}"'
+        once = cv.sanitize_text(s)
+        self.assertEqual(cv.sanitize_text(once), once)
+        self.assertIn('File "/app/main.py", line 12', once)
+
+    def test_find_and_contains(self):
+        self.assertTrue(cv.contains_secret(f"key={self.TOKEN}"))
+        self.assertIn("github_token", cv.find_secrets(f"key={self.TOKEN}"))
+        self.assertFalse(cv.contains_secret("hello world"))
+
+    def test_objects_are_walked(self):
+        obj = {"user": "ana", "auth": {"token": self.TOKEN}, "items": [f"Bearer {self.TOKEN}", 3, None],
+               "path": f"/v1/files/{self.TOKEN}"}
+        out = json.dumps(cv.sanitize_obj(obj))
+        self.assertNotIn(self.TOKEN[4:20], out)
+        self.assertIn('"user": "ana"', out)
+
+    def test_never_raises_on_odd_input(self):
+        for x in (None, 3, b"bytes", ["a", {"b": object()}], "x" * 10_000, "%" * 50, "a=" * 500):
+            cv.sanitize_text(x) if not isinstance(x, (list, dict)) else cv.sanitize_obj(x)
+
+    def test_truncate(self):
+        self.assertEqual(cv.truncate("abc", 10), "abc")
+        self.assertEqual(cv.truncate("a" * 50, 20), "a" * 20 + "…[truncado]")
+        # Sanitiza antes de cortar e nunca deixa meio marcador: o pedaço do segredo não sobra.
+        out = cv.truncate(f"token={self.TOKEN} and more text", 12)
+        self.assertNotIn(self.TOKEN[4:12], out)
+        self.assertNotIn("[REDACTED:" + "…", out)
+
+
+class ModuleEntryPoint(unittest.TestCase):
+    def test_python_dash_m(self):
+        r = subprocess.run([sys.executable, "-m", "stingward", "--version"], capture_output=True, text=True, cwd=ROOT)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertRegex(r.stdout, r"^stingward \d+\.\d+\.\d+")
+
+
+if __name__ == "__main__":
+    unittest.main()

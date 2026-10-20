@@ -1,0 +1,8 @@
+# Stingward has no runtime dependencies; this keeps the GitHub Actions used by CI and the Action up to date.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }

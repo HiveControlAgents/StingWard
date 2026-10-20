@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Stingward">
+  <defs>
+    <linearGradient id="sw-honey" gradientUnits="userSpaceOnUse" x1="0" y1="1.5" x2="0" y2="63.5">
+      <stop offset="0" stop-color="#F9C651"/>
+      <stop offset="1" stop-color="#E39A12"/>
+    </linearGradient>
+    <clipPath id="sw-clip">
+      <path d="M32 1.5 L52 13 V30 C52 40.5 45.8 47.2 37 51.2 C35 52.4 33.9 54.8 33.3 57.8 L32 63.5 L30.7 57.8 C30.1 54.8 29 52.4 27 51.2 C18.2 47.2 12 40.5 12 30 V13 Z"/>
+    </clipPath>
+  </defs>
+  <path d="M32 1.5 L52 13 V30 C52 40.5 45.8 47.2 37 51.2 C35 52.4 33.9 54.8 33.3 57.8 L32 63.5 L30.7 57.8 C30.1 54.8 29 52.4 27 51.2 C18.2 47.2 12 40.5 12 30 V13 Z" fill="url(#sw-honey)"/>
+  <g clip-path="url(#sw-clip)" fill="#1B1F27">
+    <path d="M0 19.5 Q32 25 64 19.5 V26.5 Q32 32 0 26.5 Z"/>
+    <path d="M0 33 Q32 38.5 64 33 V40 Q32 45.5 0 40 Z"/>
+  </g>
+  <path d="M28.5 50.4 C18.2 46.4 12 40.5 12 30 V13 L32 1.5 L52 13 V30 C52 40.5 45.8 46.4 35.5 50.4" fill="none" stroke="url(#sw-honey)" stroke-width="2.6" stroke-linejoin="round"/>
+</svg>

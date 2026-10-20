@@ -1,0 +1,25 @@
+name: Bug report
+description: Stingward crashed, gave a wrong exit code or broke a report format
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected and what you got instead. Please paste the output, but replace any real key or password with a fake one.
+    validations: { required: true }
+  - type: input
+    id: command
+    attributes: { label: Command, placeholder: "stingward skill ./my-skill --format sarif" }
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes: { label: Version, description: Output of `stingward --version` }
+    validations: { required: true }
+  - type: dropdown
+    id: how
+    attributes: { label: How you run it, options: [pipx / pip, uvx, npx, Claude Code plugin, GitHub Action, From source] }
+    validations: { required: true }
+  - type: input
+    id: os
+    attributes: { label: Operating system and Python version, placeholder: "Windows 11, Python 3.12" }

@@ -593,7 +593,8 @@ class Grade(unittest.TestCase):
         self.assertEqual(report.grade(self.f("medium", "medium", "low")), "B")
         self.assertEqual(report.grade(self.f("low", "low")), "A")
         with open(os.path.join(REPO, "README.md"), encoding="utf-8") as fh:
-            self.assertIn("A: only low or nothing · B: medium, no high", fh.read())
+            self.assertIn("A means only low findings or none · B medium, no high · C one or two high · D three or more high · F any critical",
+                          fh.read())
 
     def test_badge_md(self):
         colors = {"A": "brightgreen", "B": "green", "C": "yellow", "D": "orange", "F": "red"}

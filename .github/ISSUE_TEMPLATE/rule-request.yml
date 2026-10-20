@@ -1,0 +1,26 @@
+name: New rule or check
+description: A mistake in AI-built apps, agents, skills or MCP servers that Stingward should catch
+labels: [rule-request]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The mistake
+      description: What goes wrong and who it hurts. A link to an advisory, write-up or incident helps.
+    validations: { required: true }
+  - type: textarea
+    id: sample
+    attributes:
+      label: Example that should be flagged
+      description: The smallest file or snippet. Use fake keys only.
+      render: text
+    validations: { required: true }
+  - type: textarea
+    id: lookalike
+    attributes:
+      label: Similar code that is fine
+      description: Something close that must not be flagged, so the rule does not cry wolf.
+      render: text
+  - type: textarea
+    id: fix
+    attributes: { label: How to fix it, description: What you would tell the person who wrote it. }
