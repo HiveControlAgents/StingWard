@@ -1,4 +1,8 @@
-"""Saídas: texto para o terminal, Markdown para PR, JSON e SARIF."""
+"""Saídas: texto para o terminal, Markdown para PR, JSON e SARIF. O relatório em HTML fica em report_html.py.
+
+Texto, Markdown e HTML juntam achados repetidos (mesma regra, mesmos textos) num item só com todos os lugares e
+abrem com o que corrigir primeiro. JSON e SARIF continuam com um registro por achado: são lidos por máquinas.
+"""
 from __future__ import annotations
 
 import json
@@ -8,7 +12,7 @@ from urllib.parse import quote
 
 from . import __version__
 from .model import SEV_RANK, SEVERITIES
-from .rules import RULES, STANDARDS, texts
+from .rules import RULES, STANDARDS, fill, texts
 
 REPO_URL = "https://github.com/HiveControlAgents/StingWard"
 
@@ -32,6 +36,7 @@ T = {
         "verdict_mid": "🟡 Instale só depois de ler os itens abaixo.",
         "verdict_ok": "🟢 Nada grave encontrado. Leia o código mesmo assim: nenhuma ferramenta pega tudo.",
         "more": "e mais {n} item(ns) de severidade baixa",
+        "first": "Corrija primeiro", "and_more": "e mais {n}",
     },
     "en": {
         "title": "Security audit", "where": "where", "why": "why", "fix": "how to fix",
@@ -44,6 +49,7 @@ T = {
         "verdict_mid": "🟡 Install only after reading the items below.",
         "verdict_ok": "🟢 Nothing serious found. Still read the code: no tool catches everything.",
         "more": "and {n} more low-severity item(s)",
+        "first": "Fix these first", "and_more": "and {n} more",
     },
 }
 
@@ -107,32 +113,204 @@ def counts_line(findings, lang):
     return ", ".join(f"{c[s]} {LABEL[lang][s].lower()}{plural(s)}" for s in reversed(SEVERITIES) if c[s])
 
 
+# --------------------------------------------------------------------------- itens: achados repetidos juntos
+
+class Entry:
+    """Um problema do relatório: achados com a mesma regra, os mesmos textos e a mesma severidade, em um ou mais lugares."""
+
+    def __init__(self, finding, title, why, fix):
+        self.rule, self.severity = finding.rule, finding.severity
+        self.title, self.why, self.fix = title, why, fix
+        self.findings = [finding]
+
+    @property
+    def params(self):
+        return self.findings[0].params
+
+    @property
+    def group(self):
+        return RULES[self.rule]["group"]
+
+    @property
+    def places(self):
+        return [_where(f) for f in self.findings]
+
+    @property
+    def refs(self):
+        out = []
+        for r in (r for f in self.findings for r in f.refs):
+            if r not in out:
+                out.append(r)
+        return out
+
+
+def merge(findings, lang):
+    """Mesma regra e mesmo título viram um item só, na ordem em que os achados vêm (o pior primeiro).
+
+    O "por quê" e o "como corrigir" também entram na chave: na SKL001 o "por quê" traz a mensagem escondida, e
+    duas mensagens diferentes não podem virar uma. A severidade também: o mesmo segredo dentro de tests/ fica baixo
+    e não pode aparecer como crítico ao lado do achado real."""
+    entries, index = [], {}
+    for f in findings:
+        title, why, fix = texts(f.rule, lang, f.params)
+        key = (f.rule, f.severity, title, why, fix)
+        if key in index:
+            index[key].findings.append(f)
+        else:
+            index[key] = Entry(f, title, why, fix)
+            entries.append(index[key])
+    return entries
+
+
+def places(entry, lang, limit=10):
+    """Todos os lugares até o limite, depois "e mais N": a.js:1, b.js:4 e mais 3."""
+    shown = ", ".join(entry.places[:limit])
+    extra = len(entry.places) - limit
+    return shown + (" " + T[lang]["and_more"].format(n=extra) if extra > 0 else "")
+
+
+def _first_place(entry):
+    n = len(entry.findings)
+    return entry.places[0] + (f" (+{n - 1})" if n > 1 else "")
+
+
+def urgent(entries, n=3):
+    """Os primeiros itens críticos ou altos: o que corrigir antes de tudo."""
+    return [e for e in entries if SEV_RANK[e.severity] >= SEV_RANK["high"]][:n]
+
+
+def _fix_first(entries):
+    # Se a lista inteira cabe no bloco, ele só repetiria os itens logo abaixo.
+    top = urgent(entries)
+    return top if len(entries) > len(top) else []
+
+
+# Esforço aproximado para corrigir, por regra ou pelo prefixo dela. Regra nova sem entrada cai no padrão.
+EFFORT = {
+    "DEP": "hours", "DEP003": "quick",
+    "SEC": "hours", "SEC003": "quick",
+    "APP": "hours", "APP003": "quick", "APP007": "quick", "APP008": "quick",
+    "AGT": "quick",
+    "SKL": "quick", "SKL004": "hours", "SKL007": "hours", "SKL011": "hours",
+}
+DEFAULT_EFFORT = "hours"
+
+
+def _major(version):
+    m = re.match(r"\D*(\d+)", str(version or ""))
+    return int(m.group(1)) if m else None
+
+
+def effort(rule, params=None):
+    """quick, hours ou days. Pacote sem versão corrigida, ou cuja correção muda a versão major, leva dias: tem teste."""
+    if rule == "DEP001" and params is not None:
+        fixed = params.get("fixed")
+        if not fixed or _major(fixed) != _major(params.get("version")):
+            return "days"
+    return EFFORT.get(rule) or EFFORT.get(rule[:3]) or DEFAULT_EFFORT
+
+
+# O que um atacante (ou a fatura) consegue fazer, em uma ou duas frases, para o resumo de quem não é da área.
+# Por regra ou prefixo; sem entrada, vale o "por quê" da regra.
+IMPACT = {
+    "DEP001": ("Esta versão de {pkg} tem uma falha pública e documentada: quem ataca não precisa descobrir nada, só reaproveitar um ataque pronto.{exploit}",
+               "This version of {pkg} has a public, documented flaw: an attacker does not need to discover anything, only reuse a known attack.{exploit}"),
+    "DEP002": ("O pacote foi feito para roubar dados ou rodar código de um atacante: toda máquina e servidor que o instalou pode já ter entregado as chaves.",
+               "The package was built to steal data or run an attacker's code: every machine and server that installed it may already have handed over its keys."),
+    "SEC": ("Quem vê o código ou o histórico do git pode usar essa credencial como se fosse você: gastar seu dinheiro, ler seus dados ou agir em seu nome.",
+            "Anyone who sees the code or its git history can use this credential as you: spend your money, read your data or act in your name."),
+    "SEC002": ("Toda cópia do repositório leva as chaves desse arquivo, inclusive clones e forks antigos que você não controla mais.",
+               "Every copy of the repository carries the keys in this file, including old clones and forks you no longer control."),
+    "SEC003": ("Um git add descuidado publica as chaves desse arquivo junto com o código.",
+               "One careless git add publishes the keys in this file along with the code."),
+    "SEC004": ("Quem tiver essa chave lê, altera e apaga o banco inteiro, passando por cima de todas as regras de acesso.",
+               "Anyone with this key can read, change and delete the whole database, skipping every access rule."),
+    "APP001": ("Qualquer visitante do site pode copiar {var} e usar como se fosse você: estourar a fatura do serviço ou chegar aos dados que a chave protege.",
+               "Any visitor to your site can copy {var} and use it as you: run up the bill for that service or reach the data the key protects."),
+    "APP002": ("Qualquer pessoa copia a chave de IA no navegador e usa a sua conta até estourar a fatura ou a cota.",
+               "Anyone can copy the AI key from the browser and use your account until the bill or the quota runs out."),
+    "APP003": ("Uma página de qualquer outro site consegue chamar a sua API pelo navegador dos seus visitantes.{cred_why}",
+               "A page on any other website can call your API from your visitors' browsers.{cred_why}"),
+    "APP004": ("Qualquer pessoa com a chave anon, que vai junto com o app, lê e altera todas as linhas de {table}, inclusive dados de outros usuários.",
+               "Anyone with the anon key, which ships inside your app, can read and change every row of {table}, other users' data included."),
+    "APP005": ("Qualquer pessoa, logada ou não, faz o que essa política permite ({policy}), então um usuário chega aos dados dos outros.",
+               "Anyone, signed in or not, can do what this policy allows ({policy}), so one user can reach everyone else's data."),
+    "APP006": ("Qualquer pessoa lê, altera ou apaga os dados e arquivos do seu Firebase.",
+               "Anyone can read, change or delete the data and files in your Firebase."),
+    "APP007": ("Quando algo falha em produção, o visitante vê código e configurações e, às vezes, ganha um console que roda comandos no servidor.",
+               "When something fails in production, visitors see code and settings, and sometimes get a console that runs commands on the server."),
+    "APP008": ("Qualquer pessoa monta um token dizendo que é outro usuário, ou admin, e o servidor aceita.",
+               "Anyone can make a token that says they are another user, or an admin, and the server accepts it."),
+    "AGT001": ("Uma instrução escondida em qualquer arquivo, issue ou página que o agente leia pode rodar comandos na sua máquina sem perguntar: apagar arquivos ou mandar suas chaves para fora.",
+               "A hidden instruction in any file, issue or page the agent reads can run commands on your machine without asking: delete files or send your keys out."),
+    "AGT002": ("Quem controla aquele endereço roda código na sua máquina toda vez que o hook dispara.",
+               "Whoever controls that address runs code on your machine every time the hook fires."),
+    "AGT003": ("Se alguém tomar conta desse pacote, na próxima vez que o agente iniciar ele roda o código dessa pessoa com o seu acesso.",
+               "If someone takes over that package, the next time the agent starts it runs their code with your access."),
+    "AGT004": ("Quem vir esse arquivo de configuração, no repositório, num backup ou numa cópia, pode usar a credencial.",
+               "Anyone who sees this config file, in the repository, in a backup or in a copy, can use the credential."),
+    "AGT005": ("Quem estiver na mesma rede, como um Wi-Fi público, lê os tokens enviados a esse servidor.",
+               "Anyone on the same network, such as public Wi-Fi, can read the tokens sent to this server."),
+    "AGT006": ("Abrir um repositório clonado já liga os servidores MCP que ele declarar, com o seu acesso.",
+               "Opening a cloned repository is enough to start the MCP servers it declares, with your access."),
+    "SKL": ("Esse conteúdo pode virar o agente contra você: rodar comandos, ler suas chaves ou mandar dados para fora sem você perceber.",
+            "This content can turn the agent against you: run commands, read your keys or send data out without you noticing."),
+    "SKL001": ("O texto leva instruções que você não vê, mas a IA lê e pode seguir.",
+               "The text carries instructions you cannot see but the AI reads and may follow."),
+    "SKL002": ("O que estiver naquele endereço roda na sua máquina, e pode mudar depois que você revisou.",
+               "Whatever is at that address runs on your machine, and it can change after you review it."),
+    "SKL004": ("Suas chaves de SSH, de nuvem ou de APIs podem ser lidas e enviadas para outra pessoa.",
+               "Your SSH, cloud or API keys can be read and sent to someone else."),
+    "SKL008": ("Dados da sua máquina vão para um receptor anônimo que qualquer pessoa cria em segundos.",
+               "Data from your machine goes to an anonymous receiver anyone can set up in seconds."),
+    "SKL009": ("Código roda na sua máquina assim que o pacote é instalado, antes de você usar.",
+               "Code runs on your machine as soon as the package is installed, before you use it."),
+    "SKL011": ("Quem estiver do outro lado ganha um terminal no seu computador.",
+               "Whoever is on the other end gets a terminal on your computer."),
+}
+
+
+def impact(entry, lang):
+    spec = IMPACT.get(entry.rule) or IMPACT.get(entry.rule[:3])
+    if not spec:
+        return entry.why
+    return fill(spec[0] if lang == "pt" else spec[1], lang, entry.params)
+
+
+# --------------------------------------------------------------------------- texto e Markdown
+
 def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False, max_low=15):
     t = T[lang]
+    entries = merge(findings, lang)
     out = [f"stingward {__version__} · {t['title']}: {_clean(target or ctx.root)}", f"{t['sources']}: {_sources_line(ctx, lang)}", ""]
     if show_verdict:
         out += [verdict(findings, lang), ""]
+    first = _fix_first(entries)
+    if first:
+        out.append(f"{t['first']}:")
+        out += [f" {i}. {ICON[e.severity]} {_clean(e.title)} · {_clean(_first_place(e))}" for i, e in enumerate(first, 1)]
+        out.append("")
     if not findings:
         out.append(t["none"])
     shown_low = 0
     hidden = 0
-    for f in findings:
-        if f.severity in ("low", "info"):
+    for e in entries:
+        if e.severity in ("low", "info"):
             shown_low += 1
             if shown_low > max_low:
                 hidden += 1
                 continue
-        title, why, fix = (_clean(x) for x in texts(f.rule, lang, f.params))
-        lab = LABEL[lang][f.severity]
-        head = f"{ICON[f.severity]} {lab:<8} {title}"
+        title, why, fix = (_clean(x) for x in (e.title, e.why, e.fix))
+        lab = LABEL[lang][e.severity]
+        head = f"{ICON[e.severity]} {lab:<8} {title}"
         if color:
-            head = f"{COLOR[f.severity]}{head}\033[0m"
+            head = f"{COLOR[e.severity]}{head}\033[0m"
         out.append(head)
-        out.append(f"   {t['where']}: {_clean(_where(f))}  [{' · '.join([f.rule] + STANDARDS.get(f.rule, []))}]")
+        out.append(f"   {t['where']}: {_clean(places(e, lang))}  [{' · '.join([e.rule] + STANDARDS.get(e.rule, []))}]")
         out.append(f"   {t['why']}: {why}")
         out.append(f"   {t['fix']}: {fix}")
-        if f.refs:
-            out.append(f"   {_clean(f.refs[0])}")
+        if e.refs:
+            out.append(f"   {_clean(e.refs[0])}")
         out.append("")
     if hidden:
         out += [t["more"].format(n=hidden), ""]
@@ -145,19 +323,25 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
 def markdown(ctx, findings, lang="pt", target=None, show_verdict=False):
     t = T[lang]
     g = grade(findings)
+    entries = merge(findings, lang)
     out = ["<!-- stingward-report -->", f"### {badge_md(g)} {t['title']}", ""]
     if show_verdict:
         out += [verdict(findings, lang), ""]
     if not findings:
         out += [t["none"], ""]
     else:
+        first = _fix_first(entries)
+        if first:
+            out += [f"**{t['first']}**", ""]
+            out += [f"{i}. {ICON[e.severity]} {_esc(e.title)} · <sub>{_esc(_first_place(e))}</sub>" for i, e in enumerate(first, 1)]
+            out.append("")
         out += [f"**{t['summary']}:** {counts_line(findings, lang)} · {t['sources']}: {_sources_line(ctx, lang)}", "",
                 "| | | |", "|---|---|---|"]
-        for f in findings[:50]:
-            title, _, fix = texts(f.rule, lang, f.params)
-            out.append(f"| {ICON[f.severity]} {LABEL[lang][f.severity]} | {_esc(title)}<br><sub>{_esc(_where(f))}</sub> | {_esc(fix)} |")
-        if len(findings) > 50:
-            out.append(f"| | {t['more'].format(n=len(findings) - 50)} | |")
+        for e in entries[:50]:
+            out.append(f"| {ICON[e.severity]} {LABEL[lang][e.severity]} | {_esc(e.title)}<br><sub>{_esc(places(e, lang, limit=5))}</sub> "
+                       f"| {_esc(e.fix)} |")
+        if len(entries) > 50:
+            out.append(f"| | {t['more'].format(n=len(entries) - 50)} | |")
         out.append("")
     out.append(f"<sub>stingward {__version__} · [{REPO_URL.split('//')[1]}]({REPO_URL})</sub>")
     return "\n".join(out) + "\n"
@@ -171,6 +355,8 @@ def _esc(s):
     """Texto do código auditado vira texto puro no comentário do PR: sem imagem, link, HTML ou @menção."""
     return "".join(_MD.get(ch, ch) for ch in _clean(s))
 
+
+# --------------------------------------------------------------------------- JSON e SARIF: um registro por achado
 
 def as_json(ctx, findings, lang="pt"):
     items = []

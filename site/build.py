@@ -25,6 +25,7 @@ REPO = "https://github.com/HiveControlAgents/StingWard"
 ASSETS = ["logo.svg", "social-preview.png"] + [f"demo-{d}-{lang}.{ext}" for d in ("app", "skill") for lang in ("pt", "en") for ext in ("mp4", "png")]
 CACHE = os.path.join(tempfile.gettempdir(), "stingward-site-cache")
 SEVERITY = {"🔴": "crit", "🟠": "high", "🟡": "med", "🔵": "low", "⚪": "info", "🟢": "ok"}
+ROW = r"^   [^ :]+(?: [^ :]+){0,2}: "  # "   where: ...", "   how to fix: ..." under a finding
 
 sys.path.insert(0, ROOT)
 from stingward import __version__, lockfiles  # noqa: E402
@@ -57,12 +58,17 @@ def terminal(text):
         mark = line[:1]
         if mark in SEVERITY and line[1:2] == " ":
             rest = line[2:]
-            label, _, title = rest.partition("  ")
-            if title:
+            label, _, title = rest.partition(" ")  # "CRITICAL" fills the padded column, so only one space may follow it
+            if title and label.isupper() and len(label) > 1:
                 out.append(f'<span class="t-find"><b class="sev sev--{SEVERITY[mark]}">{e(label.strip())}</b> {e(title.strip())}</span>')
             else:
                 out.append(f'<strong class="t-verdict t-verdict--{SEVERITY[mark]}">{e(rest)}</strong>')
-        elif re.match(r"^   [^ :]+(?: [^ :]+)?: ", line):
+        elif re.match(r"^ \d+\. \S ", line) and line[4:5] in SEVERITY:  # "Fix these first" item
+            num, _, rest = line.strip().partition(" ")
+            out.append(f'<span class="t-row"><b class="sev sev--{SEVERITY[line[4]]}">{e(num)}</b> {e(rest[2:])}</span>')
+        elif re.match(r"^(?:Corrija primeiro|Fix these first):$", line):
+            out.append(f'<span class="t-find">{e(line)}</span>')
+        elif re.match(ROW, line):
             key, _, val = line.strip().partition(": ")
             out.append(f'<span class="t-row"><i>{e(key)}:</i> {e(val)}</span>')
         elif line.startswith("   http"):
@@ -146,8 +152,10 @@ class Page:
         names, sheets, peek = [], [], ""
         for i, ((args, cwd, shown), item) in enumerate(zip(runs, t["reports"])):
             text = cli(args, cwd, lang, online=self.online)
-            if i == 0:  # the hero shows the opening of this report, down to the end of the first finding
-                opening = "\n\n".join(text.split("\n\n")[1:3])
+            if i == 0:  # the hero shows the verdict and the first finding of this report
+                blocks = text.split("\n\n")
+                first = next(b for b in blocks[2:] if re.match(ROW, (b.split("\n") + [""])[1]))
+                opening = "\n\n".join([blocks[1], first])
                 peek = (f'<p class="sheet__cmd"><code><span aria-hidden="true">$ </span>{e(shown)}</code></p>'
                         f'<pre class="sheet__out">{terminal(opening)}</pre>')
             grade = re.search(r"(?:Nota|Grade): ([A-F])", text).group(1)

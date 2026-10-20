@@ -17,7 +17,7 @@ from unittest import mock
 
 import stingward
 from stingward import cli, report, vulndb
-from stingward.model import SEVERITIES, Finding
+from stingward.model import SEVERITIES, Context, Finding
 from stingward.rules import RULES
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -503,9 +503,18 @@ class Formats(CliTest):
         self.check_markdown(out, 0)
         self.assertIn("Nothing found.", out)
 
-    def test_markdown_caps_table_at_50_rows(self):
+    def test_markdown_merges_the_same_problem(self):
         root = tree({f"src/k{i:02}.py": f'TOKEN = "{GH}"\n' for i in range(55)})
         out = run_main([root, "--offline", "--lang", "en", "--format", "markdown"])[1]
+        self.check_markdown(out, 1)  # 55 achados iguais viram uma linha com os lugares
+        self.assertIn("src/k00.py:1", out)
+        self.assertIn("and 50 more", out)
+        self.assertIn("55 critical", out)
+        self.assertNotIn("Fix these first", out)  # um problema só: o bloco repetiria a tabela
+
+    def test_markdown_caps_table_at_50_rows(self):
+        findings = [Finding("SKL003", "low", f"f{i:02}.md", 1, {"snippet": f"phrase {i}"}) for i in range(55)]
+        out = report.markdown(Context(root=".", files=[], offline=True), findings, "en")
         self.check_markdown(out, 55)
         self.assertIn("and 5 more low-severity item(s)", out)
 
@@ -619,10 +628,11 @@ class SecretValues(CliTest):
         out_dir = tree({})
         outs = {}
         for lang in ("pt", "en"):
-            for fmt in ("text", "json", "markdown", "sarif"):
+            for fmt in ("text", "json", "markdown", "sarif", "html"):
                 outs[(lang, fmt)] = run_main([root, "--offline", "--lang", lang, "--format", fmt] + list(argv), tty=(fmt == "text"))[1]
-            files = {k: os.path.join(out_dir, f"{lang}.{k}") for k in ("sarif", "md", "json")}
-            run_main([root, "--offline", "--lang", lang, "--sarif", files["sarif"], "--markdown", files["md"], "--json", files["json"]] + list(argv))
+            files = {k: os.path.join(out_dir, f"{lang}.{k}") for k in ("sarif", "md", "json", "html")}
+            run_main([root, "--offline", "--lang", lang, "--sarif", files["sarif"], "--markdown", files["md"], "--json", files["json"],
+                      "--html", files["html"]] + list(argv))
             for k, p in files.items():
                 with open(p, encoding="utf-8") as fh:
                     outs[(lang, "file:" + k)] = fh.read()
