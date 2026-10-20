@@ -497,7 +497,9 @@ def _list(o, key):
 # Bash sozinho, ou Bash(...) cujo comando começa com "*" (ou ":" + "*"): libera qualquer comando. "Bash(* *)" é tão
 # amplo quanto "Bash(*)".
 _BROAD_BASH = re.compile(r"^Bash(?:\(\s*(?:\*|:\s*\*)[^)]*\))?$")
-_RISKY_BASH = re.compile(r"^Bash\(\s*(?:sudo|curl|wget|rm|sh|bash|zsh|python3?|node|npx|bunx|uvx|eval|chmod|ssh|scp|powershell|pwsh|docker)\b")
+# Interpretadores: liberar qualquer um deles roda código arbitrário, igual a Bash(*), então é alto, não médio.
+_INTERP_BASH = re.compile(r"^Bash\(\s*(?:sh|bash|zsh|dash|ksh|python3?|node|deno|bun|ruby|perl|php|pwsh|powershell|eval)\b")
+_RISKY_BASH = re.compile(r"^Bash\(\s*(?:sudo|curl|wget|rm|npx|bunx|uvx|chmod|ssh|scp|docker)\b")
 
 
 def _claude_settings(d, text, rel):
@@ -509,7 +511,7 @@ def _claude_settings(d, text, rel):
         if not isinstance(entry, str):
             continue
         e = entry.strip()
-        sev = "high" if _BROAD_BASH.match(e) else "medium" if _RISKY_BASH.match(e) else None
+        sev = "high" if _BROAD_BASH.match(e) or _INTERP_BASH.match(e) else "medium" if _RISKY_BASH.match(e) else None
         if sev:
             # A entrada pode levar token (Bash(curl -H 'Authorization: ...')): mascara antes de ir para o relatório.
             out.append(Finding("AGT001", sev, rel, _vline(text, entry), {"what": secrets.mask(e[:_MASK_CAP])}))
