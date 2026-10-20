@@ -22,6 +22,8 @@ class Finding:
     params: dict = field(default_factory=dict)
     refs: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    # Identidade estável do achado (review.assign): o arquivo de revisão aponta para ela, não para o número da linha.
+    fingerprint: str = field(default="", compare=False)
 
     def key(self):
         return (self.rule, self.file, self.line, tuple(sorted((k, str(v)) for k, v in self.params.items())))

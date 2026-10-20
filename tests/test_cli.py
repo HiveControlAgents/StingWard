@@ -24,7 +24,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ANSI = re.compile(r"\x1b\[")
 LANG_VARS = ("STINGWARD_LANG", "LC_ALL", "LC_MESSAGES", "LANG")
 JSON_KEYS = {"tool", "version", "grade", "sources", "findings"}
-FINDING_KEYS = {"rule", "severity", "file", "line", "title", "why", "fix", "refs", "tags", "standards", "data"}
+FINDING_KEYS = {"rule", "severity", "file", "line", "fingerprint", "title", "why", "fix", "refs", "tags", "standards", "data"}
 
 GH = "ghp_" + "Ab3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0eF3hJ6"
 ANT = "sk-ant-" + "api03-" + "Q7wErTy8UiOp2AsDfGh5JkL"
@@ -203,8 +203,10 @@ class CliTest(unittest.TestCase):
         self.assertIn(doc["grade"], "ABCDF")
         self.assertIsInstance(doc["sources"], dict)
         ranks = []
+        self.assertEqual(len({f["fingerprint"] for f in doc["findings"]}), len(doc["findings"]))
         for f in doc["findings"]:
             self.assertEqual(set(f), FINDING_KEYS)
+            self.assertRegex(f["fingerprint"], r"^[0-9a-f]{16}$")
             self.assertIn(f["rule"], RULES)
             self.assertIn(f["severity"], SEVERITIES)
             self.assertTrue(os.path.isfile(os.path.join(root, f["file"])), f["file"])

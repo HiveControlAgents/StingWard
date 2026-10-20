@@ -37,6 +37,17 @@ T = {
         "verdict_ok": "🟢 Nada grave encontrado. Leia o código mesmo assim: nenhuma ferramenta pega tudo.",
         "more": "e mais {n} item(ns) de severidade baixa",
         "first": "Corrija primeiro", "and_more": "e mais {n}",
+        "client": "Preparado para", "notes": "Parecer do analista", "review": "revisão",
+        "reviewed_by": "Revisado por {name}", "reviewed": "Revisado por uma pessoa",
+        "status": {"confirmed": "Confirmado", "false_positive": "Alarme falso", "accepted_risk": "Risco aceito",
+                   "fixed": "Corrigido", "": "Não revisado"},
+        "n_status": {"confirmed": ("{n} confirmado", "{n} confirmados"),
+                     "false_positive": ("{n} alarme falso descartado", "{n} alarmes falsos descartados"),
+                     "accepted_risk": ("{n} risco aceito", "{n} riscos aceitos"),
+                     "fixed": ("{n} corrigido durante a auditoria", "{n} corrigidos durante a auditoria"),
+                     "": ("{n} ainda não revisado", "{n} ainda não revisados")},
+        "discarded": "Descartados como alarme falso ({n})",
+        "grade_rule": "A nota não conta alarmes falsos nem o que foi corrigido durante a auditoria.",
     },
     "en": {
         "title": "Security audit", "where": "where", "why": "why", "fix": "how to fix",
@@ -50,8 +61,47 @@ T = {
         "verdict_ok": "🟢 Nothing serious found. Still read the code: no tool catches everything.",
         "more": "and {n} more low-severity item(s)",
         "first": "Fix these first", "and_more": "and {n} more",
+        "client": "Prepared for", "notes": "Analyst summary", "review": "review",
+        "reviewed_by": "Reviewed by {name}", "reviewed": "Reviewed by a person",
+        "status": {"confirmed": "Confirmed", "false_positive": "False positive", "accepted_risk": "Accepted risk",
+                   "fixed": "Fixed", "": "Not reviewed"},
+        "n_status": {"confirmed": ("{n} confirmed", "{n} confirmed"),
+                     "false_positive": ("{n} false positive discarded", "{n} false positives discarded"),
+                     "accepted_risk": ("{n} accepted risk", "{n} accepted risks"),
+                     "fixed": ("{n} fixed during the audit", "{n} fixed during the audit"),
+                     "": ("{n} not reviewed yet", "{n} not reviewed yet")},
+        "discarded": "Discarded as false positives ({n})",
+        "grade_rule": "The grade leaves out false positives and what was fixed during the audit.",
     },
 }
+
+
+# Revisão humana. Contam para a nota, o veredito e o --fail-on: confirmados, riscos aceitos e o que ainda não foi
+# revisado. Alarme falso e o que foi corrigido e conferido durante a auditoria não contam. "Corrija primeiro" e as
+# faixas do plano só têm o que ainda é para fazer: confirmados e não revisados.
+STATUS_ORDER = ("confirmed", "false_positive", "accepted_risk", "fixed", "")   # ordem das contagens
+_GROUP = {"": 0, "confirmed": 0, "accepted_risk": 1, "fixed": 2, "false_positive": 3}  # ordem dos itens
+TODO = ("", "confirmed")
+NOT_COUNTED = ("false_positive", "fixed")
+
+
+def counted(findings, review=None):
+    """Os achados que valem para a nota depois da revisão."""
+    if review is None:
+        return list(findings)
+    return [f for f in findings if review.status(f) not in NOT_COUNTED]
+
+
+def review_parts(findings, review, lang):
+    """["14 confirmados", "2 alarmes falsos descartados"]: só os status que aparecem."""
+    from .review import counts
+    c = counts(findings, review)
+    forms = T[lang]["n_status"]
+    return [(forms[k][0] if c[k] == 1 else forms[k][1]).format(n=c[k]) for k in STATUS_ORDER if c[k]]
+
+
+def review_counts(findings, review, lang):
+    return ", ".join(review_parts(findings, review, lang))
 
 
 def grade(findings):
@@ -118,9 +168,10 @@ def counts_line(findings, lang):
 class Entry:
     """Um problema do relatório: achados com a mesma regra, os mesmos textos e a mesma severidade, em um ou mais lugares."""
 
-    def __init__(self, finding, title, why, fix):
+    def __init__(self, finding, title, why, fix, status="", comment=""):
         self.rule, self.severity = finding.rule, finding.severity
         self.title, self.why, self.fix = title, why, fix
+        self.status, self.comment = status, comment  # da revisão humana; vazio sem revisão
         self.findings = [finding]
 
     @property
@@ -144,22 +195,31 @@ class Entry:
         return out
 
 
-def merge(findings, lang):
+def merge(findings, lang, review=None):
     """Mesma regra e mesmo título viram um item só, na ordem em que os achados vêm (o pior primeiro).
 
     O "por quê" e o "como corrigir" também entram na chave: na SKL001 o "por quê" traz a mensagem escondida, e
     duas mensagens diferentes não podem virar uma. A severidade também: o mesmo segredo dentro de tests/ fica baixo
-    e não pode aparecer como crítico ao lado do achado real."""
+    e não pode aparecer como crítico ao lado do achado real. Com revisão, o status e o comentário também: um lugar
+    confirmado e outro descartado são dois itens."""
     entries, index = [], {}
     for f in findings:
         title, why, fix = texts(f.rule, lang, f.params)
-        key = (f.rule, f.severity, title, why, fix)
+        status, comment = review.get(f) if review is not None else ("", "")
+        key = (f.rule, f.severity, title, why, fix, status, comment)
         if key in index:
             index[key].findings.append(f)
         else:
-            index[key] = Entry(f, title, why, fix)
+            index[key] = Entry(f, title, why, fix, status, comment)
             entries.append(index[key])
     return entries
+
+
+def split(entries):
+    """(itens do relatório, alarmes falsos). Primeiro o que ainda é para fazer, depois riscos aceitos e o que já foi
+    corrigido, cada grupo do pior para o menos grave. Alarmes falsos vão para o apêndice."""
+    shown = sorted((e for e in entries if e.status != "false_positive"), key=lambda e: _GROUP[e.status])
+    return shown, [e for e in entries if e.status == "false_positive"]
 
 
 def places(entry, lang, limit=10):
@@ -175,8 +235,8 @@ def _first_place(entry):
 
 
 def urgent(entries, n=3):
-    """Os primeiros itens críticos ou altos: o que corrigir antes de tudo."""
-    return [e for e in entries if SEV_RANK[e.severity] >= SEV_RANK["high"]][:n]
+    """Os primeiros itens críticos ou altos que ainda são para fazer: o que corrigir antes de tudo."""
+    return [e for e in entries if e.status in TODO and SEV_RANK[e.severity] >= SEV_RANK["high"]][:n]
 
 
 def _fix_first(entries):
@@ -315,22 +375,48 @@ def impact(entry, lang):
 
 # --------------------------------------------------------------------------- texto e Markdown
 
-def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False, max_low=15):
+def _status_tag(e, lang):
+    return f" [{T[lang]['status'][e.status]}]"
+
+
+def _review_head(audit, findings, lang):
+    """Cliente, quem revisou e as contagens: o que aparece no topo do texto e do Markdown."""
+    t, out = T[lang], []
+    if audit is None:
+        return out
+    if audit.client:
+        out.append((t["client"], audit.client))
+    if audit.review is not None:
+        who = t["reviewed_by"].format(name=audit.reviewer) if audit.reviewer else t["reviewed"]
+        out.append((who, review_counts(findings, audit.review, lang) or "0"))
+    return out
+
+
+def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False, max_low=15, audit=None):
     t = T[lang]
-    entries = merge(findings, lang)
-    out = [f"stingward {__version__} · {t['title']}: {_clean(target or ctx.root)}", f"{t['sources']}: {_sources_line(ctx, lang)}", ""]
+    rv = audit.review if audit else None
+    valid = counted(findings, rv)
+    shown, discarded = split(merge(findings, lang, rv))
+    out = [f"stingward {__version__} · {t['title']}: {_clean(target or ctx.root)}", f"{t['sources']}: {_sources_line(ctx, lang)}"]
+    out += [f"{_clean(k)}: {_clean(v)}" for k, v in _review_head(audit, findings, lang)]
+    out.append("")
+    if audit and audit.notes:
+        out.append(f"{t['notes']}:")
+        from .review import plain
+        out += [f"  {_clean(line)}" if line else "" for line in plain(audit.notes, gap=True)]
+        out.append("")
     if show_verdict:
-        out += [verdict(findings, lang), ""]
-    first = _fix_first(entries)
+        out += [verdict(valid, lang), ""]
+    first = _fix_first(shown)
     if first:
         out.append(f"{t['first']}:")
         out += [f" {i}. {ICON[e.severity]} {_clean(e.title)} · {_clean(_first_place(e))}" for i, e in enumerate(first, 1)]
         out.append("")
-    if not findings:
+    if not shown:
         out.append(t["none"])
     shown_low = 0
     hidden = 0
-    for e in entries:
+    for e in shown:
         if e.severity in ("low", "info"):
             shown_low += 1
             if shown_low > max_low:
@@ -338,7 +424,7 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
                 continue
         title, why, fix = (_clean(x) for x in (e.title, e.why, e.fix))
         lab = LABEL[lang][e.severity]
-        head = f"{ICON[e.severity]} {lab:<8} {title}"
+        head = f"{ICON[e.severity]} {lab:<8} {title}" + (_status_tag(e, lang) if rv is not None else "")
         if color:
             head = f"{COLOR[e.severity]}{head}\033[0m"
         out.append(head)
@@ -347,38 +433,102 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
         out.append(f"   {t['fix']}: {fix}")
         if e.refs:
             out.append(f"   {_clean(e.refs[0])}")
+        out += _comment_lines(audit, e, lang)
         out.append("")
     if hidden:
         out += [t["more"].format(n=hidden), ""]
-    g = grade(findings)
-    out.append(f"{t['summary']}: {counts_line(findings, lang) or '0'} · {t['grade']}: {g}")
+    if discarded:
+        out.append(t["discarded"].format(n=sum(len(e.findings) for e in discarded)) + ":")
+        for e in discarded:
+            out.append(f" - {_clean(e.title)} · {_clean(places(e, lang))}  [{e.rule}]")
+            out += _comment_lines(audit, e, lang, label=False)
+        out.append("")
+    g = grade(valid)
+    out.append(f"{t['summary']}: {counts_line(valid, lang) or '0'} · {t['grade']}: {g}")
+    if rv is not None:
+        out.append(t["grade_rule"])
     out.append(f"{t['badge']}: {badge_md(g)}")
     return "\n".join(out) + "\n"
 
 
-def markdown(ctx, findings, lang="pt", target=None, show_verdict=False):
+def _comment_lines(audit, e, lang, label=True):
+    """O comentário de quem revisou, embaixo do item. label: começa com "revisão: <status>" (no apêndice não precisa)."""
+    if audit is None or audit.review is None:
+        return []
+    from .review import plain
+    lines = [_clean(x) for x in plain(audit.comment(e.comment))]
+    if not label:
+        return [f"     {x}" for x in lines]
+    head = f"   {T[lang]['review']}: {T[lang]['status'][e.status]}"
+    return [head + (f" · {lines[0]}" if lines else "")] + [f"     {x}" for x in lines[1:]]
+
+
+def _md_inline(nodes):
+    out = []
+    for style, text in nodes:
+        piece = _esc(text)
+        if "c" in style:
+            piece = f"<code>{piece}</code>"
+        if "b" in style:
+            piece = f"<b>{piece}</b>"
+        out.append(piece)
+    return "".join(out)
+
+
+def _md_blocks(blocks):
+    out = []
+    for kind, body in blocks:
+        if kind == "p":
+            out += [_md_inline(body), ""]
+        else:
+            out += [f"- {_md_inline(item)}" for item in body] + [""]
+    return out
+
+
+def _md_comment(audit, e, lang):
+    """O status e o comentário numa linha só, para caber na célula da tabela."""
+    parts = [_md_inline(item) for kind, body in audit.comment(e.comment) for item in (body if kind == "ul" else [body])]
+    return f"<b>{_esc(T[lang]['status'][e.status])}</b>" + "".join(f" · {p}" for p in parts)
+
+
+def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=None):
     t = T[lang]
-    g = grade(findings)
-    entries = merge(findings, lang)
+    rv = audit.review if audit else None
+    valid = counted(findings, rv)
+    g = grade(valid)
+    shown, discarded = split(merge(findings, lang, rv))
     out = ["<!-- stingward-report -->", f"### {badge_md(g)} {t['title']}", ""]
+    head = _review_head(audit, findings, lang)
+    if head:
+        out += [" · ".join(f"**{_esc(k)}:** {_esc(v)}" for k, v in head), ""]
+    if audit and audit.notes:
+        out += [f"**{_esc(t['notes'])}**", ""] + _md_blocks(audit.notes)
     if show_verdict:
-        out += [verdict(findings, lang), ""]
-    if not findings:
+        out += [verdict(valid, lang), ""]
+    if not shown:
         out += [t["none"], ""]
     else:
-        first = _fix_first(entries)
+        first = _fix_first(shown)
         if first:
             out += [f"**{t['first']}**", ""]
             out += [f"{i}. {ICON[e.severity]} {_esc(e.title)} · <sub>{_esc(_first_place(e))}</sub>" for i, e in enumerate(first, 1)]
             out.append("")
-        out += [f"**{t['summary']}:** {counts_line(findings, lang)} · {t['sources']}: {_sources_line(ctx, lang)}", "",
+        out += [f"**{t['summary']}:** {counts_line(valid, lang) or '0'} · {t['sources']}: {_sources_line(ctx, lang)}", "",
                 "| | | |", "|---|---|---|"]
-        for e in entries[:50]:
-            out.append(f"| {ICON[e.severity]} {LABEL[lang][e.severity]} | {_esc(e.title)}<br><sub>{_esc(places(e, lang, limit=5))}</sub> "
+        for e in shown[:50]:
+            note = f"<br><sub>{_md_comment(audit, e, lang)}</sub>" if rv is not None else ""
+            out.append(f"| {ICON[e.severity]} {LABEL[lang][e.severity]} | {_esc(e.title)}<br><sub>{_esc(places(e, lang, limit=5))}</sub>{note} "
                        f"| {_esc(e.fix)} |")
-        if len(entries) > 50:
-            out.append(f"| | {t['more'].format(n=len(entries) - 50)} | |")
+        if len(shown) > 50:
+            out.append(f"| | {t['more'].format(n=len(shown) - 50)} | |")
         out.append("")
+    if discarded:
+        out += [f"**{_esc(t['discarded'].format(n=sum(len(e.findings) for e in discarded)))}**", ""]
+        out += [f"- {_esc(e.title)} · <sub>{_esc(places(e, lang, limit=5))}</sub><br><sub>{_md_comment(audit, e, lang)}</sub>"
+                for e in discarded[:50]]
+        out.append("")
+    if rv is not None:
+        out += [f"<sub>{_esc(t['grade_rule'])}</sub>", ""]
     out.append(f"<sub>stingward {__version__} · [{REPO_URL.split('//')[1]}]({REPO_URL})</sub>")
     return "\n".join(out) + "\n"
 
@@ -394,15 +544,24 @@ def _esc(s):
 
 # --------------------------------------------------------------------------- JSON e SARIF: um registro por achado
 
-def as_json(ctx, findings, lang="pt"):
+def as_json(ctx, findings, lang="pt", audit=None):
+    from .review import counts, ensure
+    ensure(ctx, findings)
+    rv = audit.review if audit else None
     items = []
     for f in findings:
         title, why, fix = texts(f.rule, lang, f.params)
-        items.append({"rule": f.rule, "severity": f.severity, "file": f.file, "line": f.line, "title": title,
-                      "why": why, "fix": fix, "refs": f.refs, "tags": f.tags, "standards": STANDARDS.get(f.rule, []),
-                      "data": {k: v for k, v in f.params.items() if not k.endswith(("_pt", "_en"))}})
-    return json.dumps({"tool": "stingward", "version": __version__, "grade": grade(findings),
-                       "sources": ctx.sources, "findings": items}, ensure_ascii=False, indent=2) + "\n"
+        item = {"rule": f.rule, "severity": f.severity, "file": f.file, "line": f.line, "fingerprint": f.fingerprint, "title": title,
+                "why": why, "fix": fix, "refs": f.refs, "tags": f.tags, "standards": STANDARDS.get(f.rule, []),
+                "data": {k: v for k, v in f.params.items() if not k.endswith(("_pt", "_en"))}}
+        if rv is not None:
+            status, comment = rv.get(f)
+            item["review"] = {"status": status or None, "comment": audit.mask.lines(comment)}
+        items.append(item)
+    doc = {"tool": "stingward", "version": __version__, "grade": grade(counted(findings, rv)), "sources": ctx.sources, "findings": items}
+    if rv is not None:
+        doc["review"] = {"reviewer": audit.reviewer or None, "counts": {k or "unreviewed": v for k, v in counts(findings, rv).items()}}
+    return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
 
 
 _SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "note"}
@@ -411,6 +570,8 @@ _SARIF_SCORE = {"critical": "9.5", "high": "8.0", "medium": "5.5", "low": "3.0",
 
 def sarif(ctx, findings, lang="pt", prefix=""):
     """prefix: caminho da pasta auditada dentro do repositório, para os alertas do GitHub apontarem o arquivo certo."""
+    from .review import ensure
+    ensure(ctx, findings)
     first = {}
     for f in findings:  # já vêm da mais grave para a menos grave
         first.setdefault(f.rule, f)
@@ -429,7 +590,8 @@ def sarif(ctx, findings, lang="pt", prefix=""):
             loc["physicalLocation"]["region"] = {"startLine": f.line}
         results.append({"ruleId": f.rule, "level": _SARIF_LEVEL[f.severity],
                         "message": {"text": f"{title}. {why} {fix}"}, "locations": [loc],
-                        "properties": {"security-severity": _SARIF_SCORE[f.severity], "tags": f.tags}})
+                        "properties": {"security-severity": _SARIF_SCORE[f.severity], "tags": f.tags,
+                                       "fingerprint": f.fingerprint}})
     doc = {"$schema": "https://json.schemastore.org/sarif-2.1.0.json", "version": "2.1.0",
            "runs": [{"tool": {"driver": {"name": "stingward", "version": __version__, "informationUri": REPO_URL, "rules": rules}},
                      "results": results}]}

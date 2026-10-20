@@ -5,7 +5,7 @@ import fnmatch
 import os
 import re
 
-from . import gitsafe
+from . import gitsafe, review
 from .checks import TESTISH, agents, app, code, deps, secrets
 from .model import SEV_RANK, Context
 
@@ -127,4 +127,4 @@ def run(root: str, mode: str = "project", offline: bool = False, only=None, file
         seen.add(f.key())
         uniq.append(f)
     uniq.sort(key=lambda f: (-SEV_RANK[f.severity], "kev" not in f.tags, f.rule, f.file, f.line or 0))
-    return ctx, uniq
+    return ctx, review.assign(ctx, uniq)
