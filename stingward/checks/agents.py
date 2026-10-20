@@ -518,6 +518,23 @@ def _claude_settings(d, text, rel):
     return out
 
 
+def _command_findings(cmd, text, rel):
+    """Checagens de conteúdo no valor de um comando de config (hook). Além de baixar e rodar código remoto (AGT002),
+    o comando pode abrir reverse shell, ler credenciais, chamar um coletor ou vir ofuscado — as mesmas checagens das
+    skills. O comando fica numa linha só do JSON, então todos os achados apontam para a linha do valor."""
+    ln = _vline(text, cmd)
+    out = []
+    if _PIPE_SHELL.search(cmd):
+        out.append(Finding("AGT002", "high", rel, ln))
+    out += _reverse_shell(cmd, rel, instruction=False)
+    out += _cred_reads(cmd, rel, instruction=False)
+    out += _obfuscation(cmd, rel)
+    out += [Finding("SKL008", "high", rel, ln, {"host": m.group(1).lower()}) for m, _ in _matches(_EXFIL, cmd)]
+    for f in out:
+        f.line = ln
+    return out
+
+
 def _hooks(d, text, rel):
     out = []
 
@@ -526,8 +543,8 @@ def _hooks(d, text, rel):
             return
         if isinstance(o, dict):
             for k, v in o.items():
-                if k == "command" and isinstance(v, str) and _PIPE_SHELL.search(v):
-                    out.append(Finding("AGT002", "high", rel, _vline(text, v)))
+                if k == "command" and isinstance(v, str):
+                    out.extend(_command_findings(v, text, rel))
                 else:
                     walk(v, depth + 1)
         elif isinstance(o, list):
