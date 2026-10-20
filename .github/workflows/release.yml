@@ -72,11 +72,10 @@ jobs:
         run: npm install -g npm@latest  # trusted publishing needs npm 11.5.1+
       - if: steps.exists.outputs.skip == 'false'
         run: sh scripts/build-npm.sh
-      # First release: the NPM_TOKEN secret. After it, trusted publishing on npmjs.com and no secret.
+      # Trusted publishing on npmjs.com (HiveControlAgents/StingWard, release.yml, environment npm): no token stored.
       - if: steps.exists.outputs.skip == 'false'
         run: npm publish --provenance --access public
         working-directory: npm
-        env: { NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" }
 
   github:
     needs: check
