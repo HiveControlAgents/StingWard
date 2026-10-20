@@ -292,6 +292,8 @@ class TokenFormats(Case):
             "lin_" + "api_" + R36 + "Qw9", "lin_" + "api_" + "x" * 40,
             "re_" + "123456789", "re_" + "compile_" + "pattern_with_a_long_name", "re_" + "abcdefgh" + "_" + "abcdefghijklmnopqrstuvwx",
             "re_" + "Ab3dE5gH" + "_" + R36[:23],
+            # The prefix does not count as the digit or the lower case letter: r8_ has both, re_ has lower case.
+            "r8_" + R36.upper() + "Q", "r8_" + ("aBcDeFgHiJkLmNoPqRsT" * 2)[:37], "re_" + "AB3DE5GH" + "_" + R36.upper()[:24],
         ]
         for line in lines:
             with self.subTest(line=line):
