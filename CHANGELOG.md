@@ -32,6 +32,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - The code check no longer takes minutes on a JavaScript line with a long run of spaces before `Math.random()`: finding the name that receives the value was cubic in the length of the line.
 - The code check no longer slows to seconds or minutes on a Python `"..." % x` text with long runs of zeros after a `%` or thousands of `%(` without `)`.
 - The code check no longer takes seconds per JavaScript file full of blank lines (looking for `'use server'`) or of `export const GET:` with no `=` (looking for a route handler): each line start read the rest of the file.
+- The code check no longer takes seconds on JavaScript with thousands of `) =>` whose `(` is missing: each arrow walked back up to 2000 characters to find its parameters.
 
 ## [0.1.5] - 2026-10-20
 
