@@ -367,7 +367,9 @@ def raised(r: Range, version: str) -> str:
     return r.prefix + spec + r.suffix
 
 
-_VERSION = re.compile(r"v?\d+(?:\.\d+)*(?:[-+_.]?[A-Za-z0-9]+)*")
+# Pedaços de letras e números separados por um só -+_. (1.0.0rc1, 1.2.3-beta.1, 1.0+local). Cada separador abre um
+# pedaço novo, então o texto só se divide de um jeito: "(?:[-+_.]?[A-Za-z0-9]+)*" dividia "1aaaa...*" de 2^n jeitos.
+_VERSION = re.compile(r"v?\d[A-Za-z0-9]*(?:[-+_.][A-Za-z0-9]+)*")
 
 
 def _release(v):
