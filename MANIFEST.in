@@ -1,0 +1,3 @@
+# O sdist leva só o pacote e os metadados. Os testes leem arquivos do repositório (site, docs, action.yml)
+# que não vão no sdist, então ficam no GitHub.
+prune tests
