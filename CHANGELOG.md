@@ -47,6 +47,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A version with a huge number in a lockfile (`1.0.0-999...9`, thousands of digits), which OSV.dev still answers with vulnerabilities, no longer crashes the online scan with `ValueError` on Python 3.11 and later.
 - A cache entry dated in the future (a cache folder restored from another machine, or a wrong clock) is fetched again instead of being trusted forever.
 - Options before the folder (`stingward skill --offline <folder>`) and `--` before it (`stingward skill --offline -- <folder>`) work on every supported Python. On Python 3.9 to 3.12 both stopped with "unrecognized arguments"; a folder whose name starts with `-` can now be given after `--`.
+- `stingward --help` follows `--lang`, `STINGWARD_LANG` and the system language, like the reports. It was always in Portuguese, and `--no-color`, `--help` and `--version` now have a help text in both languages.
 
 ## [0.1.5] - 2026-10-20
 

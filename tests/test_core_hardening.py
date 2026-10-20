@@ -636,6 +636,39 @@ class TargetAnywhere(unittest.TestCase):
 
 
 
+class HelpFollowsTheLanguage(unittest.TestCase):
+    """--help no idioma de --lang, STINGWARD_LANG ou LANG, como os relatórios; toda opção com texto de ajuda."""
+
+    def test_every_option_has_help_in_both_languages(self):
+        parsers = {lang: cli._parser(lang) for lang in ("pt", "en")}
+        self.assertEqual(*({a.dest for a in p._actions} for p in parsers.values()))
+        for lang, ap in parsers.items():
+            for a in ap._actions:
+                with self.subTest(lang=lang, option=a.option_strings or a.dest):
+                    self.assertTrue(a.help)
+        en, pt = ({a.dest: a.help for a in p._actions} for p in (parsers["en"], parsers["pt"]))
+        for dest in en:
+            with self.subTest(dest=dest):
+                self.assertNotEqual(en[dest], pt[dest])
+
+    def test_help_language(self):
+        cases = [([], {}, "en"), ([], {"LANG": "pt_BR.UTF-8"}, "pt"), ([], {"STINGWARD_LANG": "pt", "LANG": "en_US"}, "pt"),
+                 (["--lang", "pt"], {}, "pt"), (["--lang=en"], {"STINGWARD_LANG": "pt"}, "en"),
+                 (["skill", "--lang", "en"], {"LANG": "pt_BR.UTF-8"}, "en")]
+        for extra, env, lang in cases:
+            for argv in (["--help"] + extra, extra + ["-h"]):
+                with self.subTest(argv=argv, env=env):
+                    code, out, _ = run_main(argv, env=env)
+                    self.assertEqual(code, 0)
+                    if lang == "en":
+                        self.assertIn("Security audit", out)
+                        self.assertIn("plain text", out)
+                        self.assertNotIn("relatório", out)
+                    else:
+                        self.assertIn("Auditoria de segurança", out)
+                        self.assertIn("texto sem cores", out)
+
+
 class WhatWasNotRead(unittest.TestCase):
     """Arquivo grande demais ou pasta com arquivos demais: a auditoria cobre menos, e isso tem que ser dito."""
 
