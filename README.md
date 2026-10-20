@@ -48,14 +48,14 @@ No account, no telemetry, no dependencies: pure Python 3.9+ on Linux, macOS and 
 
 | Area | Examples |
 |---|---|
-| **Dependencies** | Known CVEs and **malicious packages** in npm, Yarn, pnpm, Bun, pip, Poetry, uv, Pipenv, PDM, Go, Cargo, Bundler and Composer lockfiles. Ranked by **CISA KEV** (exploited right now) and **EPSS** (likelihood of exploitation), with the single upgrade that fixes everything known. |
+| **Dependencies** | Known CVEs and **malicious packages** in npm, Yarn, pnpm, Bun, pip, Poetry, uv, Pipenv, PDM, Go, Cargo, Bundler and Composer lockfiles. Ranked by **CISA KEV** (exploited right now) and **EPSS** (likelihood of exploitation), with the single upgrade that fixes everything known. Without a lockfile, the lowest version each range allows (`Pillow>=10`, `^1.6.0`) is checked too. |
 | **Secrets** | API keys (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack...), private keys, Supabase `service_role` keys, webhooks, passwords in URLs, `.env` committed or missing from `.gitignore`. Values are never printed. |
 | **AI-built apps** | Secrets behind `NEXT_PUBLIC_` / `VITE_` / `EXPO_PUBLIC_`, `dangerouslyAllowBrowser`, open CORS, Supabase tables without RLS or with `using (true)`, open Firebase rules, debug mode, JWT without signature check. In code that calls a model: its answer reaching `eval`, a shell, SQL or HTML, request input inside the system prompt, AI routes with no login and no rate limit, `trust_remote_code` and unsafe `torch.load`, agents with a Python REPL or shell tool. |
 | **Code** | SQL, shell and code injection, `pickle` and unsafe YAML, XSS (`innerHTML`, `dangerouslySetInnerHTML`, `v-html`), TLS checks turned off, path traversal, SSRF, open redirects, `Math.random` for tokens and fast hashes for passwords. Python is read with `ast` and JavaScript/TypeScript with tight patterns that follow request data inside each function. |
 | **Agents and MCP** | `bypassPermissions`, `Bash(*)`, hooks that `curl \| sh`, `enableAllProjectMcpServers`, MCP servers without a pinned version, tokens in `.mcp.json`, MCP over plain HTTP, vulnerable MCP packages such as `mcp-remote` (CVE-2025-6514). |
 | **Skills and prompts** | Invisible Unicode (tag characters, Trojan Source, zero-width), "ignore previous instructions", "don't tell the user", reading `~/.ssh` or `~/.aws` and calling the internet, `curl \| bash`, reverse shells, obfuscated code, capture hosts (webhook.site, ngrok...), install scripts, `allowed-tools: Bash`, tool poisoning in MCP tool descriptions. |
 
-All 48 rules, with severity, examples and fixes: [docs/rules.md](docs/rules.md).
+All 49 rules, with severity, examples and fixes: [docs/rules.md](docs/rules.md).
 
 <p align="center">
   <img alt="stingward ./my-saas: OpenAI key exposed through NEXT_PUBLIC_, next 14.1.0 with CVE-2025-29927 (99% EPSS), Supabase table without RLS, open CORS. Grade F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-en.gif" width="820">
@@ -68,7 +68,7 @@ All 48 rules, with severity, examples and fixes: [docs/rules.md](docs/rules.md).
 1. **Lists your files**, skipping dependency and build folders such as `node_modules` and `dist`. When auditing a third-party skill it does read build output, since that is what actually runs.
 2. **Reads lockfiles** and asks [OSV.dev](https://osv.dev) about every package and version in one batch. CVEs in [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) become critical; [EPSS](https://www.first.org/epss/) and [NVD](https://nvd.nist.gov) fill in likelihood and missing scores.
 3. **Runs pattern checks** for secrets, app mistakes, agent settings and skill content, aware of context: test folders, docs and examples count less, and in third-party skills reassuring wording can lower a finding to medium but never hide it.
-4. **Writes the report** in English or Portuguese: a verdict, findings worst first with where, why and how to fix, a grade from A to F and a badge.
+4. **Writes the report** in English or Portuguese: a verdict, what to fix first, findings worst first with where, why and how to fix (the same problem in several files is listed once, with every place), a grade from A to F and a badge. `--html FILE` also writes a single-file report to hand over or print to PDF: summary, remediation plan with rough effort, findings with the code excerpt (secrets masked), and scope and method.
 
 Only package names and versions leave your machine (to `api.osv.dev`, `www.cisa.gov`, `api.first.org` and `services.nvd.nist.gov`). Your code never does. Responses are cached for a few hours in `~/.cache/stingward`.
 
@@ -108,8 +108,8 @@ It comments the report on the PR (and updates the same comment on every run), up
 | Option | |
 |---|---|
 | `--lang en\|pt` | Report language (default: `STINGWARD_LANG`, then your system locale) |
-| `--format text\|json\|markdown\|sarif` | What goes to standard output |
-| `--json FILE`, `--markdown FILE`, `--sarif FILE` | Also write these files, in one run |
+| `--format text\|json\|markdown\|sarif\|html` | What goes to standard output |
+| `--json FILE`, `--markdown FILE`, `--sarif FILE`, `--html FILE` | Also write these files, in one run |
 | `--fail-on critical\|high\|medium\|low\|never` | Exit code 1 at this severity or above (default `high`) |
 | `--only deps,secrets,app,code,agents` | Run only some checks |
 | `--offline` | Skip the online databases (dependencies are not checked) |

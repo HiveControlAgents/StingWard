@@ -18,6 +18,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [DEP001](#dep001) | Versão de dependência com falhas conhecidas | 🔴 |
 | [DEP002](#dep002) | Pacote malicioso | 🔴 |
 | [DEP003](#dep003) | Manifesto sem lockfile | 🔵 |
+| [DEP004](#dep004) | Faixa de versão aceita versões com falhas | 🔴 |
 | [SEC001](#sec001) | Segredo no código | 🔴 |
 | [SEC002](#sec002) | `.env` no git | 🟠 |
 | [SEC003](#sec003) | `.env` fora do `.gitignore` | 🟡 |
@@ -85,9 +86,17 @@ Registros `MAL-*` do OSV e alertas de "malware" do GitHub: pacotes publicados pa
 <a id="dep003"></a>
 ### DEP003 · Manifesto sem lockfile
 
-`package.json`, `pyproject.toml` ou `requirements.txt` com faixas de versão e sem lockfile: não dá para auditar as versões que vão para produção, e elas mudam a cada instalação.
+`package.json` ou `requirements.txt` com faixas de versão e sem lockfile: não dá para auditar as versões que vão para produção, e elas mudam a cada instalação.
 
 **Como corrigir:** gere e envie o lockfile (`npm install`, `uv lock`, `poetry lock`, `pip freeze`...).
+**Padrões:** `CWE-1395`
+
+<a id="dep004"></a>
+### DEP004 · Faixa de versão aceita versões com falhas
+
+Sem lockfile, uma faixa como `Pillow>=10` ou `"axios": "^1.6.0"` é tudo o que decide a versão, e a menor versão dela continua valendo: quem já tem essa versão instalada fica com ela, e o instalador pode escolhê-la. O Stingward consulta no OSV.dev a menor versão de cada faixa (`>=`, `~=` e `==X.*` no Python; `^`, `~`, `>=`, `1.2.x` e `>=a <b` no npm), no mesmo lote dos pacotes fixados, em `requirements*.txt` e `package.json` sem lockfile ao lado e nas dependências de `[project]` de um `pyproject.toml` sem `poetry.lock`, `uv.lock` ou `pdm.lock`. Pacote fixado em outro arquivo do projeto fica com o DEP001. A versão instalada costuma ser mais nova, então o achado vai no máximo a médio (baixo quando a pior falha fica abaixo de alta), a não ser que o teto da faixa deixe a correção de fora: aí toda versão aceita tem a falha e a severidade é a mesma do DEP001.
+
+**Como corrigir:** suba a versão mínima para a indicada, por exemplo troque `Pillow>=10` por `Pillow>=12.3.0`. Se nenhuma versão da faixa tem a correção, amplie a faixa.
 **Padrões:** `CWE-1395`
 
 ## Segredos

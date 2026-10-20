@@ -50,14 +50,14 @@ Sin cuenta, sin telemetría, sin dependencias: Python 3.9+ puro, en Linux, macOS
 
 | Área | Ejemplos |
 |---|---|
-| **Dependencias** | CVEs conocidas y **paquetes maliciosos** en lockfiles de npm, Yarn, pnpm, Bun, pip, Poetry, uv, Pipenv, PDM, Go, Cargo, Bundler y Composer. Priorizados por **CISA KEV** (explotadas ahora mismo) y **EPSS** (probabilidad de explotación), con la única actualización que corrige todo lo conocido. |
+| **Dependencias** | CVEs conocidas y **paquetes maliciosos** en lockfiles de npm, Yarn, pnpm, Bun, pip, Poetry, uv, Pipenv, PDM, Go, Cargo, Bundler y Composer. Priorizados por **CISA KEV** (explotadas ahora mismo) y **EPSS** (probabilidad de explotación), con la única actualización que corrige todo lo conocido. Sin lockfile, también revisa la versión más baja que acepta cada rango (`Pillow>=10`, `^1.6.0`). |
 | **Secretos** | Claves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack...), claves privadas, `service_role` de Supabase, webhooks, contraseñas en URLs, `.env` en git o fuera del `.gitignore`. El valor nunca se imprime. |
 | **Apps hechas con IA** | Secretos detrás de `NEXT_PUBLIC_` / `VITE_` / `EXPO_PUBLIC_`, `dangerouslyAllowBrowser`, CORS abierto, tablas de Supabase sin RLS o con `using (true)`, reglas de Firebase abiertas, modo debug, JWT sin verificar la firma. En código que llama a un modelo: su respuesta llegando a `eval`, un shell, SQL o HTML, datos de la petición dentro del prompt de sistema, rutas de IA sin login y sin límite de uso, `trust_remote_code` y `torch.load` inseguro, agentes con una herramienta de Python REPL o shell. |
 | **Código** | Inyección de SQL, de comandos y de código, `pickle` y YAML inseguro, XSS (`innerHTML`, `dangerouslySetInnerHTML`, `v-html`), verificación de TLS desactivada, path traversal, SSRF, redirecciones abiertas, `Math.random` para tokens y hashes rápidos para contraseñas. Python se lee con `ast` y JavaScript/TypeScript con patrones ajustados que siguen los datos de la petición dentro de cada función. |
 | **Agentes y MCP** | `bypassPermissions`, `Bash(*)`, hooks con `curl \| sh`, `enableAllProjectMcpServers`, servidores MCP sin versión fija, tokens en `.mcp.json`, MCP remoto sin HTTPS, paquetes MCP vulnerables como `mcp-remote` (CVE-2025-6514). |
 | **Skills y prompts** | Unicode invisible (caracteres de etiqueta, Trojan Source, ancho cero), "ignora las instrucciones anteriores", "no le digas al usuario", lectura de `~/.ssh` o `~/.aws` con llamada a internet, `curl \| bash`, reverse shells, código ofuscado, servicios de captura (webhook.site, ngrok...), scripts de instalación, `allowed-tools: Bash`, instrucciones ocultas en la descripción de herramientas MCP. |
 
-Las 48 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.md](docs/rules.md).
+Las 49 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.md](docs/rules.md).
 
 <p align="center">
   <img alt="stingward ./my-saas: clave de OpenAI expuesta con NEXT_PUBLIC_, next 14.1.0 con CVE-2025-29927 (EPSS de 99%), tabla de Supabase sin RLS, CORS abierto. Nota F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-en.gif" width="820">
@@ -70,7 +70,7 @@ Las 48 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.m
 1. **Lista tus archivos**, saltando carpetas de dependencias y de build como `node_modules` y `dist`. Al auditar una skill de terceros sí lee el build, porque es lo que realmente se ejecuta.
 2. **Lee los lockfiles** y consulta a [OSV.dev](https://osv.dev) por todos los paquetes y versiones en una sola llamada. Las CVEs de [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) pasan a críticas; [EPSS](https://www.first.org/epss/) y [NVD](https://nvd.nist.gov) completan la probabilidad y las notas que faltan.
 3. **Ejecuta las revisiones** de secretos, errores de apps, configuración de agentes y contenido de skills, según el contexto: carpetas de pruebas, documentación y ejemplos pesan menos, y en una skill de terceros un texto tranquilizador puede bajar un hallazgo a medio, pero nunca esconderlo.
-4. **Escribe el informe**: veredicto, hallazgos del peor al mejor con dónde, por qué y cómo corregir, una nota de A a F y un distintivo.
+4. **Escribe el informe**: veredicto, qué corregir primero, hallazgos del peor al mejor con dónde, por qué y cómo corregir (el mismo problema en varios archivos aparece una vez, con todos los lugares), una nota de A a F y un distintivo. `--html ARCH` escribe también un informe en un solo archivo, para entregar o imprimir en PDF (en inglés o portugués): resumen, plan de corrección con el esfuerzo estimado, hallazgos con el fragmento de código (secretos enmascarados) y alcance y método.
 
 Solo los nombres y versiones de los paquetes salen de tu máquina (a `api.osv.dev`, `www.cisa.gov`, `api.first.org` y `services.nvd.nist.gov`). Tu código nunca sale. Las respuestas se guardan en caché unas horas en `~/.cache/stingward`.
 
@@ -110,8 +110,8 @@ Comenta el informe en el PR (y actualiza el mismo comentario en cada ejecución)
 | Opción | |
 |---|---|
 | `--lang en\|pt` | Idioma del informe (por defecto: `STINGWARD_LANG`, luego el idioma del sistema) |
-| `--format text\|json\|markdown\|sarif` | Qué va a la salida estándar |
-| `--json ARCH`, `--markdown ARCH`, `--sarif ARCH` | Escribe también estos archivos, en la misma ejecución |
+| `--format text\|json\|markdown\|sarif\|html` | Qué va a la salida estándar |
+| `--json ARCH`, `--markdown ARCH`, `--sarif ARCH`, `--html ARCH` | Escribe también estos archivos, en la misma ejecución |
 | `--fail-on critical\|high\|medium\|low\|never` | Código de salida 1 en esta severidad o mayor (por defecto `high`) |
 | `--only deps,secrets,app,code,agents` | Ejecuta solo algunas revisiones |
 | `--offline` | No consulta las bases en línea (las dependencias no se revisan) |
