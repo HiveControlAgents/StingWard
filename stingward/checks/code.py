@@ -2119,7 +2119,7 @@ def _near(hint, full, text, back=60, ahead=200):
 _JS_NOT_METHOD = {"if", "for", "while", "switch", "catch", "function", "return", "with", "await", "typeof", "new", "super",
                   "else", "do", "try", "throw", "delete", "void", "yield", "import", "export", "case"}
 _JS_ROUTE_FN = re.compile(r"export\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s*\(|"
-                          r"export\s+const\s+(?:GET|POST|PUT|PATCH|DELETE)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\(|function)")
+                          r"export\s+const\s+(?:GET|POST|PUT|PATCH|DELETE)\s*(?::[^=]{1,200})?=\s*(?:async\s*)?(?:\(|function)")
 _JS_TOOL_CALL = re.compile(r"\.\s*(?:tool|registerTool|addTool)\s*\(|(?:tool|createTool|betaZodTool|betaTool)\s*\(|"
                            r"new\s+(?:DynamicStructuredTool|DynamicTool|FunctionTool)\s*\(|"
                            r"setRequestHandler\s*\(\s*CallToolRequestSchema")
@@ -2302,7 +2302,8 @@ _JS_ROUTE_PATH = re.compile(r"(?:^|/)(?:src/)?app/(?:.+/)?route\.(?:js|ts|mjs)$|
                             r"^api/[^/]+\.(?:js|ts|mjs)$|(?:^|/)netlify/(?:edge-)?functions/.+\.(?:js|ts|mjs)$|"
                             r"(?:^|/)supabase/functions/[^/]+/index\.(?:ts|js)$|(?:^|/)app/routes/.+\.(?:js|ts|jsx|tsx)$")
 _JS_SERVER_ROUTE = re.compile(r"""(?<![\w$.])(?:app|router|server|fastify|api|routes?|r|hono)\s*\.\s*(?:post|get|put|patch|all|route)\s*\(\s*['"`]/""")
-_JS_USE_SERVER = re.compile(r"""^\s*(['"])use server\1""", re.M)
+# [ \t]* e não \s*: com re.M, \s* passava das linhas em branco e cada começo de linha lia o resto do arquivo.
+_JS_USE_SERVER = re.compile(r"""^[ \t]*(['"])use server\1""", re.M)
 _JS_AUTH = re.compile(r"(?i)\b(?:getServerSession|getSession|currentUser|getUser|getAuth|clerk\w*|requireAuth|withAuth|"
                       r"isAuthenticated|authenticate\w*|authorize\w*|verifyToken|jwtVerify|verifyJwt|verifyIdToken|getToken|"
                       r"validateRequest|getKindeServerSession|withApiAuthRequired|getIronSession|unauthorized|authorization|"
