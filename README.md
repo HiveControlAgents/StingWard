@@ -11,7 +11,7 @@
   <a href="https://www.npmjs.com/package/stingward"><img alt="npm" src="https://img.shields.io/npm/v/stingward?color=f5b83d"></a>
   <a href="https://pypi.org/project/stingward/"><img alt="Python 3.9+" src="https://img.shields.io/pypi/pyversions/stingward"></a>
   <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-0-brightgreen">
-  <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache%202.0-blue"></a>
+  <a href="https://github.com/HiveControlAgents/StingWard/blob/main/LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache%202.0-blue"></a>
   <a href="#quality"><img alt="stingward: A" src="https://img.shields.io/badge/stingward-A-brightgreen"></a>
 </p>
 
@@ -55,7 +55,7 @@ No account, no telemetry, no dependencies: pure Python 3.9+ on Linux, macOS and 
 | **Agents and MCP** | `bypassPermissions`, `Bash(*)`, hooks that `curl \| sh`, `enableAllProjectMcpServers`, MCP servers without a pinned version, tokens in `.mcp.json`, MCP over plain HTTP, vulnerable MCP packages such as `mcp-remote` (CVE-2025-6514). |
 | **Skills and prompts** | Invisible Unicode (tag characters, Trojan Source, zero-width), "ignore previous instructions", "don't tell the user", reading `~/.ssh` or `~/.aws` and calling the internet, `curl \| bash`, reverse shells, obfuscated code, capture hosts (webhook.site, ngrok...), install scripts, `allowed-tools: Bash`, tool poisoning in MCP tool descriptions. |
 
-All 50 rules, with severity, examples and fixes: [docs/rules.md](docs/rules.md).
+All 50 rules, with severity, examples and fixes: [docs/rules.md](https://github.com/HiveControlAgents/StingWard/blob/main/docs/rules.md).
 
 <p align="center">
   <img alt="stingward ./my-saas: OpenAI key exposed through NEXT_PUBLIC_, the model's answer run as a shell command, next 14.1.0 with CVE-2025-29927 (99% EPSS), SQL and a file path built from the request, a server that fetches any URL, a Supabase table without RLS, requests whose lowest allowed version has known flaws. Grade F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-en.gif" width="820">
@@ -72,7 +72,7 @@ All 50 rules, with severity, examples and fixes: [docs/rules.md](docs/rules.md).
 
 Only package names and versions leave your machine (to `api.osv.dev`, `www.cisa.gov`, `api.first.org` and `services.nvd.nist.gov`). Your code never does. Responses are cached for a few hours in `~/.cache/stingward`.
 
-Stingward reads hostile content by design, so it is careful with it: git can never discover a repository inside audited files, the launchers never import code from the audited folder, and secrets, terminal escapes and markdown are neutralized in every report format. See [SECURITY.md](SECURITY.md).
+Stingward reads hostile content by design, so it is careful with it: git can never discover a repository inside audited files, the launchers never import code from the audited folder, and secrets, terminal escapes and markdown are neutralized in every report format. See [SECURITY.md](https://github.com/HiveControlAgents/StingWard/blob/main/SECURITY.md).
 
 ## GitHub Action
 
@@ -171,8 +171,8 @@ Stingward reports to whoever runs it, about code they chose to check. It does no
 
 ## Contributing
 
-Bug reports, false positives and new rules are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) to get set up, and report security problems in Stingward itself privately as described in [SECURITY.md](SECURITY.md).
+Bug reports, false positives and new rules are welcome. Read [CONTRIBUTING.md](https://github.com/HiveControlAgents/StingWard/blob/main/CONTRIBUTING.md) to get set up, and report security problems in Stingward itself privately as described in [SECURITY.md](https://github.com/HiveControlAgents/StingWard/blob/main/SECURITY.md).
 
 Vulnerability data: [OSV.dev](https://osv.dev) (aggregating GitHub Advisories, NVD, PyPA, RustSec, Go and OpenSSF malicious packages), [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog), [FIRST EPSS](https://www.first.org/epss/) and [NVD](https://nvd.nist.gov).
 
-[Apache 2.0](LICENSE) © Isaque Moutta
+[Apache 2.0](https://github.com/HiveControlAgents/StingWard/blob/main/LICENSE) © Isaque Moutta
