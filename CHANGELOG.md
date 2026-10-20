@@ -43,8 +43,6 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - On the site, the "Install" folder tab showed no focus ring when reached with the keyboard: the tab's cut corners (`clip-path`) cut the ring too. The other folder tabs only showed a thin line, because the next folder covers most of the ring. A focused folder tab now underlines its name.
 - The links in the README to the rules reference, `SECURITY.md`, `CONTRIBUTING.md` and the license were relative, so they gave 404 on the PyPI page. They now point to the files on GitHub, in all three READMEs.
 - The plugin's launcher (`skills/stingward/scripts/run.py`) relied on the caller passing `-I`. Run without it and with a `PYTHONPATH` that has an empty entry, it imported the checked folder's own `shutil.py` or `json.py`. It now drops the current folder from `sys.path` before importing anything else.
-
-### Fixed
 - Masking secrets no longer takes quadratic time on long values. A skill whose MCP config carried a 60 KB argument kept `stingward skill` busy for about 100 seconds (hours for a few hundred KB); it now takes about two seconds for 600 KB. A long run of backslashes (40 KB took 9 seconds) is linear too.
 - Command line errors (folder not found, unknown command, a wrong `--only`) follow `--lang` and the system language. They were always in Portuguese.
 - `stingward skill <url>` that cannot download the skill exits with code 2 and a one-line message, also when `git clone` takes more than 180 seconds or git is not installed. It used to exit with 1, the code for "findings", or crash with a traceback, and a timeout or Ctrl+C left the temporary clone behind.
@@ -96,8 +94,6 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - The code excerpts in the HTML report now come from the text the checks read, instead of opening each file again. A file changed on disk after the scan, or a step the reader applies such as dropping a byte order mark, no longer makes an excerpt differ from the line the finding points at.
 - When the CISA KEV list does not respond, the text and Markdown reports now say so in the sources line, next to OSV.dev, and the HTML report warns on its cover, in Portuguese and English: without that list, a vulnerability attackers exploit now is not raised to critical. Before, only the sources table of the HTML report said it. The pull request comment also keeps its sources line when nothing was found but a source failed, so an OSV.dev outage no longer reads as a plain "Nothing found".
 - The CISA KEV catalog version, which comes from the network, is now plain text in the sources line: control characters are shown as escapes in the terminal, and the pull request comment escapes it like the rest of the text it quotes, so a bad answer cannot add color, an image, a link or a mention.
-
-### Fixed
 - A version range in `requirements*.txt`, `package.json` or `pyproject.toml` with a long version that does not parse (for example `foo>=1aaaaaaaaaaaaaaaaaaaaaaaaaaaa*`) no longer makes the scan hang: the version pattern backtracked exponentially.
 - A long run of spaces on a line of `requirements*.txt` no longer slows the scan down quadratically.
 - A committed `.env` with a long run of spaces inside a value no longer slows the scan down quadratically (60 000 spaces took 15 seconds).
@@ -124,8 +120,6 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - The suggested fix is a final release when the advisory lists one above your version: `26.4.1` instead of `26.4.0rc2`, `1.1.0` instead of `1.1.0-beta.1`. A pre-release is suggested only when it is the only fix listed.
 - A package with more advisories than OSV.dev returns in one page gets all of them: the next pages (`next_page_token`) are read, up to 10 per package. Only the first page used to be read.
 - Text files saved in UTF-16 with a byte order mark (what Windows PowerShell writes with `>`, such as `pip freeze > requirements.txt` or `echo ... > .env`) are audited. A `.env`, `.txt` or other non-code file in UTF-16 was skipped as binary, and a UTF-16 code file was read as garbage, so its secrets were not found. The checks, the HTML excerpt and `.stingwardignore` now read the same decoded text.
-
-### Fixed
 - The code check reads JavaScript and TypeScript files longer than about 2000 lines again. Everything after line 2000 was counted as one long line, so ordinary files of that size (a large MCP server, a big page component) were taken for minified bundles and skipped without a word; only real long lines mark a bundle now.
 - COD001 and APP014 now report SQL built with request data or a tool argument held in a variable named like a piece of SQL, such as `query`, `count` or `limit`, or in a field such as `item.name`, when it sits where a value goes (`'%{query}%'`, `= {count}`). Those names were taken for table names or SQL written in the code, so the most common search query in AI apps and MCP tools was never reported. In other places (`ORDER BY {order}`) and for arguments of unknown origin nothing changes.
 - The code check no longer hangs on a text built from other built texts (`a2 += a1` many times, then `a3 += a2`): a 2 KB file could stop the audit for hours. Each text is now put back together from at most 400 pieces, and the finding still comes out.
