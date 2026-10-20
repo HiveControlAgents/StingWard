@@ -1256,6 +1256,23 @@ class CodeEngine(unittest.TestCase):
         run(blobs)
         self.assertLess(time.time() - t, 15)
 
+    def test_text_built_from_texts_built_from_texts_stays_fast(self):
+        """a2 += a1 trinta vezes, a3 += a2 trinta vezes: remontar cada pedaço cresce exponencialmente (2 KB travavam a
+        auditoria). O achado continua saindo."""
+        py = ("from flask import request\nimport sqlite3\ncur = sqlite3.connect('x').cursor()\n"
+              "a1 = 'SELECT * FROM t WHERE a = '\n" + "a1 += request.args['a']\n" * 30)
+        js = "const q = req.query.a\nlet a1 = 'SELECT * FROM t WHERE a = '\n" + "a1 += q\n" * 30
+        for k in (2, 3):
+            py += f"a{k} = ''\n" + f"a{k} += a{k - 1}\n" * 30
+            js += f"let a{k} = ''\n" + f"a{k} += a{k - 1}\n" * 30
+        for scan_fn, rel, src in ((code.scan_python, "app.py", py + "cur.execute(a3)\n"),
+                                  (code.scan_js, "server.js", js + "db.query(a3)\n")):
+            with self.subTest(rel=rel):
+                t = time.time()
+                found = scan_fn(rel, src)
+                self.assertLess(time.time() - t, 1)
+                self.assertEqual([(f.rule, f.severity) for f in found], [("COD001", "high")])
+
     def test_line_numbers_follow_comments_and_strings(self):
         src = EXPRESS + ("/* a comment\n   eval(req.body.a)\n*/\n"
                          "const s = `multi\nline ${1}\ntext`\n"

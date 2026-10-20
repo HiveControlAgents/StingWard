@@ -31,6 +31,7 @@ _JS_MAX = 500_000
 _CACHE_KEY = ("__code__",)
 _PER_FILE = 40  # achados por arquivo: um arquivo gerado não enche o relatório
 _STR_PARTS = 40  # pedaços de um texto montado com += que ainda vale a pena remontar
+_PIECES = 400  # partes remontadas por texto, somando os textos montados que ele usa
 
 _SRC = {REQ: ("dados da requisição", "request input"), PARAM: ("um argumento da função", "a function argument")}
 
@@ -805,9 +806,13 @@ class _Py:
 
     # ------------------------------------------------------------------ strings montadas
 
-    def pieces(self, node, env, depth=0):
-        """Partes de uma string montada: [("lit", texto) | ("expr", nó)]."""
-        if depth > 6 or node is None:
+    def pieces(self, node, env, depth=0, room=None):
+        """Partes de uma string montada: [("lit", texto) | ("expr", nó)]. room: quantas partes ainda remontar (texto
+        montado com outros textos montados cresce exponencialmente); o que passa vira ("expr", nó), que mantém a origem."""
+        if room is None:
+            room = [_PIECES]
+        room[0] -= 1
+        if depth > 6 or node is None or room[0] < 0:
             return [("expr", node)]
         if _const_str(node):
             return [("lit", node.value)]
@@ -820,7 +825,7 @@ class _Py:
                     out.append(("expr", v.value))
             return out
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            return self.pieces(node.left, env, depth + 1) + self.pieces(node.right, env, depth + 1)
+            return self.pieces(node.left, env, depth + 1, room) + self.pieces(node.right, env, depth + 1, room)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod) and _const_str(node.left):
             return _percent_pieces(node.left.value, node.right)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format" \
@@ -829,7 +834,7 @@ class _Py:
         if isinstance(node, ast.Name) and node.id in self.strs:
             out = []
             for part in self.strs[node.id]:
-                out += self.pieces(part, env, depth + 1)
+                out += self.pieces(part, env, depth + 1, room)
             return out
         return [("expr", node)]
 
@@ -872,7 +877,7 @@ class _Py:
             if expr is None or self.static(expr):
                 continue
             o = self.origins(expr, env)
-            before = "".join(p for k, p in parts[:i] if k == "lit")
+            before = _lit_before(parts, i)
             if LLM in o:
                 return ("high", LLM)
             if TOOL in o:
@@ -1498,6 +1503,17 @@ _PY_AUTH = re.compile(r"(?i)\bDepends\(\s*\w*(?:user|auth|token|verify|api_?key|
                       r"\bauthenticate|is_authenticated|requires_auth|auth_required|token_required|x-api-key|api_key_header|"
                       r"firebase_admin|verify_id_token|clerk|supabase\.auth|@requires|dependencies\s*=")
 _PY_LIMIT = re.compile(r"(?i)rate.?limit|limiter|slowapi|throttl|ratelimit|quota|RateLimiter")
+
+
+def _lit_before(parts, i, keep=200):
+    """O texto fixo antes da parte i, só o fim (o que _VALUE_POS olha): juntar tudo a cada parte é quadrático."""
+    out, size, j = [], 0, i - 1
+    while j >= 0 and size < keep:
+        if parts[j][0] == "lit":
+            out.append(parts[j][1])
+            size += len(parts[j][1])
+        j -= 1
+    return "".join(reversed(out))[-keep:]
 
 
 def _attr_key(node):
@@ -2482,13 +2498,19 @@ class _Js:
         out.append((start, b))
         return out
 
-    def pieces(self, a, b, depth=0):
+    def pieces(self, a, b, depth=0, room=None):
+        """Como _Py.pieces: [("lit", texto) | ("expr", (a, b))], com o mesmo teto de partes remontadas."""
+        if room is None:
+            room = [_PIECES]
         a, b = self.trim(a, b)
         if a >= b or depth > 6:
             return []
+        room[0] -= 1
+        if room[0] < 0:
+            return [("expr", (a, b))]
         ops = self.split_plus(a, b)
         if len(ops) > 1:
-            return [p for x, y in ops for p in self.pieces(x, y, depth + 1)]
+            return [p for x, y in ops for p in self.pieces(x, y, depth + 1, room)]
         c = self.code[a]
         if c in "'\"" and self.code[b - 1] == c and b - a >= 2 and not self.mask[a + 1:b - 1].strip():
             return [("lit", self.code[a + 1:b - 1])]
@@ -2498,10 +2520,10 @@ class _Js:
         if word in self.strs:
             out = []
             for x, y in self.strs[word]:
-                out += self.pieces(x, y, depth + 1)
+                out += self.pieces(x, y, depth + 1, room)
             return out
         if c == "(" and self.close(a) == b - 1:
-            return self.pieces(a + 1, b - 1, depth + 1)
+            return self.pieces(a + 1, b - 1, depth + 1, room)
         return [("expr", (a, b))]
 
     def template(self, a, b):
@@ -2982,7 +3004,7 @@ class _Js:
             if self.static(x, y):
                 continue
             o = self.origins(x, y)
-            before = "".join(p for k, p in parts[:i] if k == "lit")
+            before = _lit_before(parts, i)
             if LLM in o:
                 return ("high", LLM)
             if TOOL in o:
