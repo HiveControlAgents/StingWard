@@ -71,7 +71,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 <a id="dep001"></a>
 ### DEP001 · Versão de dependência com falhas conhecidas
 
-Consulta no OSV.dev cada pacote e versão dos seus lockfiles (npm, Yarn, pnpm, Bun, `requirements.txt` do pip, Poetry, uv, Pipenv, PDM, módulos Go, Cargo, Bundler, Composer). A severidade vem do alerta (CVSS ou severidade do GitHub); uma CVE no catálogo **KEV da CISA** (explorada agora) sobe para crítica, e um **EPSS** de 50% ou mais (exploração provável nos próximos 30 dias) sobe um nível. Sai um achado por pacote, com a atualização única que resolve todas as falhas conhecidas.
+Consulta no OSV.dev cada pacote e versão dos seus lockfiles (npm, Yarn, pnpm, Bun, `requirements.txt` do pip, Poetry, uv, Pipenv, PDM, módulos Go, Cargo, Bundler, Composer, `packages.lock.json` do NuGet). A severidade vem do alerta (CVSS ou severidade do GitHub); uma CVE no catálogo **KEV da CISA** (explorada agora) sobe para crítica, e um **EPSS** de 50% ou mais (exploração provável nos próximos 30 dias) sobe um nível. Sai um achado por pacote, com a atualização única que resolve todas as falhas conhecidas.
 
 **Como corrigir:** atualize para a versão indicada. Se alguma falha ainda não tem correção, o achado avisa: pense em trocar de pacote.
 **Padrões:** `CWE-1395`

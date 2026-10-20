@@ -13,7 +13,7 @@ from .vulndb import _vkey
 LOCKFILES = {
     "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock",
     "requirements.txt", "poetry.lock", "uv.lock", "Pipfile.lock", "pdm.lock",
-    "go.mod", "Cargo.lock", "Gemfile.lock", "composer.lock",
+    "go.mod", "Cargo.lock", "Gemfile.lock", "composer.lock", "packages.lock.json",
 }
 
 # nome==versão exata; "3.2.*" e afins não passam (é faixa, não versão)
@@ -291,6 +291,19 @@ def _composer_lock(text):
             yield "Packagist", p.get("name"), str(p.get("version", "")).lstrip("v"), find(f'"name": "{p.get("name")}"')
 
 
+def _nuget_lock(text):
+    """packages.lock.json do NuGet: um bloco por framework alvo (net8.0, net8.0/linux-x64). "Project" é projeto
+    da própria solução, não pacote do nuget.org."""
+    d = json.loads(text)
+    find = _line_finder(text)
+    for deps in (d.get("dependencies") or {}).values():
+        if not isinstance(deps, dict):
+            continue
+        for name, info in deps.items():
+            if isinstance(info, dict) and info.get("type") != "Project" and isinstance(info.get("resolved"), str):
+                yield "NuGet", name, info["resolved"], find(f'"{name}"')
+
+
 _PARSERS = {
     "package-lock.json": _npm_lock,
     "npm-shrinkwrap.json": _npm_lock,
@@ -308,6 +321,7 @@ _PARSERS = {
     "Cargo.lock": _toml_packages("crates.io", lambda pkg: not pkg.get("source") or pkg["source"].startswith("git+")),
     "Gemfile.lock": _gemfile_lock,
     "composer.lock": _composer_lock,
+    "packages.lock.json": _nuget_lock,
 }
 
 
