@@ -26,7 +26,7 @@ To build the website: `python site/build.py _site`, then open `_site/index.html`
 |---|---|
 | `stingward/cli.py` | Command line, exit codes, downloading a skill from GitHub |
 | `stingward/scan.py` | File listing, running the checks, `.stingwardignore`, context-aware severity |
-| `stingward/checks/` | `deps.py`, `secrets.py`, `app.py`, `agents.py` (agents, MCP and skills) |
+| `stingward/checks/` | `deps.py`, `secrets.py`, `app.py`, `code.py` (flaws in Python and JavaScript code, and in code that calls a model), `agents.py` (agents, MCP and skills) |
 | `stingward/rules.py` | Every rule's title, why and fix, in Portuguese and English, plus the standard IDs |
 | `stingward/report.py` | Text, Markdown, JSON and SARIF output, grade and badge |
 | `stingward/lockfiles.py`, `vulndb.py`, `net.py` | Lockfile parsers, OSV/KEV/EPSS/NVD clients, HTTP with cache and retries |

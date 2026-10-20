@@ -1,6 +1,6 @@
 ---
 name: stingward
-description: Security check for projects built with AI and for skills, plugins and MCP servers before installing them. Finds vulnerable or malicious dependencies (OSV.dev, NVD, CISA KEV, EPSS), leaked secrets, AI-app mistakes (keys exposed in the frontend, open CORS, Supabase without RLS, open Firebase rules) and risky agent setups (broad permissions, unpinned MCP servers, hidden instructions in skills). Use when the user asks whether their project is secure, before deploying or publishing, or before installing a skill, plugin or MCP server.
+description: Security check for projects built with AI and for skills, plugins and MCP servers before installing them. Finds vulnerable or malicious dependencies (OSV.dev, NVD, CISA KEV, EPSS), leaked secrets, AI-app mistakes (keys exposed in the frontend, open CORS, Supabase without RLS, open Firebase rules), flaws in the app's code (SQL and shell injection, XSS, SSRF, path traversal, model output run as code, AI routes with no login or rate limit) and risky agent setups (broad permissions, unpinned MCP servers, hidden instructions in skills). Use when the user asks whether their project is secure, before deploying or publishing, or before installing a skill, plugin or MCP server.
 allowed-tools: Read, Grep, Glob, Bash(python3 *scripts/run.py:*), Bash(stingward:*)
 ---
 
@@ -31,7 +31,7 @@ Use the launcher next to this file (it falls back to a `stingward` install on PA
 
 ## Fixing
 
-Offer to fix findings in the user's own project, one group at a time, and only after they agree: upgrade the package to the version in the fix text, move secrets to environment variables and `.gitignore`, add `enable row level security` plus policies, narrow CORS to their domains, pin MCP server versions. Re-run the check afterwards to confirm the finding is gone. Do not touch third-party code or repositories, and do not open issues or contact anyone on the user's behalf.
+Offer to fix findings in the user's own project, one group at a time, and only after they agree: upgrade the package to the version in the fix text, move secrets to environment variables and `.gitignore`, add `enable row level security` plus policies, narrow CORS to their domains, pass SQL values as parameters, pin MCP server versions. Re-run the check afterwards to confirm the finding is gone. Do not touch third-party code or repositories, and do not open issues or contact anyone on the user's behalf.
 
 ## False positives
 

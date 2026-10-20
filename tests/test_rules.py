@@ -1203,8 +1203,8 @@ class Catalog(unittest.TestCase):
     def test_every_rule_has_texts_and_standards(self):
         for rule, spec in RULES.items():
             with self.subTest(rule=rule):
-                self.assertRegex(rule, r"^(DEP|SEC|APP|AGT|SKL)\d{3}$")
-                self.assertIn(spec["group"], ("deps", "secrets", "app", "agents", "skills"))
+                self.assertRegex(rule, r"^(DEP|SEC|APP|COD|AGT|SKL)\d{3}$")
+                self.assertIn(spec["group"], ("deps", "secrets", "app", "code", "agents", "skills"))
                 self.assertTrue(STANDARDS.get(rule))
                 for lang in ("pt", "en"):
                     out = texts(rule, lang, {})
@@ -1213,7 +1213,8 @@ class Catalog(unittest.TestCase):
         self.assertEqual(set(STANDARDS), set(RULES))
 
     def test_every_rule_has_a_test_here(self):
-        names = " ".join(n for cls in (SecretRules, AppRules, AgentRules, SkillRules, DepRules, Engine)
+        from tests.test_code import CodeRules  # aqui dentro: no topo, o unittest rodaria CodeRules duas vezes
+        names = " ".join(n for cls in (SecretRules, AppRules, AgentRules, SkillRules, DepRules, Engine, CodeRules)
                          for n in dir(cls) if n.startswith("test_"))
         missing = [r for r in RULES if r.lower() not in names]
         self.assertEqual(missing, [])

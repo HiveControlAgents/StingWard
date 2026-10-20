@@ -30,6 +30,22 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [APP006](#app006) | Open Firebase rules | 🟠 |
 | [APP007](#app007) | Debug mode enabled | 🟡 |
 | [APP008](#app008) | JWT accepted without verifying the signature | 🟠 |
+| [APP009](#app009) | Model output reaches code, a shell, SQL or HTML | 🔴 |
+| [APP010](#app010) | Request input goes into the system prompt | 🟡 |
+| [APP011](#app011) | AI endpoint with no login and no rate limit | 🟡 |
+| [APP012](#app012) | Loading the model can run code | 🟠 |
+| [APP013](#app013) | Agent can run whatever the model writes | 🟠 |
+| [COD001](#cod001) | SQL query built from outside input | 🟠 |
+| [COD002](#cod002) | Shell command built from outside input | 🔴 |
+| [COD003](#cod003) | Code built from outside input is executed | 🔴 |
+| [COD004](#cod004) | Data loaded with pickle or unsafe YAML | 🟠 |
+| [COD005](#cod005) | HTML inserted without sanitizing | 🟡 |
+| [COD006](#cod006) | TLS certificate check turned off | 🟡 |
+| [COD007](#cod007) | File path built from request input | 🟠 |
+| [COD008](#cod008) | Server fetches a URL taken from the request | 🟠 |
+| [COD009](#cod009) | Redirect to an address taken from the request | 🟡 |
+| [COD010](#cod010) | Predictable random number used for a secret | 🔵 |
+| [COD011](#cod011) | Password hashed with a fast hash | 🟡 |
 | [AGT001](#agt001) | Agent permission too broad | 🟠 |
 | [AGT002](#agt002) | Hook downloads and runs remote code | 🟠 |
 | [AGT003](#agt003) | MCP server without a pinned version | 🟡 |
@@ -173,6 +189,138 @@ Firestore or Storage rules with `allow read, write: if true` (or the test-mode d
 
 **Fix:** verify the signature with the right key and a fixed algorithm list.
 **Standards:** `CWE-347`
+
+<a id="app009"></a>
+### APP009 · Model output reaches code, a shell, SQL or HTML
+
+The answer of an LLM call (OpenAI, Anthropic, Gemini, LangChain, the AI SDK...) or the arguments of an MCP or AI SDK tool reach `eval`/`exec`, a shell command, a template, a SQL query, or `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. A prompt injection in anything the model read turns into code on your server or scripts in your users' browsers. Critical when the answer is executed, high for tool arguments and SQL, medium for HTML. `JSON.parse`, `json.loads` and DOMPurify break the chain.
+
+**Fix:** treat model output like user input: ask for JSON and validate it, map it to a fixed list of actions, pass shell arguments as a list, run SQL with a read-only user, and clean HTML with DOMPurify.
+**Standards:** `CWE-1426` · `LLM05:2026`
+
+<a id="app010"></a>
+### APP010 · Request input goes into the system prompt
+
+A request value written in the middle of the instructions: `{"role": "system", "content": f"You support {body['company']}..."}`, `` system: `... ${body.name}` ``, `SystemMessage(...)`, `system_instruction=`. Whoever sends it can rewrite your rules. User text in a user message is fine, and so is passing a whole prompt the client chose (a playground): only a value mixed into instructions written in the code is reported.
+
+**Fix:** keep the system prompt fixed and send the user's text as a user message. If a setting must change the prompt, pick the wording from a fixed list.
+**Standards:** `CWE-1427` · `LLM01:2026`
+
+<a id="app011"></a>
+### APP011 · AI endpoint with no login and no rate limit
+
+A server route that calls a model (Next.js `app/api/**/route.ts`, a server action, an Express or Hono handler, a FastAPI or Flask route) with no sign of login and no rate limit in the file, in `middleware.ts`, in a global `app.use(...)` or in router dependencies. Anyone can call it in a loop on your account. Not reported in skills, tests and examples.
+
+**Fix:** require a signed-in user, rate limit per user or IP (`@upstash/ratelimit`, `express-rate-limit`, `slowapi`), set `max_tokens`, and add a spending limit in the provider's dashboard.
+**Standards:** `CWE-306` · `CWE-770` · `LLM10:2026`
+
+<a id="app012"></a>
+### APP012 · Loading the model can run code
+
+`from_pretrained(..., trust_remote_code=True)` runs Python from the model's repository; `FAISS.load_local(..., allow_dangerous_deserialization=True)` and `torch.load` without `weights_only=True` unpickle the file. High when the file comes from the request, medium when the unsafe option is written out, low for a plain `torch.load` (safe by default since PyTorch 2.6).
+
+**Fix:** pin `revision=` to a commit you reviewed, pass `weights_only=True` or use safetensors, and only load indexes you created.
+**Standards:** `CWE-502` · `CWE-829` · `LLM03:2026`
+
+<a id="app013"></a>
+### APP013 · Agent can run whatever the model writes
+
+LangChain `PythonREPLTool`, `ShellTool` and `load_tools(["python_repl"])`, `allow_dangerous_code=True`, AutoGen `use_docker: False`, Open Interpreter `auto_run = True` and similar: one hidden instruction in a document, page or message becomes code running on your machine. Medium for SQL agents (`create_sql_agent`, `SQLDatabaseChain`), which run the model's SQL on your database, and for `allow_dangerous_requests=True`. Tool classes count only when they come from the agent library.
+
+**Fix:** remove the tool, or run it in a sandbox (a container with no secrets and no network) and confirm each run. Give SQL agents a read-only database user.
+**Standards:** `CWE-94` · `LLM06:2026` · `ASI05`
+
+## Code
+
+Python files are read with `ast` and JavaScript/TypeScript (also the `<script>` of `.vue`, `.svelte` and `.astro`) with tight patterns, following where each value came from inside the function: the request (Flask, FastAPI, Django, Express, Next.js, Hono...), a function argument, or another server. A call to your own helper (`get_file_by_id(id)`) is not followed, because it returns something else, and neither is a parameter the framework already turned into a number, boolean or UUID (`item_id: int`, `<int:id>`). Minified bundles are skipped, and tests, examples and fixtures drop to low.
+
+<a id="cod001"></a>
+### COD001 · SQL query built from outside input
+
+An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, `read_sql`, `pool.query`, `knex.raw`, `$queryRawUnsafe` and similar. High with request data, medium with a function argument placed where a value goes (`= '{name}'`, `LIKE`, `IN (...)`). Table names from constants, `?`/`%s`/`$1` parameters, ORM builders and tagged templates (`` sql`...` ``, `` $queryRaw`...` ``) are not reported.
+
+**Fix:** pass values as parameters: `cursor.execute("... WHERE id = %s", (id,))`, `$1` in Postgres, `?` in SQLite, `` sql`...` `` or `` $queryRaw`...` `` in Prisma.
+**Standards:** `CWE-89`
+
+<a id="cod002"></a>
+### COD002 · Shell command built from outside input
+
+`os.system`, `subprocess.run(..., shell=True)`, `exec`/`execSync` from `child_process` and similar with request data in the command (critical), or a function argument mixed into the command text in a web app (medium). An argument list with no shell (`subprocess.run(["ping", host])`, `execFile`) and command-line tools (click, typer) are not reported.
+
+**Fix:** run the program with an argument list and no shell, and accept only values from a known list.
+**Standards:** `CWE-78`
+
+<a id="cod003"></a>
+### COD003 · Code built from outside input is executed
+
+`eval`, `exec`, `new Function`, `vm.runIn*Context`, `setTimeout` with a string, or `render_template_string` built from request data. Anyone can run code on your server. `ast.literal_eval`, `JSON.parse` and constant code are not reported.
+
+**Fix:** do not run text as code. Parse the data you expect (`json.loads`, `JSON.parse`, `ast.literal_eval`) or map allowed values to functions.
+**Standards:** `CWE-94` · `CWE-95`
+
+<a id="cod004"></a>
+### COD004 · Data loaded with pickle or unsafe YAML
+
+`pickle`, `dill`, `joblib`, `marshal` and `yaml.load` with the full or unsafe loader. High for request data, medium for another server's response or an explicit unsafe loader, low for `yaml.load` of a local file with no `Loader`. `yaml.safe_load`, `SafeLoader` and ruamel's `YAML()` are not reported, and neither is pickle of a local file.
+
+**Fix:** use `yaml.safe_load` or JSON for outside data; only unpickle files you wrote yourself, in a place nobody else can write to.
+**Standards:** `CWE-502`
+
+<a id="cod005"></a>
+### COD005 · HTML inserted without sanitizing
+
+`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, `{@html}`, `set:html`, `Markup()` or an HTML string returned by a Flask route, with data from the URL or the request (medium). In JavaScript, HTML built from other variables is low. `DOMPurify.sanitize`, `textContent`, plain JSX and constant HTML are not reported.
+
+**Fix:** show it as text (`textContent`, or the variable straight in JSX) or clean it first with `DOMPurify.sanitize` (sanitize-html or bleach on the server).
+**Standards:** `CWE-79`
+
+<a id="cod006"></a>
+### COD006 · TLS certificate check turned off
+
+`verify=False` in requests/httpx, `session.verify = False`, `ssl._create_unverified_context`, `CERT_NONE`, `rejectUnauthorized: false`, and `NODE_TLS_REJECT_UNAUTHORIZED=0` in code, `.env` files, Dockerfiles or YAML. Anyone on the network path can pose as the server.
+
+**Fix:** remove the switch. For a private CA, point to its certificate (`verify="/path/ca.pem"` in Python, `ca:` in Node).
+**Standards:** `CWE-295`
+
+<a id="cod007"></a>
+### COD007 · File path built from request input
+
+`open`, `send_file`, `FileResponse`, `Path(...).read_text`, `fs.readFile`, `res.sendFile` and similar with a request value in the path. `secure_filename`, `basename`, a `resolve()` plus `is_relative_to`/`startsWith` check, `sendFile(..., { root })`, the server-chosen path of an upload (`req.file.path`), a route segment that cannot hold `/` (`/files/{id}`) and admin-only routes are not reported.
+
+**Fix:** keep only the file name (`os.path.basename`, `secure_filename`, `path.basename`), or resolve the path and check that it stays inside the folder you expect.
+**Standards:** `CWE-22`
+
+<a id="cod008"></a>
+### COD008 · Server fetches a URL taken from the request
+
+`requests.get`, `httpx`, `urlopen`, `fetch`, `axios` and similar on the server when the request decides where the URL points (the whole URL or its start). A fixed host with a request value in the path, a check of the host (`urlparse(...).hostname`, an allow list) and code that runs in the browser are not reported.
+
+**Fix:** allow only the domains you need, block private and local addresses, and do not follow redirects without checking them.
+**Standards:** `CWE-918`
+
+<a id="cod009"></a>
+### COD009 · Redirect to an address taken from the request
+
+`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` with a URL parameter, and similar. A path that starts with a fixed `/...`, `url_for` and a check of the host are not reported.
+
+**Fix:** redirect only to relative paths that start with a single `/` or to domains from a known list.
+**Standards:** `CWE-601`
+
+<a id="cod010"></a>
+### COD010 · Predictable random number used for a secret
+
+`Math.random()` or Python's `random` assigned to (or returned by) something named like a secret: `reset_token`, `apiKey`, `password`, `otp`, `verification_code`. Names like `token_count`, `delay` or `session_id` are not reported, and neither are tests.
+
+**Fix:** use `crypto.randomUUID()` or `crypto.getRandomValues` in JavaScript, and the `secrets` module in Python (`secrets.token_urlsafe`).
+**Standards:** `CWE-338`
+
+<a id="cod011"></a>
+### COD011 · Password hashed with a fast hash
+
+MD5, SHA-1 or SHA-2 (`hashlib.sha256(password...)`, `createHash("sha256").update(password)`, CryptoJS) applied to a variable named like a password. If the database leaks, the passwords fall to brute force. Hashes of files or request bodies are not reported.
+
+**Fix:** use a function made for passwords: bcrypt, scrypt or Argon2 (argon2-cffi and bcrypt in Python, bcrypt in Node), or leave login to an auth provider.
+**Standards:** `CWE-916`
 
 ## Agents and MCP
 
