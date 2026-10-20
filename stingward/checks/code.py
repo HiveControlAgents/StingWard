@@ -3257,7 +3257,8 @@ class _Js:
             return
         s = self.code[a:b]
         parts = self.pieces(a, b)
-        if not parts or all(k == "lit" for k, _ in parts) or _JS_SANITIZE.search(s):
+        # Só no código: class="icon" e style="..." no HTML fixo não limpam o valor que entra.
+        if not parts or all(k == "lit" for k, _ in parts) or _JS_SANITIZE.search(self.mask[a:b]):
             return
         o = set()
         for k, p in parts:
@@ -3271,8 +3272,9 @@ class _Js:
             self.out.tool("html", True, ln)
         elif REQ in o:
             self.out.add("COD005", "medium", ln, {"sink": sink})
-        elif built and sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
-            self.out.add("COD005", "low", ln, {"sink": sink})
+        elif built and sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write") and \
+                not _JS_SANITIZE.search(s):
+            self.out.add("COD005", "low", ln, {"sink": sink})  # <svg ...>${caminho}</svg>: ícone montado no código
 
     def html(self, m):
         g = m.group(0)
