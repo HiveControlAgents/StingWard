@@ -752,8 +752,15 @@ def _findings(ctx, entries, numbers, t, audit=None):
 <h2><span class="sec-n">3</span>{_html.escape(t["s_findings"])}</h2>
 <p class="calm">{_html.escape(t["no_findings"])}</p>
 </section>"""
+    # Primeiro a área do achado mais grave que ainda vale (o corrigido durante a auditoria não puxa a área), depois a
+    # que tem mais desses itens; no empate, a ordem fixa de GROUPS.
     present = {e.group for e in entries}
-    order = [g for g in GROUPS if g in present] + sorted(present - set(GROUPS))
+    fixed = [g for g in GROUPS if g in present] + sorted(present - set(GROUPS))
+
+    def weight(g):
+        standing = [e for e in entries if e.group == g and e.status not in report.NOT_COUNTED]
+        return (-max((SEV_RANK[e.severity] for e in standing), default=-1), -len(standing), fixed.index(g))
+    order = sorted(fixed, key=weight)
     parts = []
     for g in order:
         mine = [e for e in entries if e.group == g]
