@@ -147,13 +147,13 @@ class MoreTokenFormats(unittest.TestCase):
 
 
 class PgpPrivateKey(unittest.TestCase):
-    BODY = "lQOYBGZ" + "Demo7Fake9Key0Not4Real" + "AQgA0x7Kq2"
+    BODY = "lQOYBGZ" + "m3Qx8Tv2Rk9Wp4Ls7Hd1Jf" + "AQgA0x7Kq2"  # sem "fake" ou "demo": corpo de exemplo não conta como chave
     KIND = "PGP " + "PRIVATE KEY BLOCK"  # em pedaços: o próprio repositório passa na auditoria
     BLOCK = f"-----BEGIN {KIND}-----\n\n{BODY}\n=AbCd\n-----END {KIND}-----\n"
 
     def test_masked(self):
         out = redact.sanitize_text("key:\n" + self.BLOCK + "after")
-        self.assertNotIn("Demo7Fake9", out)
+        self.assertNotIn("m3Qx8Tv2Rk", out)
         self.assertEqual(out, "key:\n[REDACTED:private_key]\nafter")
 
     def test_found_in_a_project(self):
