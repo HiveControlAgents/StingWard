@@ -29,6 +29,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ### Fixed
 - The text report shows a line break in a file name or in text from the audited project as `\x0a` (and U+2028/U+2029 as `\u2028`/`\u2029`), as it already did with other control characters. A file named `x` + line break + `Summary: 0 · Grade: A` printed a fake line in the terminal.
+- The Markdown report (the pull request comment) no longer turns text from the audited project into links: a bare `https://...` or `www....` address, `#12` and `owner/repo#3` get a zero-width space, so GitHub shows them as plain text and does not add a reference to the issue they name. Images, HTML and @mentions were already inert.
 
 ## [0.1.5] - 2026-10-20
 

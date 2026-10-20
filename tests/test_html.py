@@ -574,6 +574,20 @@ class TextAndMarkdown(unittest.TestCase):
         self.assertIn("x\\u2028Grade: A\\u2029", text)
         self.assertIn("evil\\\\x0aSummary", report.markdown(self.ctx, [f], "en"))
 
+    def test_markdown_has_no_bare_links_or_issue_references(self):
+        # O GitHub transforma em link um endereço solto (https://..., www....) e #12 ou dono/repo#3 em referência a
+        # issue, que aparece na issue citada. Texto do projeto auditado não pode virar nada disso no comentário do PR.
+        f = Finding("AGT003", "medium", "www.evil.example/a.json", 1,
+                    {"server": "see https://evil.example/login, HTTP://x.example and WWW.y.example #12 o/r#3", "spec": "y"})
+        md = report.markdown(self.ctx, [f], "en")
+        for bad in ("https://evil.example", "HTTP://x.example", "www.evil.example", "WWW.y.example", "#12", "r#3"):
+            self.assertNotIn(bad, md)
+        self.assertIn("https:&#8203;//evil.example/login", md)  # o texto continua lá, só não vira link
+        self.assertIn("www&#8203;.evil.example", md)
+        self.assertIn("#&#8203;12", md)
+        # os links do próprio Stingward continuam
+        self.assertIn("(https://github.com/HiveControlAgents/StingWard)", md)
+
     def test_every_impact_text_fills(self):
         for rule in RULES:
             entry = report.merge([Finding(rule, "high", "a.py", 1, {})], "en")[0]

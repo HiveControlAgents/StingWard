@@ -537,12 +537,15 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
 
 
 _MD = {"\\": "\\\\", "|": "\\|", "<": "&lt;", ">": "&gt;", "&": "&amp;", "[": "\\[", "]": "\\]", "`": "\\`",
-       "*": "\\*", "_": "\\_", "!": "\\!", "@": "@&#8203;"}
+       "*": "\\*", "_": "\\_", "!": "\\!", "@": "@&#8203;", "\u200b": "&#8203;"}
+# O GitHub também faz link de endereço solto (https://..., www....) e de #12 ou dono/repo#3, que ainda aparece na
+# issue citada. Um espaço de largura zero depois de ":", "www" e "#" desfaz os três sem mudar o que se lê.
+_AUTOLINK = re.compile(r"(?i)(?<=:)(?=//)|(?<=www)(?=\.)|(?<=#)(?=\d)")
 
 
 def _esc(s):
-    """Texto do código auditado vira texto puro no comentário do PR: sem imagem, link, HTML ou @menção."""
-    return "".join(_MD.get(ch, ch) for ch in _clean(s))
+    """Texto do código auditado vira texto puro no comentário do PR: sem imagem, link, HTML, @menção ou #referência."""
+    return "".join(_MD.get(ch, ch) for ch in _AUTOLINK.sub("\u200b", _clean(s)))
 
 
 # --------------------------------------------------------------------------- JSON e SARIF: um registro por achado
