@@ -450,5 +450,22 @@ class DeepFolders(unittest.TestCase):
         self.assertEqual(scan.list_files(tmp.name), ["a.txt", "b/z.txt", "b/a/y.txt", "c/d/w.txt"])
 
 
+
+class OutputFiles(unittest.TestCase):
+    def test_output_file_that_cannot_be_written_is_a_clear_error(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        missing = os.path.join(tmp.name, "no-such-dir", "out")
+        for flag in ("--json", "--sarif", "--markdown", "--html", "--review-template"):
+            with self.subTest(flag=flag):
+                code, _, err = run_main([tmp.name, "--offline", "--lang", "en", flag, missing])
+                self.assertEqual(code, 2, err)
+                self.assertIn(f"could not write {missing}", err)
+                self.assertNotIn("Traceback", err)
+        code, _, err = run_main([tmp.name, "--offline", "--json", tmp.name], env={"STINGWARD_LANG": "pt"})
+        self.assertEqual(code, 2)
+        self.assertIn(f"não consegui gravar {tmp.name}", err)
+
+
 if __name__ == "__main__":
     unittest.main()
