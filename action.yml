@@ -1,5 +1,5 @@
 name: stingward security check
-description: Vulnerable dependencies, leaked secrets, AI-app mistakes and risky agent configs, with a PR comment and SARIF for code scanning.
+description: Finds vulnerable dependencies, leaked secrets, AI-app mistakes and risky agent configs. PR comment and SARIF included.
 author: Isaque Moutta
 branding:
   icon: shield

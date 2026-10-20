@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -108,6 +109,21 @@ class CommandLineAndActionDocs(unittest.TestCase):
         for doc in ("README.md", "README.pt-BR.md", "README.es.md"):
             table = set(re.findall(r"^\| `([a-z-]+)` \| `[^`]*` \|", _read(doc), re.M))
             self.assertEqual(table, inputs, doc)
+
+    def test_action_meets_the_marketplace_rules(self):
+        action = _read("action.yml")
+        description = re.search(r"^description: (.+)$", action, re.M).group(1)
+        self.assertLess(len(description), 125, "GitHub Marketplace rejects longer descriptions")
+        self.assertRegex(action, r"\nbranding:\n  icon: [a-z-]+\n  color: [a-z]+\n")
+
+    @unittest.skipUnless(shutil.which("awk"), "the release job runs on Linux, where awk is always present")
+    def test_release_notes_come_from_the_changelog(self):
+        program = re.search(r"""awk -v h="## \[\$\{V#v\}\]" '([^']+)' CHANGELOG\.md""",
+                            _read(".github/workflows/release.yml")).group(1)
+        notes = subprocess.run(["awk", "-v", f"h=## [{__version__}]", program, os.path.join(ROOT, "CHANGELOG.md")],
+                               capture_output=True, text=True, check=True).stdout
+        self.assertIn("### ", notes)
+        self.assertNotIn("## [", notes)
 
     def test_versions_match_everywhere(self):
         self.assertIn(f'version = "{__version__}"', _read("pyproject.toml"))
