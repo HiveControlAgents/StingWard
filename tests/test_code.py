@@ -265,6 +265,21 @@ class CodeRules(Checks):
         f = run({"app.py": src})
         self.assertEqual(got(f), [("COD003", "app.py", 5, "critical"), ("COD003", "app.py", 8, "critical")])
 
+    def test_cod003_python_repr_quotes_the_value(self):
+        """{v!r} e repr(v) escrevem o valor como um literal do Python: exec(f"x = {v!r}") e python -c com ele não rodam o
+        texto. Sem o !r o texto vira código; num template (Jinja) o repr não protege."""
+        src = FLASK + ("import subprocess, sys\n"
+                       "@app.post('/a')\ndef a():\n"
+                       "    v = request.json['v']\n"
+                       "    exec(f'x = {v!r}')\n"
+                       "    exec('x = ' + repr(v))\n"
+                       "    subprocess.run([sys.executable, '-c', f'print({v!r})'])\n"
+                       "    exec(f'x = {v}')\n"
+                       "    exec(f'x = {v!r}; y = {v}')\n"
+                       "    return render_template_string(f'<p>{v!r}</p>')\n")
+        self.check({"app.py": src}, [("COD003", "app.py", 10, "critical"), ("COD003", "app.py", 11, "critical"),
+                                     ("COD003", "app.py", 12, "critical")])
+
     def test_cod003_js_eval_and_new_function(self):
         src = EXPRESS + ("app.post('/run', (req, res) => {\n"
                          "  const out = eval(req.body.code)\n"

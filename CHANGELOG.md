@@ -47,6 +47,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - COD004 no longer reports `yaml.load(text, Loader=StrictLoader)` when `StrictLoader` is a class in the same file built on `yaml.SafeLoader`, `CSafeLoader` or `BaseLoader`, also through more than one step. A loader built on `yaml.Loader` is still reported.
 - COD003, APP009 and APP014 now report code handed to an interpreter on its command line, such as `subprocess.run([sys.executable, "-c", code])`, `["node", "-e", code]` or `execFile("python3", ["-c", code])`, the usual body of a "run Python" tool. It runs the text as code, like `exec(code)`, but the command check only looked at the program name. A script file of the project with the value as an argument stays silent.
 - COD001 now reports SQL built from a variable such as `remarks` or `bookmarks`. Any name containing `marks` was taken for a list of `?` placeholders; now only `marks`, `qmarks`, `question_marks` and `questionMarks` are.
+- COD003, APP009 and APP014 no longer report Python code that writes the outside value with `{value!r}` or `repr(value)`, such as `exec(f"x = {value!r}")` or `[sys.executable, "-c", f"open({url!r})"]`: the value becomes a quoted Python literal, not code. Templates are still reported, since the template engine reads inside the quotes.
 
 ## [0.1.5] - 2026-10-20
 
