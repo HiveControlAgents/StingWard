@@ -288,6 +288,20 @@ class CodeRules(Checks):
         ruamel = "from ruamel.yaml import YAML\n\ndef read(path):\n    yaml = YAML()\n    return yaml.load(open(path))\n"
         self.silent({"conf.py": ruamel})
 
+    def test_cod004_safe_loader_subclass_in_the_file(self):
+        """class StrictLoader(yaml.SafeLoader): o loader do próprio arquivo herda o modo seguro (também em dois passos).
+        Herdar de yaml.Loader continua perigoso."""
+        src = ("import yaml\nfrom yaml import CSafeLoader\n"
+               "class StrictLoader(yaml.SafeLoader):\n    pass\n"
+               "class Strict2Loader(StrictLoader):\n    pass\n"
+               "class FastLoader(CSafeLoader):\n    pass\n"
+               "class DangerLoader(yaml.Loader):\n    pass\n"
+               "def a(text):\n    return yaml.load(text, Loader=StrictLoader)\n"
+               "def b(text):\n    return yaml.load(text, Strict2Loader)\n"
+               "def c(text):\n    return yaml.load(text, Loader=FastLoader)\n"
+               "def d(text):\n    return yaml.load(text, Loader=DangerLoader)\n")
+        self.check({"conf.py": src}, [("COD004", "conf.py", 18, "medium")])
+
     # ------------------------------------------------------------------ COD005 XSS
 
     def test_cod005_js_request_input_in_html(self):
