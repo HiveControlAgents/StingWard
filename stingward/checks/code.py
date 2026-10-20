@@ -2286,6 +2286,13 @@ _JS_REQ = re.compile(
 # A busca de um endereço guardada com outro nome: new URL(req.url).searchParams, request.nextUrl.searchParams.
 _JS_PARAMS_END = re.compile(r"\.\s*searchParams\Z")
 _JS_REQ_URL = re.compile(r"\b(?:req|request)\s*\.\s*(?:url|nextUrl)\b|\bnextUrl\b")
+# if (!LISTA.includes(x)) return, if (!SET.has(x)) throw, if (!/^...$/.test(x)) { return ... }.
+_JS_GUARD_IF = re.compile(r"\bif\s*\(\s*!\s*(?:([\w$.]+|\[[^\[\]\n]{0,500}\])\s*\.\s*(?:includes|has)|"
+                          r"(/[^/\n]{0,300}/[a-z]*|[\w$]+)\s*\.\s*test)\s*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\)\s*\{?\s*"
+                          r"(?:return|throw)\b")
+# const sort = ALLOWED.includes(x) ? x : 'name' (ou SET.has(x) ? x : ...): o valor é um dos permitidos.
+_JS_ALLOW_TERNARY = re.compile(r"\s*(?:[\w$.]+|\[[^\[\]\n]{0,500}\])\s*\.\s*(?:includes|has)\s*\(\s*([^()\n]{1,200}?)\s*\)"
+                               r"\s*\?\s*([^:\n]{1,200}?)\s*:")
 _JS_MCP_ARGS = re.compile(r"\brequest\s*\.\s*params\b")
 # Começos possíveis de _JS_REQ e _JS_LLM, com texto fixo na frente (rápidas); a regex completa confere em volta.
 _JS_REQ_HINT = re.compile(r"\.\s*(?:query|body|params|cookies|headers|files?|fields|json|formData|text|param|header|parseBody|"
@@ -2973,6 +2980,8 @@ class _Js:
         if not (events or tpl or tool and self.calls_imported()):
             return  # sem sink no arquivo; com import, a chamada pode levar o argumento da ferramenta a outro arquivo
         events += self.flow_events()
+        if "if" in mask and ("includes" in mask or "has" in mask or "test" in mask):
+            events += self.guard_events()
         if tool:
             events += self.call_events()
         events.sort(key=lambda e: (e[0], e[1]))
@@ -2984,6 +2993,8 @@ class _Js:
             for _, _, kind, data in events:
                 if kind == "decl":
                     self.declare(*data)
+                elif kind == "guard":
+                    self.guard(*data)
                 elif kind == "params":
                     self.bind_params(*data)
                 else:
@@ -3080,6 +3091,26 @@ class _Js:
         if any(t in code for t in ("createHash", "md5", "sha1", "sha256", "sha512", "CryptoJS")):
             self.hashing()
         self.unbounded()
+
+    def guard_events(self):
+        """if (!ALLOWED.includes(x)) return, if (!/^[a-z_]+$/.test(x)) throw: o nome conferido, na posição do if."""
+        return [(m.start(), 0, "guard", (m.group(3), m.group(1) and m.span(1), m.group(2) and m.span(2)))
+                for m in _JS_GUARD_IF.finditer(self.mask)]
+
+    def guard(self, name, allow, rx):
+        """Depois do if, o nome é um dos permitidos. A lista não pode vir de quem chama; a regex (literal ou const
+        declarada antes) só vale ancorada nas duas pontas e sem a flag m."""
+        if allow and self.origins(*allow) & (REQ_ANY | MODEL | {TOOL}):
+            return
+        if rx:
+            word = self.code[rx[0]:rx[1]].strip()
+            span = rx if word[:1] == "/" else self.vals.get(word)
+            lit = self.code[span[0]:span[1]].strip() if span else ""
+            j = lit.rfind("/")
+            if not (lit[:1] == "/" and j > 0 and "m" not in lit[j + 1:] and _anchored(lit[1:j])):
+                return
+        for d in (self.env, self.strs, self.vals):
+            d.pop(name, None)
 
     def flow_events(self):
         """Declarações, atribuições e parâmetros de função, na ordem do arquivo."""
@@ -3249,6 +3280,9 @@ class _Js:
     def declare(self, names, start, op):
         end = self.expr_end(start)
         o = self.origins(start, end)
+        t = _JS_ALLOW_TERNARY.match(self.mask, start, end)
+        if t and re.sub(r"\s", "", t.group(1)) == re.sub(r"\s", "", t.group(2)):
+            o = self.origins(t.end(), end)  # ALLOWED.includes(x) ? x : 'name': só o valor padrão pode vir de fora
         value = self.mask[start:end].strip()
         builds = value[:1] in "'\"`" or ("+" in value and re.search(r"[`'\"]", self.mask[start:end]))
         m = re.match(r"(?:util\s*\.\s*)?promisify\s*\(\s*(?:([\w$]+)\s*\.\s*)?(exec|execFile)\s*\)", value)

@@ -228,6 +228,37 @@ class CodeRules(Checks):
                         "  res.json({})\n})\n")
         self.check({"app.py": py, "server.js": js}, [("COD001", "app.py", 12, "high"), ("COD001", "server.js", 8, "high")])
 
+    def test_cod001_js_allowlists_before_the_query(self):
+        """ALLOWED.includes(x) ? x : 'name', if (!LISTA.includes(x)) return, if (!/^...$/.test(x)) throw: depois disso o
+        valor é um dos permitidos. Um if que não sai, uma regex sem âncora ou o outro lado do ? vindo de fora não protegem."""
+        src = EXPRESS + ("const db = require('./db')\nconst ALLOWED = ['name', 'date']\nconst SAFE = /^\\w+$/\n"
+                         "app.get('/a', async (req, res) => {\n"
+                         "  const sort = ALLOWED.includes(req.query.sort) ? req.query.sort : 'name'\n"
+                         "  const dir = req.query.dir\n"
+                         "  if (!['asc', 'desc'].includes(dir)) return res.status(400).end()\n"
+                         "  const col = req.query.col\n"
+                         "  if (!/^[a-z_]+$/.test(col)) {\n"
+                         "    throw new Error('bad')\n"
+                         "  }\n"
+                         "  const rows = await db.query(`SELECT ${col} FROM t ORDER BY ${sort} ${dir}`)\n"
+                         "  const x = req.query.x\n"
+                         "  if (!ALLOWED.includes(x)) console.log('odd')\n"
+                         "  const y = req.query.y\n"
+                         "  if (!/[a-z]+/.test(y)) return res.end()\n"
+                         "  const z = ALLOWED.includes(req.query.z) ? req.query.z : req.query.w\n"
+                         "  const k = req.query.k\n"
+                         "  if (!SAFE.test(k)) return res.end()\n"
+                         "  await db.query(`SELECT * FROM t ORDER BY ${k}`)\n"
+                         "  const w = req.query.w\n"
+                         "  if (!req.body.allowed.includes(w)) return res.end()\n"
+                         "  await db.query(`SELECT * FROM t ORDER BY ${w}`)\n"
+                         "  await db.query(`SELECT * FROM t ORDER BY ${x}`)\n"
+                         "  await db.query(`SELECT * FROM t ORDER BY ${y}`)\n"
+                         "  await db.query(`SELECT * FROM t ORDER BY ${z}`)\n"
+                         "  res.json(rows)\n})\n")
+        self.check({"server.js": src}, [("COD001", "server.js", 25, "high"), ("COD001", "server.js", 26, "high"),
+                                        ("COD001", "server.js", 27, "high"), ("COD001", "server.js", 28, "high")])
+
     def test_cod001_js_placeholder_lists_stay_silent(self):
         """ids.map(() => '?').join(','): a lista de placeholders herda a origem de ids, mas o texto dela é fixo. O
         JavaScript conhece os mesmos nomes de placeholder que o Python (marks, ph, qs) e olha o valor declarado."""
