@@ -357,3 +357,16 @@ class ActionSteps(unittest.TestCase):
         with open(os.path.join(self.tmp, "summary"), encoding="utf-8") as fh:
             self.assertIn("<!-- stingward-report -->", fh.read())
         self.assertEqual([f for f in os.listdir(self.tmp) if f.startswith("pwned")], [])
+
+
+class ActionPermissions(unittest.TestCase):
+    def test_the_sarif_input_names_every_permission_the_upload_needs(self):
+        """O upload-sarif pergunta à API qual workflow está rodando: num repositório privado isso pede actions: read, e
+        sem ela o envio falha calado (o passo tem continue-on-error)."""
+        sarif = re.search(r"^  sarif:\n    description: (.+)$", _read("action.yml"), re.M).group(1)
+        self.assertIn("actions read", sarif)
+        for doc in ("README.md", "README.pt-BR.md", "README.es.md"):
+            row = re.search(r"^\| `sarif` \|.+$", _read(doc), re.M).group(0)
+            with self.subTest(doc=doc):
+                self.assertIn("`security-events: write`", row)
+                self.assertIn("`actions: read`", row)
