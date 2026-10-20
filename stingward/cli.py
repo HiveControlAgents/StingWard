@@ -116,11 +116,17 @@ def _git_prefix(path):
 
 
 MSG = {
-    "pt": {"stale": "stingward: {n} item(ns) de {path} não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu).",
+    "pt": {"unknown": "stingward: comando desconhecido: {cmd}",
+           "only": "stingward: --only aceita {checks}",
+           "nodir": "stingward: pasta não encontrada: {path}",
+           "stale": "stingward: {n} item(ns) de {path} não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu).",
            "todo": "stingward: {n} achado(s) ainda sem status em {path}; eles contam como achados.",
            "masked": "stingward: mascarei algo que parece segredo num comentário ou no parecer. Confira o relatório antes de entregar.",
            "template": "stingward: arquivo de revisão gravado em {path}: {n} achado(s), {kept} já revisado(s), {stale} que não batem mais com nenhum achado."},
-    "en": {"stale": "stingward: {n} item(s) in {path} match no finding of this scan (the code changed or the finding is gone).",
+    "en": {"unknown": "stingward: unknown command: {cmd}",
+           "only": "stingward: --only takes {checks}",
+           "nodir": "stingward: folder not found: {path}",
+           "stale": "stingward: {n} item(s) in {path} match no finding of this scan (the code changed or the finding is gone).",
            "todo": "stingward: {n} finding(s) still have no status in {path}; they count as found.",
            "masked": "stingward: masked something that looks like a secret in a comment or the notes. Check the report before you deliver it.",
            "template": "stingward: review file written to {path}: {n} finding(s), {kept} already reviewed, {stale} no longer matching any finding."},
@@ -163,16 +169,16 @@ def main(argv=None):
     if argv and not argv[0].startswith("-") and argv[0] not in COMMANDS:
         argv.insert(0, "scan")
     args = _parser().parse_args(argv)
+    lang = args.lang or _default_lang()
     if args.command not in COMMANDS:
         # `stingward --offline minha-pasta`: o primeiro posicional é a pasta, não um comando.
         if args.target != ".":
-            print(f"stingward: comando desconhecido: {args.command}", file=sys.stderr)
+            _say(lang, "unknown", cmd=args.command)
             return 2
         args.command, args.target = "scan", args.command
-    lang = args.lang or _default_lang()
     only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
     if only is not None and (not only or only - set(scan.CHECKS)):
-        print(f"stingward: --only aceita {','.join(scan.CHECKS)}", file=sys.stderr)
+        _say(lang, "only", checks=",".join(scan.CHECKS))
         return 2
 
     try:
@@ -194,13 +200,13 @@ def main(argv=None):
             if _is_remote(path):
                 tmp, path = _fetch(path)
             if not os.path.isdir(path):
-                print(f"stingward: pasta não encontrada: {path}", file=sys.stderr)
+                _say(lang, "nodir", path=path)
                 return 2
             ctx, findings = scan.run(path, mode="skill", offline=args.offline, only=only)
             label = args.target
         else:
             if not os.path.isdir(args.target):
-                print(f"stingward: pasta não encontrada: {args.target}", file=sys.stderr)
+                _say(lang, "nodir", path=args.target)
                 return 2
             ctx, findings = scan.run(args.target, mode="project", offline=args.offline, only=only)
             label = args.target

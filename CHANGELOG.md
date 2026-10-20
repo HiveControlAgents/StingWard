@@ -29,6 +29,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ### Fixed
 - Masking secrets no longer takes quadratic time on long values. A skill whose MCP config carried a 60 KB argument kept `stingward skill` busy for about 100 seconds (hours for a few hundred KB); it now takes about two seconds for 600 KB.
+- Command line errors (folder not found, unknown command, a wrong `--only`) follow `--lang` and the system language. They were always in Portuguese.
 
 ## [0.1.5] - 2026-10-20
 
