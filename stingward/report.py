@@ -267,6 +267,8 @@ IMPACT = {
                "Code runs on your machine as soon as the package is installed, before you use it."),
     "SKL011": ("Quem estiver do outro lado ganha um terminal no seu computador.",
                "Whoever is on the other end gets a terminal on your computer."),
+    "DEP004": ("Sem lockfile, uma instalação pode ficar com {pkg} {floor}, que tem falhas públicas com ataque pronto. Subir o mínimo da faixa fecha essa porta.{exploit}",
+               "Without a lockfile, an install can stay on {pkg} {floor}, which has public flaws with ready-made attacks. Raising the range's minimum closes that door.{exploit}"),
 }
 
 

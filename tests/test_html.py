@@ -572,5 +572,19 @@ class TextAndMarkdown(unittest.TestCase):
                 self.assertNotRegex(text, r"\{\w+\}", (rule, lang))
 
 
+
+class LowestVersion(unittest.TestCase):
+    def test_dep004_lists_the_issues_of_the_lowest_version(self):
+        root = tree({"requirements.txt": "Pillow>=10\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        vulns = [{"id": "CVE-2023-4863", "osv": "GHSA-j7hp-h8jx-5ppr", "summary": "libwebp", "severity": "critical", "fixed": "10.0.1",
+                  "kev": "CVE-2023-4863", "epss": 0.9, "spans": False}]
+        f = Finding("DEP004", "medium", "requirements.txt", 1, {"pkg": "Pillow", "spec": ">=10", "floor": "10", "vulns": vulns,
+                                                                "headline_en": "h", "why_en": "w", "fix_en": "f", "exploit_en": ""})
+        out = report_html.render(ctx_for(root, files=["requirements.txt"], packages=1), [f], "en")
+        self.assertIn("Known vulnerabilities in the lowest version allowed", out)
+        self.assertIn(">CVE-2023-4863<", out)
+        self.assertIn("Pillow 10", report.impact(report.merge([f], "en")[0], "en"))
+
 if __name__ == "__main__":
     unittest.main()
