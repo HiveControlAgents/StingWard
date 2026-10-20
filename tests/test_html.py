@@ -741,9 +741,8 @@ class Priority(unittest.TestCase):
                          ["package-lock.json", "config.py:9", ".claude/settings.json:3"])
 
 
-class NotRead(unittest.TestCase):
-    """O que o limite de tamanho e o de arquivos deixaram de fora aparece em todo formato, não só no stderr: uma skill
-    pode esconder o código num arquivo grande, e um relatório pago tem de dizer o que não cobriu."""
+class _Unread:
+    """Um projeto lido em parte: too_big e truncated como scan.run os deixa no contexto."""
     HOSTILE = ["dist/a\x1b[31m.js", "<img src=x onerror=alert(1)>.md", "lib/x\u202e.js", "[go](https://example.test) @team #12.md"]
 
     def setUp(self):
@@ -756,11 +755,16 @@ class NotRead(unittest.TestCase):
         c.too_big, c.truncated = list(too_big), truncated
         return c
 
+
+class NotRead(_Unread, unittest.TestCase):
+    """O que o limite de tamanho e o de arquivos deixaram de fora aparece em todo formato, não só no stderr: uma skill
+    pode esconder o código num arquivo grande, e um relatório pago tem de dizer o que não cobriu."""
+
     def test_text_says_it_under_the_sources_line(self):
         cases = {"pt": ("Fora da auditoria: 2 arquivo(s) acima de 2 MB não foram lidos: dist/big.js, data/huge.json",
-                        f"Fora da auditoria: a pasta tem mais de {scan.MAX_FILES} arquivos"),
+                        f"Fora da auditoria: a pasta tem mais de {scan.MAX_FILES:,} arquivos".replace(",", ".")),
                  "en": ("Not covered: 2 file(s) over 2 MB were not read: dist/big.js, data/huge.json",
-                        f"Not covered: the folder has more than {scan.MAX_FILES} files")}
+                        f"Not covered: the folder has more than {scan.MAX_FILES:,} files")}
         for lang, (big, many) in cases.items():
             for findings in ([], [self.dep]):
                 with self.subTest(lang=lang, findings=len(findings)):
@@ -776,7 +780,7 @@ class NotRead(unittest.TestCase):
                 md = report.markdown(self.ctx(["dist/big.js"]), list(findings), "en")
                 self.assertIn("⚠️ Not covered: 1 file(s) over 2 MB were not read: dist/big.js", md)
                 md = report.markdown(self.ctx(truncated=True), list(findings), "pt")
-                self.assertIn(f"⚠️ Fora da auditoria: a pasta tem mais de {scan.MAX_FILES} arquivos", md)
+                self.assertIn(f"⚠️ Fora da auditoria: a pasta tem mais de {scan.MAX_FILES:,} arquivos".replace(",", "."), md)
         self.assertNotIn("Not covered", report.markdown(self.ctx(), [self.dep], "en"))
 
     def test_a_long_list_is_cut_like_on_stderr(self):
@@ -799,6 +803,54 @@ class NotRead(unittest.TestCase):
         for raw in ("\x1b", "\u202e", "<img", "[go](", "@team", "#12"):
             self.assertNotIn(raw, md)
         self.assertEqual(json.loads(report.as_json(ctx, [], "en"))["not_read"]["too_big"], self.HOSTILE)
+
+
+class NotReadInHtml(_Unread, unittest.TestCase):
+    """No HTML: a lista com os tamanhos no escopo, a nota do limite de arquivos e um aviso na capa."""
+    COVER = {"pt": ("2 arquivos de código ou texto acima de 2 MB não foram lidos e ficaram fora desta auditoria",
+                    f"A pasta tem mais de {scan.MAX_FILES:,} arquivos".replace(",", ".")),
+             "en": ("2 code or text files over 2 MB were not read and are not covered by this audit",
+                    f"The folder has more than {scan.MAX_FILES:,} files")}
+
+    @staticmethod
+    def parts(page):
+        cover = page.split('<section class="cover"', 1)[1].split("</section>", 1)[0]
+        scope = page.split('<section id="scope">', 1)[1].split("</section>", 1)[0]
+        return cover, scope
+
+    def test_the_scope_lists_the_files_with_their_sizes(self):
+        os.makedirs(os.path.join(self.root, "dist"))
+        with open(os.path.join(self.root, "dist", "big.js"), "wb") as fh:
+            fh.truncate(2_500_000)
+        ctx = self.ctx(["dist/big.js", "data/gone.json"], True)
+        heads = {"pt": "2 arquivos de código ou texto passaram do limite de 2 MB e não foram lidos",
+                 "en": "2 code or text files were over the 2 MB limit and were not read"}
+        for lang, size in (("pt", "2,5 MB"), ("en", "2.5 MB")):
+            with self.subTest(lang=lang):
+                cover, scope = self.parts(report_html.render(ctx, [], lang))
+                self.assertIn(heads[lang], scope)
+                self.assertIn(f'<li><code>dist/<wbr>big.js</code> <span class="size">{size}</span></li>', scope)
+                self.assertIn("<li><code>data/<wbr>gone.json</code></li>", scope)  # já não está no disco: sem tamanho
+                self.assertIn(self.COVER[lang][1], scope)
+                for warn in self.COVER[lang]:
+                    self.assertIn('<p class="warn">' + warn, cover)
+        cover, scope = self.parts(report_html.render(self.ctx(), [], "en"))
+        for warn in self.COVER["en"]:
+            self.assertNotIn(warn, cover + scope)
+        self.assertNotIn('class="unread"', scope)
+
+    def test_the_list_is_capped(self):
+        page = report_html.render(self.ctx([f"dist/f{i:02}.js" for i in range(25)]), [], "en")
+        _, scope = self.parts(page)
+        self.assertIn("dist/<wbr>f19.js", scope)
+        self.assertNotIn("dist/<wbr>f20.js", scope)
+        self.assertIn('<li class="more">and 5 more files</li>', scope)
+
+    def test_hostile_file_names_are_escaped_in_html(self):
+        page = report_html.render(self.ctx(self.HOSTILE), [], "en")
+        for raw in ("<img src=x", "\x1b", "\u202e"):
+            self.assertNotIn(raw, page)
+        self.assertIn("lib/<wbr>x\\u202e.js", page)
 
 
 class NothingRead(unittest.TestCase):
