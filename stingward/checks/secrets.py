@@ -251,6 +251,19 @@ def _known(line, n, rel, low_conf, out, nxt=""):
             out.append(Finding("SEC001", "low" if low_conf else "high", rel, n, _kind(kind)))
 
 
+# Valores que não são segredo: caminho de configuração (image_generation.automatic1111.api_auth), nome de variável
+# (DUCKLAKE_S3_SECRET, MOCK_ACCESS_TOKEN) e chave pública por desenho (sb_publishable_, pk_live_ e pk_test_ do Stripe).
+_NOT_SECRET = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){2,}|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|(?:sb_publishable_|pk_(?:live|test)_)\S*")
+_DIGITS = "0123456789" * 3
+
+
+def _not_secret(val: str) -> bool:
+    """Texto traduzido (fora do ASCII ou com \\uXXXX: arquivo de i18n), 1234567890 de exemplo e os de _NOT_SECRET."""
+    if not val.isascii() or "\\u" in val or _NOT_SECRET.fullmatch(val):
+        return True
+    return val.isdigit() and (val in _DIGITS or val in _DIGITS[::-1])
+
+
 def _generic(line, n, rel, low, out):
     """Senha em URL e atribuição a campo sensível. low=True para exemplo (docs, referência de skill, bloco de código)."""
     for m in redact._URL_CREDS.finditer(line):
@@ -262,6 +275,8 @@ def _generic(line, n, rel, low, out):
         if not redact.is_sensitive_key(key) or _PLACEHOLDER.search(val) or redact._PH_RE.search(val):
             continue
         if redact._entropy(val) < 3.3 or not re.search(r"\d", val) or re.fullmatch(r"[\w-]+\.(?:js|ts|py|json|html)", val):
+            continue
+        if _not_secret(val):
             continue
         if out and out[-1].line == n:  # as linhas vêm em ordem: um achado desta linha é sempre o último da lista
             continue
