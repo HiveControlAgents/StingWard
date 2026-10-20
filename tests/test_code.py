@@ -134,6 +134,23 @@ class CodeRules(Checks):
         self.check({"app.py": src}, [("COD001", "app.py", 24, "high"), ("COD001", "app.py", 28, "high"),
                                      ("COD001", "app.py", 35, "high")])
 
+    def test_cod001_django_extra(self):
+        """QuerySet.extra(where=[...], select={...}, tables=[...]) põe cada pedaço cru no SQL, como RawSQL: o valor de
+        fora no meio do texto é injeção. Com %s e params=[...], ou texto fixo, fica quieto."""
+        src = ("from django.http import JsonResponse\nfrom .models import Item\n"
+               "def search(request):\n"
+               "    q = request.GET['q']\n"
+               "    a = Item.objects.extra(where=[f\"name = '{q}'\"])\n"
+               "    b = Item.objects.extra(select={'x': 'price * ' + request.GET['m']})\n"
+               "    c = Item.objects.filter(on=True).extra(tables=[request.GET['t']])\n"
+               "    d = Item.objects.extra(where=['name = %s'], params=[q])\n"
+               "    e = Item.objects.extra(select={'is_new': 'created > NOW()'}, order_by=['-id'])\n"
+               "    return JsonResponse({})\n"
+               "def lib(qs, name):\n"
+               "    return qs.extra(where=[f\"name = '{name}'\"])\n")
+        self.check({"views.py": src}, [("COD001", "views.py", 5, "high"), ("COD001", "views.py", 6, "high"),
+                                       ("COD001", "views.py", 7, "high"), ("COD001", "views.py", 12, "medium")])
+
     def test_cod001_function_argument_in_value_position_is_medium(self):
         src = "def find(conn, name):\n    return conn.execute(f\"SELECT * FROM t WHERE name = '{name}'\")\n"
         f = run({"db.py": src})
