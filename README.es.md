@@ -126,7 +126,7 @@ Comenta el informe en el PR (y actualiza el mismo comentario en cada ejecución)
 | `0` | Nada en la severidad de `--fail-on` o mayor |
 | `1` | Se encontró algo en la severidad de `--fail-on` o mayor |
 | `2` | Error de uso: una opción equivocada, una carpeta que no existe, un skill que no se pudo descargar o un archivo de salida que no se pudo escribir |
-| `3` | OSV.dev no respondió y las dependencias no se revisaron. Un control de CI no debería pasar en silencio; usa `--offline` para saltarlas a propósito. |
+| `3` | OSV.dev no respondió y las dependencias no se revisaron, o respondió solo en parte y la revisión quedó incompleta. Un control de CI no debería pasar en silencio; usa `--offline` para saltarlas a propósito. |
 | `4` | No se leyó ningún archivo, así que no había nada que calificar: carpeta vacía, ruta equivocada o, en CI, el código no se descargó antes (checkout). Un control de CI no debería pasar en silencio; `--fail-on never` lo acepta. |
 
 Entorno: `STINGWARD_LANG` define el idioma por defecto, `NVD_API_KEY` sube el límite de consultas a NVD y `STINGWARD_CACHE` cambia la carpeta de caché.
