@@ -142,6 +142,23 @@ class SkillPermissions(unittest.TestCase):
             self.assertEqual(json.loads(run.stdout)["tool"], "stingward")
 
 
+    def test_the_launcher_is_safe_even_without_isolated_mode(self):
+        """Quem roda run.py sem -I (outro agente, um script, o CI) também não pode importar o json.py da pasta checada."""
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = os.path.join(tmp, "imported")
+            for name in ("json.py", "shutil.py", "subprocess.py"):
+                with open(os.path.join(tmp, name), "w", encoding="utf-8") as fh:
+                    fh.write(f"open({marker!r}, 'w').close()\nraise SystemExit(7)\n")
+            env = {**os.environ, "PYTHONPATH": os.pathsep + os.path.join(tmp, "nothing-here"), "STINGWARD_CACHE": tmp,
+                   "HOME": tmp, "USERPROFILE": tmp}
+            for argv in (["--version"], ["agents", "--format", "json", "--fail-on", "never"]):
+                with self.subTest(argv=argv):
+                    run = subprocess.run([sys.executable, os.path.join(SKILL_DIR, "scripts", "run.py")] + argv, cwd=tmp,
+                                         env=env, capture_output=True, text=True, encoding="utf-8", timeout=120)
+                    self.assertFalse(os.path.exists(marker), "run.py imported a module from the checked folder")
+                    self.assertEqual(run.returncode, 0, run.stderr)
+
+
 class SkillReportBack(unittest.TestCase):
     """O modelo lê o JSON e responde ao usuário. A skill tem de dizer o que o JSON não diz sozinho."""
 
