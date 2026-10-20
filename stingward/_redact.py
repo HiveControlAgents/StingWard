@@ -93,6 +93,10 @@ _TOKEN_PATTERNS = [
     ("meta_token", re.compile(r"\bEAA[A-Za-z0-9]{20,}")),
     ("twilio_key", re.compile(r"\bSK[0-9a-fA-F]{32}\b")),
     ("npm_token", re.compile(r"\bnpm_[A-Za-z0-9]{8,}")),
+    # Bot do Telegram (123456789:AA...), também dentro da URL da API: https://api.telegram.org/bot<token>/sendMessage
+    ("telegram_token", re.compile(r"(?:(?<=bot)|(?<![\w-]))\d{8,10}:AA[A-Za-z0-9_-]{20,}")),
+    # Connection string do Azure (Storage, Service Bus, Event Hubs): só o valor some, o nome do campo fica.
+    ("azure_key", re.compile(r"(?:(?<=AccountKey=)|(?<=SharedAccessKey=))[A-Za-z0-9+/]{16,}={0,2}")),
 ]
 
 # Esquema com teto de tamanho: sem ele, "a.a.a.a..." testaria cada letra até o fim do texto (tempo quadrático).

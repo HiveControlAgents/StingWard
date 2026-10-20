@@ -100,6 +100,48 @@ class MaskerFormats(unittest.TestCase):
         self.assertEqual((m["pw"], secrets._url_password(m, m.string)), ("p@ss", "low"))
 
 
+class MoreTokenFormats(unittest.TestCase):
+    """Formatos sem prefixo próprio no secrets.py: só o mascaramento os pega, em todo relatório."""
+    PART = "Demo7Fake9Key0Not4Real"
+
+    def samples(self):
+        tg = "123456789:AA" + "Hq8Vn3kL0pR7" + self.PART[:21]
+        azure = "q8Vn3kL0pR7tY2wX5mB9" + self.PART + "Zx1Yw2Vu3Ts4Rq5Po6Nm7=="
+        return [
+            (f"curl https://api.telegram.org/bot{tg}/sendMessage",
+             "curl https://api.telegram.org/bot[REDACTED:telegram_token]/sendMessage"),
+            (f"TELEGRAM={tg}", "TELEGRAM=[REDACTED:telegram_token]"),
+            (f"DefaultEndpointsProtocol=https;AccountName=acme;AccountKey={azure};EndpointSuffix=core.windows.net",
+             "DefaultEndpointsProtocol=https;AccountName=acme;AccountKey=[REDACTED:azure_key];EndpointSuffix=core.windows.net"),
+            (f"Endpoint=sb://acme.servicebus.windows.net/;SharedAccessKeyName=root;SharedAccessKey={azure}",
+             "Endpoint=sb://acme.servicebus.windows.net/;SharedAccessKeyName=root;SharedAccessKey=[REDACTED:azure_key]"),
+        ]
+
+    def test_masked(self):
+        from stingward.checks import secrets
+        for s, want in self.samples():
+            with self.subTest(sample=s):
+                self.assertEqual(redact.sanitize_text(s), want)
+                self.assertNotIn(self.PART[:12], secrets.mask(s))
+
+    def test_not_masked_by_mistake(self):
+        for s in ("12:34:56", "build 20261020:AA ok", "SharedAccessKeyName=RootManageSharedAccessKey", "port 123456789:80"):
+            self.assertEqual(redact.sanitize_text(s), s)
+
+    def test_token_in_a_reported_permission_stays_out_of_every_report(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        tg = "123456789:AA" + "Hq8Vn3kL0pR7" + self.PART[:21]
+        os.makedirs(os.path.join(tmp.name, ".claude"))
+        with open(os.path.join(tmp.name, ".claude", "settings.json"), "w") as fh:
+            json.dump({"permissions": {"allow": [f"Bash(curl https://api.telegram.org/bot{tg}/sendMessage -d text=hi)"]}}, fh)
+        for fmt in ("text", "markdown", "json", "html", "sarif"):
+            with self.subTest(fmt=fmt):
+                code, out, err = run_main([tmp.name, "--offline", "--format", fmt])
+                self.assertIn("api.telegram.org", out)
+                self.assertNotIn(self.PART[:12], out)
+
+
 class PgpPrivateKey(unittest.TestCase):
     BODY = "lQOYBGZ" + "Demo7Fake9Key0Not4Real" + "AQgA0x7Kq2"
     KIND = "PGP " + "PRIVATE KEY BLOCK"  # em pedaços: o próprio repositório passa na auditoria
