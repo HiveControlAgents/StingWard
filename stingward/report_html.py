@@ -53,6 +53,9 @@ H = {
         "warn_offline": "Modo offline: as dependências não foram checadas contra as bases de falhas conhecidas.",
         "warn_osv": "O OSV.dev não respondeu: as dependências não foram checadas contra as bases de falhas conhecidas.",
         "warn_kev": "A lista CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com severidade abaixo da real.",
+        "warn_big": ("{n} arquivo de código ou texto acima de {mb} MB não foi lido e ficou fora desta auditoria. A lista está em {scope}.",
+                     "{n} arquivos de código ou texto acima de {mb} MB não foram lidos e ficaram fora desta auditoria. A lista está em {scope}."),
+        "warn_many": "A pasta tem mais de {n} arquivos: a leitura parou aí, e o resto ficou fora desta auditoria.",
         "warn_only": "Só parte das verificações rodou: {checks}.",
         "toc": "Conteúdo",
         "s_summary": "Resumo executivo", "s_plan": "Plano de correção", "s_findings": "Achados em detalhe", "s_scope": "Escopo e método",
@@ -90,6 +93,9 @@ H = {
         "v_more": ("e mais {n} falha", "e mais {n} falhas"), "v_none": "sem correção",
         "no_findings": "Nenhum achado.",
         "scope_what": "O que foi verificado",
+        "unread_big": ("{n} arquivo de código ou texto passou do limite de {mb} MB e não foi lido:",
+                       "{n} arquivos de código ou texto passaram do limite de {mb} MB e não foram lidos:"),
+        "unread_more": ("e mais {n} arquivo", "e mais {n} arquivos"),
         "files": ("{n} arquivo lido", "{n} arquivos lidos"),
         "pkgs": ("{n} pacote encontrado em lockfiles e configurações de MCP", "{n} pacotes encontrados em lockfiles e configurações de MCP"),
         "pkgs_skipped": "Dependências não verificadas", "rules": "{n} regras",
@@ -166,6 +172,9 @@ H = {
         "warn_offline": "Offline mode: dependencies were not checked against the vulnerability databases.",
         "warn_osv": "OSV.dev did not respond: dependencies were not checked against the vulnerability databases.",
         "warn_kev": "The CISA KEV list did not respond: a vulnerability attackers already exploit may show a lower severity than it should.",
+        "warn_big": ("{n} code or text file over {mb} MB was not read and is not covered by this audit. The list is under {scope}.",
+                     "{n} code or text files over {mb} MB were not read and are not covered by this audit. The list is under {scope}."),
+        "warn_many": "The folder has more than {n} files: reading stopped there, and the rest is not covered by this audit.",
         "warn_only": "Only some checks ran: {checks}.",
         "toc": "Contents",
         "s_summary": "Executive summary", "s_plan": "Remediation plan", "s_findings": "Findings in detail", "s_scope": "Scope and method",
@@ -203,6 +212,9 @@ H = {
         "v_more": ("and {n} more", "and {n} more"), "v_none": "no fix yet",
         "no_findings": "No findings.",
         "scope_what": "What was checked",
+        "unread_big": ("{n} code or text file was over the {mb} MB limit and was not read:",
+                       "{n} code or text files were over the {mb} MB limit and were not read:"),
+        "unread_more": ("and {n} more file", "and {n} more files"),
         "files": ("{n} file read", "{n} files read"),
         "pkgs": ("{n} package found in lockfiles and MCP configs", "{n} packages found in lockfiles and MCP configs"),
         "pkgs_skipped": "Dependencies not checked", "rules": "{n} rules",
@@ -564,6 +576,10 @@ def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, 
         warns.append(t["warn_osv"])
     elif "deps" in checks and ctx.sources.get("kev_error"):
         warns.append(t["warn_kev"])
+    if ctx.too_big:  # código que ninguém leu: uma skill pode esconder o que faz num arquivo grande
+        warns.append(_n(t, "warn_big", len(ctx.too_big), mb=report.size_cap(ctx.mode) // 1_000_000, scope=t["s_scope"]))
+    if ctx.truncated:
+        warns.append(t["warn_many"].format(n=report.thousands(_max_files(), lang)))
     warn = "".join(f'<p class="warn">{_html.escape(w)}</p>' for w in warns)
     toc = "".join(f'<li><a href="#{a}"><span class="toc-n">{n}</span>{_html.escape(label)}</a></li>' for a, n, label in toc_items)
     return f"""<section class="cover" id="cover">
@@ -824,6 +840,44 @@ def _source_rows(ctx, checks, t):
     return "".join(rows)
 
 
+MAX_UNREAD = 20  # arquivos que o escopo lista pelo nome; o resto vira "e mais N"
+
+
+def _max_files():
+    from . import scan
+    return scan.MAX_FILES
+
+
+def _size(n, lang):
+    """Tamanho legível, com a vírgula decimal em português: 12,4 MB."""
+    for unit, base in (("MB", 1_000_000), ("KB", 1_000)):
+        if n >= base:
+            text = f"{n / base:.1f} {unit}"
+            return text.replace(".", ",") if lang == "pt" else text
+    return f"{n} B"
+
+
+def _unread(ctx, lang, t):
+    """O que a varredura não leu: os arquivos acima do limite de tamanho, com o tamanho de cada um (se ainda estão no
+    disco), e a nota do limite de arquivos. Os nomes vêm do projeto auditado: escapados como qualquer caminho."""
+    out = ""
+    if ctx.too_big:
+        rows = []
+        for rel in ctx.too_big[:MAX_UNREAD]:
+            try:
+                size = f' <span class="size">{_html.escape(_size(os.stat(os.path.join(ctx.root, rel)).st_size, lang))}</span>'
+            except (OSError, ValueError):
+                size = ""
+            rows.append(f"<li><code>{_path(rel)}</code>{size}</li>")
+        if len(ctx.too_big) > MAX_UNREAD:
+            rows.append(f'<li class="more">{_html.escape(_n(t, "unread_more", len(ctx.too_big) - MAX_UNREAD))}</li>')
+        head = _n(t, "unread_big", len(ctx.too_big), mb=report.size_cap(ctx.mode) // 1_000_000)
+        out += f'<p class="warn">{_html.escape(head)}</p><ul class="facts unread">{"".join(rows)}</ul>'
+    if ctx.truncated:
+        out += f'<p class="warn">{_html.escape(t["warn_many"].format(n=report.thousands(_max_files(), lang)))}</p>'
+    return out
+
+
 def _scope(ctx, lang, t, checks, audit=None, findings=()):
     from . import scan  # aqui e não no topo: scan carrega as verificações, que o relatório só usa para ler o .stingwardignore
 
@@ -851,6 +905,7 @@ def _scope(ctx, lang, t, checks, audit=None, findings=()):
 <h2><span class="sec-n">4</span>{_html.escape(t["s_scope"])}</h2>
 <h3>{_html.escape(t["scope_what"])}</h3>
 <ul class="facts">{items}</ul>
+{_unread(ctx, lang, t)}
 {ign}
 {human}
 <h3>{_html.escape(t["sources_h"])}</h3>
@@ -942,6 +997,7 @@ code{font-family:var(--mono);font-size:.88em;unicode-bidi:isolate;overflow-wrap:
 .note{font-size:13.5px;color:var(--muted);margin-top:12px}
 .warn{margin-top:16px;padding:10px 14px;border:1px solid #e9b44c;border-left:5px solid #c98a00;border-radius:6px;background:#fff8e6;font-size:14px}
 .more{font-size:12.5px;color:var(--muted)}
+.unread{margin-top:10px}.unread .size{color:var(--muted);font-size:13px;white-space:nowrap}
 /* capa */
 .cover{display:flex;flex-direction:column;min-height:1040px;padding-top:44px}
 .brand{display:flex;align-items:center;gap:10px;padding-bottom:18px;border-bottom:4px solid var(--honey)}

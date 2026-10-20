@@ -214,8 +214,14 @@ def not_read_lines(ctx, lang, limit=5):
         files = ", ".join(ctx.too_big[:limit]) + (" " + t["and_more"].format(n=extra) if extra > 0 else "")
         out.append(t["too_big"].format(n=len(ctx.too_big), mb=size_cap(ctx.mode) // 1_000_000, files=files))
     if ctx.truncated:
-        out.append(t["truncated"].format(n=scan.MAX_FILES))
+        out.append(t["truncated"].format(n=thousands(scan.MAX_FILES, lang)))
     return out
+
+
+def thousands(n, lang):
+    """50.000 em português, 50,000 em inglês."""
+    text = f"{n:,}"
+    return text.replace(",", ".") if lang == "pt" else text
 
 
 def source_failed(ctx):
