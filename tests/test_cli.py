@@ -417,6 +417,18 @@ class AgentsCommand(CliTest):
             ".gemini/settings.json", "Library/Application Support/Claude/claude_desktop_config.json",
             ".claude/skills/evil/SKILL.md"]))  # sem ~/.env, ~/.stingwardignore nem projetos dentro da home
 
+    def test_no_readme_badge_for_the_machine(self):
+        # A auditoria da própria máquina não tem README onde pôr selo.
+        env = {"HOME": self.home, "USERPROFILE": self.home}
+        text = run_main(["agents", "--offline", "--lang", "en"], env=env)[1]
+        md = run_main(["agents", "--offline", "--lang", "en", "--format", "markdown"], env=env)[1]
+        for out in (text, md):
+            self.assertNotIn("img.shields.io", out)
+        self.assertNotIn("README badge", text)
+        self.assertIn("Grade: F", text)
+        self.assertIn("### Security audit", md)
+        self.assertIn("README badge", run_main([self.levels["clean"], "--offline", "--lang", "en"])[1])  # projeto continua
+
     def test_agents_text_label_and_empty_home(self):
         code, out, _ = run_main(["agents", "--offline", "--lang", "en"], env={"HOME": self.home, "USERPROFILE": self.home})
         self.assertEqual(code, 1)

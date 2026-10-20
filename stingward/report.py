@@ -515,7 +515,8 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
     out.append(f"{t['summary']}: {counts_line(valid, lang) or '0'} · {t['grade']}: {g}")
     if rv is not None:
         out.append(t["grade_rule"])
-    out.append(f"{t['badge']}: {badge_md(g)}")
+    if ctx.mode != "agents":  # a auditoria da própria máquina não tem README onde pôr o selo
+        out.append(f"{t['badge']}: {badge_md(g)}")
     return "\n".join(out) + "\n"
 
 
@@ -566,7 +567,8 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
     g = grade(valid)
     shown, discarded = split(merge(findings, lang, rv))
     empty = nothing_read(ctx, findings)
-    out = ["<!-- stingward-report -->", f"### {t['title']}" if empty else f"### {badge_md(g)} {t['title']}", ""]
+    plain = empty or ctx.mode == "agents"  # sem nota, ou a própria máquina: sem selo
+    out = ["<!-- stingward-report -->", f"### {t['title']}" if plain else f"### {badge_md(g)} {t['title']}", ""]
     head = _review_head(audit, findings, lang)
     if head:
         out += [" · ".join(f"**{_esc(k)}:** {_esc(v)}" for k, v in head), ""]
