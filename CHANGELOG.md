@@ -22,6 +22,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - COD005 also catches HTML built from request data in Express `res.send`/`res.write`/`res.end` (with `.status()` and similar chained before), Hono `c.html`, and FastAPI routes with `response_class=HTMLResponse`; a Flask route that returns the HTML in a variable or in a `(body, status)` tuple counts too.
 - COD010 also catches `Math.random()` in a module-level value or inside a callback that builds it, and a session id (`session_id`, `sessionId`, `sid`) made with `Math.random()` or `random` that goes into a cookie.
 - COD001 in Python also catches SQL built from request data and passed to the project's own query helpers (`execute_query(f"...")`, `run_sql(...)`). COD007 in JavaScript also reads `fsp`, `fsPromises` and `fs-extra` calls and counts checks such as `validatePath(p)` or `isAllowedPath(p)` before the call. COD008 in JavaScript no longer takes the word `private` (a TypeScript `private` field) as a check of the address.
+- SEC001 finds Replicate (`r8_`), Pinecone (`pcsk_`), Shopify (`shpat_`, `shpss_`, `shpca_`, `shppa_`), Notion (`ntn_`), Linear (`lin_api_`) and Resend (`re_`) keys as critical, and Google OAuth client secrets (`GOCSPX-`) as high. Each format has its exact length, and the short prefixes (`r8_`, `re_`) also need digits and both letter cases, so names in code are not taken for keys.
 
 ### Changed
 - The DEP003 docs no longer list `pyproject.toml`: it never raised DEP003, since libraries declare ranges on purpose.

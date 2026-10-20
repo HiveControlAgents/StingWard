@@ -262,6 +262,49 @@ class TokenFormats(Case):
                 self.assertEqual(brief(scan_files({"src/keys.py": line + "\n"}), "SEC001"), [])
 
 
+    # Each value is built from pieces, so the whole token never appears in this file.
+    NEW_FORMATS = [
+        ("Google OAuth client secret", "high", "GOCSPX-" + R36[:28]),
+        ("Replicate API token", "critical", "r8_" + R36 + "Q"),
+        ("Pinecone API key", "critical", "pcsk_" + "4Ab9z" + "_" + (R36 * 2)[:63]),
+        ("Shopify token", "critical", "shp" + "at_" + "0a1b2c3d4e5f6a7b" * 2),
+        ("Shopify token", "critical", "shp" + "ss_" + "9f8e7d6c5b4a3f2e" * 2),
+        ("Notion API token", "critical", "ntn_" + "41234567890" + R36[:35]),
+        ("Linear API key", "critical", "lin_" + "api_" + R36 + "Qw9x"),
+        ("Resend API key", "critical", "re_" + "Ab3dE5gH" + "_" + R36[:24]),
+    ]
+
+    def test_more_service_formats_are_found(self):
+        for kind, sev, value in self.NEW_FORMATS:
+            with self.subTest(kind=kind):
+                f = scan_files({"src/client.py": f'client = Client("{value}")\n'})
+                self.assertEqual([(x.rule, x.params["kind_en"], x.severity) for x in f], [("SEC001", kind, sev)])
+                f = scan_files({"tests/test_client.py": f'client = Client("{value}")\n'})
+                self.assertEqual([(x.rule, x.severity) for x in f], [("SEC001", "low")])
+
+    def test_near_misses_of_the_new_formats_stay_silent(self):
+        lines = [
+            "GOCSPX-" + R36[:27], "GOCSPX-" + R36[:29], "GOCSPX-" + "your-client-secret-here-1234",
+            "r8_" + R36, "r8_" + R36.lower() + "q", "r8_" + "0" * 37,
+            "pcsk_" + R36 + R36[:30], "pcsk_" + "4Ab9z" + "_" + R36,
+            "shp" + "at_" + "0a1b2c3d4e5f6a7b" * 2 + "0", "shp" + "at_" + "zz1b2c3d4e5f6a7b" * 2, "shpxx_" + "0a1b2c3d4e5f6a7b" * 2,
+            "ntn_" + "4123456789" + R36[:36], "ntn_" + "41234567890" + R36[:34],
+            "lin_" + "api_" + R36 + "Qw9", "lin_" + "api_" + "x" * 40,
+            "re_" + "123456789", "re_" + "compile_" + "pattern_with_a_long_name", "re_" + "abcdefgh" + "_" + "abcdefghijklmnopqrstuvwx",
+            "re_" + "Ab3dE5gH" + "_" + R36[:23],
+        ]
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertEqual(brief(scan_files({"src/client.py": f'client = Client("{line}")\n'}), "SEC001"), [])
+
+    def test_new_formats_are_masked_and_linear(self):
+        for _, _, value in self.NEW_FORMATS:
+            self.assertNotIn(value[8:20], secrets.mask(f"Bash(curl -H 'Authorization: {value}' https://api.acme.dev)"))
+        for text in ("GOCSPX-" * 20000, "r8_" + "a" * 60000, "pcsk_" + "a_" * 30000, "shpat_" * 20000, "ntn_" + "1" * 60000,
+                     "lin_api_" * 10000, "re_" + "a" * 8 + "_" * 60000):
+            with self.subTest(text=text[:10]):
+                self.assertFast(secrets.scan_text, text, "src/x.py", limit=1.0)
+
     def test_webhook_is_judged_by_its_own_url_not_by_the_rest_of_the_line(self):
         slack = "https://hooks.slack.com/services/" + "T01ABCDEF/B02GHIJKL/" + "q8W3e5R7t9Y1u3I5o7P9a1S3"
         discord = "https://discord.com/api/webhooks/" + "112233445566778899/" + "Zq8W3e5R7t9Y1u3I5o7P9a1S3d5F7g9H"
