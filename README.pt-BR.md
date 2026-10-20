@@ -114,6 +114,9 @@ Ela comenta o relatório no PR (e atualiza o mesmo comentário a cada execução
 | `--only deps,secrets,app,code,agents` | Roda só algumas verificações |
 | `--offline` | Não consulta as bases online (as dependências não são verificadas) |
 | `--no-color` | Texto sem cores |
+| `--review-template ARQ` | Grava o arquivo da revisão humana: um item por achado, mantendo o que já foi revisado |
+| `--review ARQ` | Aplica a revisão humana: um status e um comentário para cada achado |
+| `--client NOME`, `--notes ARQ` | "Preparado para" na capa e o parecer do analista (parágrafos, listas com `-`, `**negrito**`, `` `código` ``) |
 
 | Código de saída | O que quer dizer |
 |---|---|
@@ -129,6 +132,8 @@ Ambiente: `STINGWARD_LANG` define o idioma padrão, `NVD_API_KEY` aumenta o limi
 ```markdown
 [![stingward: A](https://img.shields.io/badge/stingward-A-brightgreen)](https://github.com/HiveControlAgents/StingWard)
 ```
+
+**Revisão humana:** numa auditoria que você entrega para alguém, grave o arquivo de revisão com `stingward . --review-template revisao.json`. Cada item aponta para um achado pela `fingerprint` (que também sai no JSON e no SARIF), que não muda quando outras partes do arquivo são editadas. Ponha em `status` `confirmed`, `false_positive`, `accepted_risk` ou `fixed`, escreva o `comment` e rode `stingward . --review revisao.json --client "Nome do cliente" --notes parecer.md --html relatorio.html`. Alarmes falsos vão para um apêndice; eles e o que foi corrigido durante a auditoria saem da nota, da lista do que corrigir primeiro e do `--fail-on`. Riscos aceitos continuam na nota, mas saem da lista do que corrigir primeiro. Os relatórios em texto e Markdown também seguem a revisão. Comentários e parecer são escapados e passam pelo mesmo mascaramento de segredos dos trechos de código.
 
 **Alarme falso:** coloque uma linha no `.stingwardignore` na raiz do projeto (`REGRA caminho/glob`, `REGRA` ou `caminho/glob`), ou escreva `stingward:ignore` num comentário na linha. Se uma regra estiver errada, [avise](https://github.com/HiveControlAgents/StingWard/issues/new?template=false-positive.yml) com um exemplo mínimo.
 
