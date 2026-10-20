@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import bisect
 import json
+import posixpath
 import re
 from collections import namedtuple
 from pathlib import Path
@@ -18,22 +19,46 @@ LOCKFILES = {
 # nome==versão exata; "3.2.*" e afins não passam (é faixa, não versão)
 _PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*===?\s*([A-Za-z0-9._+!-]+)(?=[\s;,\\]|$)")
 _EXACT = re.compile(r"=?\d+\.\d+\.\d+[\w.\-+]*")
-_YARN_LOCAL = ("workspace:", "link:", "portal:", "file:")
+_YARN_LOCAL = ("workspace:", "link:", "portal:", "file:", "exec:")
+# Faixa que aponta para fora do registro: repositório git, atalho do GitHub ou tarball por URL.
+_YARN_REMOTE = ("git", "github:", "gitlab:", "bitbucket:", "gist:", "http:", "https:", "ssh:")
 
 
 def is_dependency_file(rel: str) -> bool:
     name = rel.rsplit("/", 1)[-1]
-    return name in LOCKFILES or name == "package.json" or re.fullmatch(r"requirements[\w.-]*\.txt", name) is not None
+    return name in LOCKFILES or name == "package.json" or is_requirements(rel)
 
 
-def parse(root: Path, rel: str):
+def is_requirements(rel: str) -> bool:
+    """requirements*.txt, ou um .txt numa pasta requirements/ (base.txt, production.txt...)."""
+    parts = rel.split("/")
+    return re.fullmatch(r"requirements[\w.-]*\.txt", parts[-1]) is not None or \
+        (len(parts) > 1 and parts[-2] == "requirements" and parts[-1].endswith(".txt"))
+
+
+# -r/--requirement e -c/--constraint: o espaço depois de \s* não pode ser pego de novo pelo que vem depois
+_REQ_INCLUDE = re.compile(r"(?:-r|-c|--requirement|--constraint)\s*(?:=\s*)?(\S+)")
+
+
+def requirement_includes(root: Path, rel: str):
+    """Arquivos que um requirements inclui com -r ou -c, relativos à raiz (o caminho é relativo ao arquivo).
+    Quem chama confere se o arquivo existe no projeto; URL fica de fora."""
+    base = posixpath.dirname(rel)
+    out = []
+    for line in _lines(_read(root, rel) or ""):
+        m = _REQ_INCLUDE.match(line.split("#", 1)[0].strip())
+        if m and "://" not in m.group(1):
+            out.append(posixpath.normpath(posixpath.join(base, m.group(1))))
+    return out
+
+
+def parse(root: Path, rel: str, requirements=False):
+    """requirements=True lê o arquivo como requirements qualquer que seja o nome (incluído por -r ou -c)."""
     name = rel.rsplit("/", 1)[-1]
     text = _read(root, rel)
     if text is None:
         return []
-    fn = _PARSERS.get(name)
-    if fn is None and re.fullmatch(r"requirements[\w.-]*\.txt", name):
-        fn = _requirements
+    fn = _requirements if requirements or is_requirements(rel) else _PARSERS.get(name)
     if fn is None:
         return []
     try:
@@ -82,6 +107,9 @@ def _npm_lock(text):
             # Só o que está em node_modules/ vem do registro; "packages/app" é pasta de workspace.
             if "node_modules/" not in path or not isinstance(info, dict) or info.get("link") or "version" not in info:
                 continue
+            # Repositório git e tarball local também não, como no formato v1 abaixo.
+            if str(info.get("resolved") or "").startswith(("git", "github:", "file:")):
+                continue
             name = info.get("name") or path.rsplit("node_modules/", 1)[-1]
             yield "npm", name, info["version"], find(f'"{path}"')
         return
@@ -126,7 +154,7 @@ def _yarn_name(spec):
     if at < 0:
         return spec
     name, rng = spec[:at], spec[at + 1:]
-    if rng.startswith(_YARN_LOCAL):
+    if rng.startswith(_YARN_LOCAL + _YARN_REMOTE) or ("/" in rng and ":" not in rng):  # "dono/repo" é o GitHub
         return None
     if rng.startswith("npm:") and rng.find("@", 5) > 0:  # alias: apelido@npm:nome-real@faixa
         return rng[4:rng.index("@", 5)]
@@ -176,23 +204,28 @@ def _requirements(text):
 
 
 def _toml_packages(eco, local=None):
-    """local(source) diz se o pacote é do próprio projeto (pasta, workspace) e não do registro."""
+    """local(pkg) diz se o pacote é do próprio projeto (pasta, workspace) ou de um repositório git, e não do
+    registro. pkg tem as chaves name, version, source, git e path do pacote e "source.type" do [package.source]."""
     def parse(text):
-        pkg, start = {}, 0
+        pkg, start, sub = {}, 0, ""
         for i, line in enumerate(_lines(text) + ["[[package]]"], 1):
             if line.strip() == "[[package]]":
-                if pkg.get("name") and pkg.get("version") and not (local and local(pkg.get("source"))):
+                if pkg.get("name") and pkg.get("version") and not (local and local(pkg)):
                     yield eco, pkg["name"], pkg["version"], start
-                pkg, start = {}, i
+                pkg, start, sub = {}, i, ""
                 continue
-            m = re.match(r'^(name|version|source)\s*=\s*(?:"([^"]+)"|(\{.*))', line)
-            if m and start:
-                pkg.setdefault(m.group(1), m.group(2) or m.group(3))
+            if line.startswith("["):  # subtabela do pacote: só a [package.source] do Poetry interessa
+                sub = "source." if line.strip() == "[package.source]" else None
+                continue
+            m = re.match(r'^(name|version|source|git|path|type)\s*=\s*(?:"([^"]+)"|(\{.*))', line)
+            if m and start and sub is not None:
+                pkg.setdefault(sub + m.group(1), m.group(2) or m.group(3))
     return parse
 
 
-def _uv_local(source):
-    return bool(source) and re.match(r"\{\s*(editable|virtual|path|directory)\s*=", source) is not None
+def _uv_local(pkg):
+    source = pkg.get("source")
+    return bool(source) and re.match(r"\{\s*(editable|virtual|path|directory|git)\s*=", source) is not None
 
 
 def _pipfile_lock(text):
@@ -266,18 +299,19 @@ _PARSERS = {
     "bun.lock": _bun_lock,
     "package.json": _package_json,
     "requirements.txt": _requirements,
-    "poetry.lock": _toml_packages("PyPI"),
+    "poetry.lock": _toml_packages("PyPI", lambda pkg: pkg.get("source.type") in ("git", "directory", "file")),
     "uv.lock": _toml_packages("PyPI", _uv_local),
-    "pdm.lock": _toml_packages("PyPI"),
+    "pdm.lock": _toml_packages("PyPI", lambda pkg: "git" in pkg or "path" in pkg),
     "Pipfile.lock": _pipfile_lock,
     "go.mod": _go_mod,
-    "Cargo.lock": _toml_packages("crates.io", lambda source: source is None),  # sem source: crate do próprio projeto
+    # Sem source é crate do próprio projeto; "git+..." vem de um repositório, não do crates.io.
+    "Cargo.lock": _toml_packages("crates.io", lambda pkg: not pkg.get("source") or pkg["source"].startswith("git+")),
     "Gemfile.lock": _gemfile_lock,
     "composer.lock": _composer_lock,
 }
 
 
-def open_ranges(root: Path, rel: str):
+def open_ranges(root: Path, rel: str, requirements=False):
     """Manifesto sem lockfile ao lado: quantas dependências têm versão aberta."""
     name = rel.rsplit("/", 1)[-1]
     text = _read(root, rel)
@@ -294,7 +328,7 @@ def open_ranges(root: Path, rel: str):
                    for spec in d[sec].values()
                    if isinstance(spec, str) and not _EXACT.fullmatch(spec)
                    and not spec.startswith(("file:", "link:", "workspace:")))
-    if name.startswith("requirements"):
+    if requirements or is_requirements(rel):
         n = 0
         for line in _lines(text):
             line = line.split("#", 1)[0].strip()
@@ -317,7 +351,7 @@ class Range(namedtuple("Range", "eco name spec req floor upper inclusive prefix 
         return self.inclusive and self.upper is not None and _vkey(self.upper) == _vkey(self.floor)
 
 
-def ranges(root: Path, rel: str):
+def ranges(root: Path, rel: str, requirements=False):
     """Faixas com piso de requirements*.txt, package.json ou pyproject.toml. Quem chama decide se há lockfile."""
     name = rel.rsplit("/", 1)[-1]
     text = _read(root, rel)
@@ -328,7 +362,7 @@ def ranges(root: Path, rel: str):
             return list(_npm_ranges(text, rel))
         if name == "pyproject.toml":
             items = pyproject_requirements(text)
-        elif re.fullmatch(r"requirements[\w.-]*\.txt", name):
+        elif requirements or is_requirements(rel):
             items = _requirement_lines(text)
         else:
             return []
@@ -367,7 +401,9 @@ def raised(r: Range, version: str) -> str:
     return r.prefix + spec + r.suffix
 
 
-_VERSION = re.compile(r"v?\d+(?:\.\d+)*(?:[-+_.]?[A-Za-z0-9]+)*")
+# Pedaços de letras e números separados por um só -+_. (1.0.0rc1, 1.2.3-beta.1, 1.0+local). Cada separador abre um
+# pedaço novo, então o texto só se divide de um jeito: "(?:[-+_.]?[A-Za-z0-9]+)*" dividia "1aaaa...*" de 2^n jeitos.
+_VERSION = re.compile(r"v?\d[A-Za-z0-9]*(?:[-+_.][A-Za-z0-9]+)*")
 
 
 def _release(v):
@@ -480,7 +516,8 @@ def _requirement_lines(text):
         req, buf = (buf + line).strip(), ""
         if not req or req.startswith("-"):
             continue
-        req = re.split(r"\s+--?[A-Za-z]", req, maxsplit=1)[0].strip()
+        # Um espaço só antes da opção: "\s+--?" voltava a cada espaço de uma sequência longa (quadrático).
+        req = re.split(r"\s--?[A-Za-z]", req, maxsplit=1)[0].strip()
         if not _PIN.match(req):
             out.append((req, start))
     return out

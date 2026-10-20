@@ -95,7 +95,7 @@ Registros `MAL-*` do OSV e alertas de "malware" do GitHub: pacotes publicados pa
 <a id="dep004"></a>
 ### DEP004 · Faixa de versão aceita versões com falhas
 
-Sem lockfile, uma faixa como `Pillow>=10` ou `"axios": "^1.6.0"` é tudo o que decide a versão, e a menor versão dela continua valendo: quem já tem essa versão instalada fica com ela, e o instalador pode escolhê-la. O Stingward consulta no OSV.dev a menor versão de cada faixa (`>=`, `~=` e `==X.*` no Python; `^`, `~`, `>=`, `1.2.x` e `>=a <b` no npm), no mesmo lote dos pacotes fixados, em `requirements*.txt` e `package.json` sem lockfile ao lado e nas dependências de `[project]` de um `pyproject.toml` sem `poetry.lock`, `uv.lock` ou `pdm.lock`. Pacote fixado em outro arquivo do projeto fica com o DEP001. A versão instalada costuma ser mais nova, então o achado vai no máximo a médio (baixo quando a pior falha fica abaixo de alta), a não ser que o teto da faixa deixe a correção de fora: aí toda versão aceita tem a falha e a severidade é a mesma do DEP001.
+Sem lockfile, uma faixa como `Pillow>=10` ou `"axios": "^1.6.0"` é tudo o que decide a versão, e a menor versão dela continua valendo: quem já tem essa versão instalada fica com ela, e o instalador pode escolhê-la. O Stingward consulta no OSV.dev a menor versão de cada faixa (`>=`, `~=` e `==X.*` no Python; `^`, `~`, `>=`, `1.2.x` e `>=a <b` no npm), no mesmo lote dos pacotes fixados, em `requirements*.txt` (também os `.txt` de uma pasta `requirements/` e os arquivos que eles incluem com `-r` ou `-c`) e `package.json` sem lockfile ao lado e nas dependências de `[project]` de um `pyproject.toml` sem `poetry.lock`, `uv.lock` ou `pdm.lock`. Pacote fixado em outro arquivo do projeto fica com o DEP001. A versão instalada costuma ser mais nova, então o achado vai no máximo a médio (baixo quando a pior falha fica abaixo de alta), a não ser que o teto da faixa deixe a correção de fora: aí toda versão aceita tem a falha e a severidade é a mesma do DEP001.
 
 **Como corrigir:** suba a versão mínima para a indicada, por exemplo troque `Pillow>=10` por `Pillow>=12.3.0`. Se nenhuma versão da faixa tem a correção, amplie a faixa.
 **Padrões:** `CWE-1395`
@@ -105,7 +105,7 @@ Sem lockfile, uma faixa como `Pillow>=10` ou `"axios": "^1.6.0"` é tudo o que d
 <a id="sec001"></a>
 ### SEC001 · Segredo no código
 
-Chaves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord...), chaves privadas, senha em URL, webhooks e atribuições sensíveis. O valor nunca aparece em nenhum formato de relatório, só o tipo e o lugar. Em testes, documentação e exemplos a severidade cai.
+Chaves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord...), chaves privadas (também em arquivos `id_rsa`, `.pem`, `.key` e `.p8`), senha em URL, webhooks e atribuições sensíveis. O valor nunca aparece em nenhum formato de relatório, só o tipo e o lugar. Em testes, documentação e exemplos a severidade cai.
 
 **Como corrigir:** mova o valor para variável de ambiente ou cofre de segredos e troque a chave: ela já está no histórico.
 **Padrões:** `CWE-798` · `LLM02:2026`
