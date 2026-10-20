@@ -105,7 +105,7 @@ Without a lockfile, a range such as `Pillow>=10` or `"axios": "^1.6.0"` is all t
 <a id="sec001"></a>
 ### SEC001 · Secret in code
 
-API keys (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord, Replicate, Pinecone, Shopify, Notion, Linear, Resend...), Google OAuth client secrets (`GOCSPX-`, high: an installed app ships its own), private keys (also in `id_rsa`, `.pem`, `.key` and `.p8` files), passwords in URLs, webhooks and sensitive assignments. The value is never printed in any report format, only its type and location. Matches in tests, docs and examples are lowered.
+API keys (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord, Replicate, Pinecone, Shopify, Notion, Linear, Resend, Clerk...), Google OAuth client secrets (`GOCSPX-`, high: an installed app ships its own), private keys (also in `id_rsa`, `.pem`, `.key` and `.p8` files), passwords in URLs, webhooks and sensitive assignments. The value is never printed in any report format, only its type and location. Matches in tests, docs and examples are lowered.
 
 **Fix:** move the value to an environment variable or a secret manager, then rotate it: it is already in the history.
 **Standards:** `CWE-798` · `LLM02:2026`

@@ -319,6 +319,20 @@ class TokenFormats(Case):
             with self.subTest(value=value[:8]):
                 self.assertEqual(brief(scan_files({"src/hub.py": f'hub = Hub("{value}")\n'}), "SEC001"), [])
 
+    def test_clerk_secret_keys_are_named_clerk(self):
+        # Clerk secret keys share Stripe's sk_live_/sk_test_ shape; the line says which service it is.
+        live, test = "sk_" + "live_" + R36 + "Qw9x", "sk_" + "test_" + R36 + "Qw9x"
+        cases = [(f'const clerk = createClerkClient({{ secretKey: "{live}" }})', "Clerk secret key", "critical"),
+                 (f'CLERK_SECRET_KEY = "{test}"', "Clerk secret key", "low"),
+                 (f'const stripe = new Stripe("{live}")', "Stripe key", "critical"),
+                 (f'stripe.api_key = "{test}"', "Stripe key", "low")]
+        for line, kind, sev in cases:
+            with self.subTest(line=line[:30]):
+                f = scan_files({"src/billing.ts": line + "\n"})
+                self.assertEqual([(x.rule, x.params["kind_en"], x.severity) for x in f], [("SEC001", kind, sev)])
+        self.assertEqual(scan_files({"src/a.ts": f'const clerk = createClerkClient({{ secretKey: "{live}" }})\n'})[0]
+                         .params["kind_pt"], "chave secreta do Clerk")
+
     def test_webhook_is_judged_by_its_own_url_not_by_the_rest_of_the_line(self):
         slack = "https://hooks.slack.com/services/" + "T01ABCDEF/B02GHIJKL/" + "q8W3e5R7t9Y1u3I5o7P9a1S3"
         discord = "https://discord.com/api/webhooks/" + "112233445566778899/" + "Zq8W3e5R7t9Y1u3I5o7P9a1S3d5F7g9H"
