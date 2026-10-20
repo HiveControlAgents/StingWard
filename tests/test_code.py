@@ -315,6 +315,23 @@ class CodeRules(Checks):
         self.assertIn("Nome de coluna ou de tabela não pode ser parâmetro: escolha o nome numa lista fixa", pt)
         self.assertIn("A column or table name cannot be a parameter: pick it from a fixed list", en)
 
+    def test_app009_and_app014_fix_says_how_to_pick_a_column_or_table_name(self):
+        # The same gap as COD001: a table or column name from a tool argument or from the model (medium) cannot be a
+        # query parameter, so the fix also says to pick the name from a fixed list.
+        tool = FMCP + ("import sqlite3\nconn = sqlite3.connect('d')\n"
+                       "@mcp.tool()\ndef rows(table: str) -> list:\n"
+                       "    return conn.execute(f'SELECT * FROM {table}').fetchall()\n")
+        llm = OPENAI_PY + ("import sqlite3\nconn = sqlite3.connect('d')\ndef pick(q):\n"
+                           "    r = client.chat.completions.create(model='m', messages=[{'role': 'user', 'content': q}])\n"
+                           "    order = r.choices[0].message.content\n"
+                           "    return conn.execute(f'SELECT * FROM t ORDER BY {order}').fetchall()\n")
+        found = {x.rule: x for x in run({"tool.py": tool, "llm.py": llm}) if x.rule in ("APP009", "APP014")}
+        self.assertEqual(sorted(found), ["APP009", "APP014"])
+        for rule, f in found.items():
+            pt, en = texts(rule, "pt", f.params)[2], texts(rule, "en", f.params)[2]
+            self.assertIn("Nome de coluna ou de tabela não pode ser parâmetro: escolha o nome numa lista fixa", pt, rule)
+            self.assertIn("A column or table name cannot be a parameter: pick it from a fixed list", en, rule)
+
     def test_cod001_js_allowlists_before_the_query(self):
         """ALLOWED.includes(x) ? x : 'name', if (!LISTA.includes(x)) return, if (!/^...$/.test(x)) throw: depois disso o
         valor é um dos permitidos. Um if que não sai, uma regex sem âncora ou o outro lado do ? vindo de fora não protegem."""
