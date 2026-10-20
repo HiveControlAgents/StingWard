@@ -312,8 +312,9 @@ def _code_html(s, t):
 
 _SECRET_FILE = re.compile(r"(?i)(?:^|/)(?:\.env(?:\.[\w.-]+)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|credentials|id_[a-z0-9_]+|"
                           r"[^/]*\.(?:pem|key|p12|pfx|jks|keystore))$")
-_KEY_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
-_KEY_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY-----")
+# Bloco de chave privada. O do PGP termina em "PRIVATE KEY BLOCK-----".
+_KEY_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")
+_KEY_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")
 _RUN = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
 # Referência a variável de ambiente é nome, não valor: apiKey: process.env.X fica à vista. Só quando ela é o valor
 # inteiro (vem antes de , ; ) } ] ou do fim da linha). Assim process.env.TOKEN = "..." e password: process.env.X ||

@@ -218,6 +218,19 @@ class NoSecretInEvidence(SecretsCase):
         self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "deploy/key.txt", 6)], ["[REDACTED:private_key]", "end"])
         self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "deploy/key.txt", 1)], ["notes", "[REDACTED:private_key]"])
 
+    def test_pgp_private_key_lines_never_show(self):
+        # A armadura do PGP termina em "PRIVATE KEY BLOCK-----". A última linha do corpo costuma ser curta e, sozinha,
+        # não tem cara de segredo: só o bloco inteiro escondido a protege.
+        pgp = ("-----BEGIN PGP " + "PRIVATE KEY BLOCK-----\n\n" + PEM_BODY + "\n" + OPAQUE[:11] + "\n=Ab3x\n"
+               "-----END PGP " + "PRIVATE KEY BLOCK-----\n")
+        root = tree({"sign/notes.txt": "notes\n" + pgp + "end\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        ctx = ctx_for(root)
+        # 1 notes, 2 BEGIN, 3 vazia, 4 corpo, 5 fim do corpo, 6 soma de controle, 7 END, 8 end
+        self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "sign/notes.txt", 5)], ["[REDACTED:private_key]"] * 3)
+        self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "sign/notes.txt", 8)], ["[REDACTED:private_key]", "end"])
+        self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "sign/notes.txt", 1)], ["notes", "[REDACTED:private_key]"])
+
     def test_masking_keeps_names_and_hides_values(self):
         cases = {
             "apiKey: process.env.OPENAI_API_KEY,": "apiKey: process.env.OPENAI_API_KEY,",
