@@ -54,7 +54,7 @@ To build the website: `python site/build.py _site`, then open `_site/index.html`
 
 ## Pull requests
 
-Keep them focused, include tests, and make sure CI is green on all three systems. Describe the before and after in plain words. By contributing you agree that your work is released under the [MIT license](LICENSE).
+Keep them focused, include tests, and make sure CI is green on all three systems. Describe the before and after in plain words. By contributing you agree that your work is released under the [Apache 2.0 license](LICENSE).
 
 ## Releases (maintainers)
 

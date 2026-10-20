@@ -11,7 +11,7 @@
   <a href="https://www.npmjs.com/package/stingward"><img alt="npm" src="https://img.shields.io/npm/v/stingward?color=f5b83d"></a>
   <a href="https://pypi.org/project/stingward/"><img alt="Python 3.9+" src="https://img.shields.io/pypi/pyversions/stingward"></a>
   <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-0-brightgreen">
-  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache%202.0-blue"></a>
   <a href="#quality"><img alt="stingward: A" src="https://img.shields.io/badge/stingward-A-brightgreen"></a>
 </p>
 
@@ -168,4 +168,4 @@ Bug reports, false positives and new rules are welcome. Read [CONTRIBUTING.md](C
 
 Vulnerability data: [OSV.dev](https://osv.dev) (aggregating GitHub Advisories, NVD, PyPA, RustSec, Go and OpenSSF malicious packages), [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog), [FIRST EPSS](https://www.first.org/epss/) and [NVD](https://nvd.nist.gov).
 
-[MIT](LICENSE) © Isaque Moutta
+[Apache 2.0](LICENSE) © Isaque Moutta
