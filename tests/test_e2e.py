@@ -389,6 +389,21 @@ class ActionSteps(unittest.TestCase):
         self.assertEqual([f for f in os.listdir(self.tmp) if f.startswith("pwned")], [])
 
 
+    def test_an_empty_folder_gives_no_grade_and_fails_the_job(self):
+        """Nada lido: a saída grade não pode virar o texto "None" do Python, e o job não passa (código 4)."""
+        project = os.path.join(self.tmp, "empty")
+        os.makedirs(project)
+        env = {"PY": sys.executable, "STINGWARD_HOME": ROOT, "STINGWARD_PATH": project, "STINGWARD_FAIL_ON": "high",
+               "STINGWARD_LANG": "en", "STINGWARD_CACHE": self.tmp,
+               "HTTPS_PROXY": "http://127.0.0.1:9", "https_proxy": "http://127.0.0.1:9"}
+        run = self.run_step("id: scan", env)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        with open(os.path.join(self.tmp, "output"), encoding="utf-8") as fh:
+            out = dict(line.split("=", 1) for line in fh.read().splitlines())
+        self.assertEqual(out["grade"], "none")
+        self.assertEqual(out["exit_code"], "4")
+
+
 class ActionPermissions(unittest.TestCase):
     def test_two_runs_in_one_workflow_can_keep_their_own_sarif(self):
         """Com uma categoria fixa, duas pastas auditadas no mesmo workflow (um monorepo) apagam o SARIF uma da outra."""
