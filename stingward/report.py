@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import json
 import re
+import string
 from collections import Counter
 from urllib.parse import quote
 
 from . import __version__
+from .checks import code, secrets
 from .model import SEV_RANK, SEVERITIES
 from .rules import RULES, STANDARDS, fill, standards, texts
 
@@ -31,11 +33,13 @@ T = {
         "summary": "Resumo", "grade": "Nota", "sources": "Bases consultadas",
         "offline": "modo offline: dependências não foram checadas",
         "pkgs": "{n} pacote(s) verificado(s)", "osv_fail": "OSV.dev não respondeu: dependências não foram checadas",
+        "kev_fail": "CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com severidade abaixo da real",
         "badge": "Selo para o README",
         "verdict_bad": "🔴 Não instale ainda: há problemas graves.",
         "verdict_mid": "🟡 Instale só depois de ler os itens abaixo.",
         "verdict_ok": "🟢 Nada grave encontrado. Leia o código mesmo assim: nenhuma ferramenta pega tudo.",
         "more": "e mais {n} item(ns) de severidade baixa",
+        "more_md": "e mais {n} item(ns): {counts}",
         "first": "Corrija primeiro", "and_more": "e mais {n}",
         "client": "Preparado para", "notes": "Parecer do analista", "review": "revisão",
         "reviewed_by": "Revisado por {name}", "reviewed": "Revisado por uma pessoa",
@@ -47,7 +51,14 @@ T = {
                      "fixed": ("{n} corrigido durante a auditoria", "{n} corrigidos durante a auditoria"),
                      "": ("{n} ainda não revisado", "{n} ainda não revisados")},
         "discarded": "Descartados como alarme falso ({n})",
+        "gone": "Corrigidos durante a auditoria, já fora desta varredura ({n})",
         "grade_rule": "A nota não conta alarmes falsos nem o que foi corrigido durante a auditoria.",
+        "sarif_help": "A correção depende do caso: cada alerta diz o que mudar. Mais sobre esta regra: {url}",
+        "nothing_read": "Nenhum arquivo foi lido (0 arquivos), então não há o que avaliar e não há nota. Confira o caminho: a pasta "
+                        "está vazia ou tudo nela foi pulado (binários, arquivos grandes demais, pastas como node_modules).",
+        "nothing_read_agents": "Nenhuma configuração de agente foi encontrada nesta máquina (0 arquivos lidos), então não há o que "
+                               "avaliar e não há nota.",
+        "summary_none": "Resumo: 0 arquivos lidos · sem nota", "no_grade": "sem nota",
     },
     "en": {
         "title": "Security audit", "where": "where", "why": "why", "fix": "how to fix",
@@ -55,11 +66,13 @@ T = {
         "summary": "Summary", "grade": "Grade", "sources": "Sources",
         "offline": "offline mode: dependencies were not checked",
         "pkgs": "{n} package(s) checked", "osv_fail": "OSV.dev did not respond: dependencies were not checked",
+        "kev_fail": "CISA KEV did not respond: a vulnerability attackers already exploit may show a lower severity than it should",
         "badge": "README badge",
         "verdict_bad": "🔴 Do not install yet: serious problems found.",
         "verdict_mid": "🟡 Install only after reading the items below.",
         "verdict_ok": "🟢 Nothing serious found. Still read the code: no tool catches everything.",
         "more": "and {n} more low-severity item(s)",
+        "more_md": "and {n} more item(s): {counts}",
         "first": "Fix these first", "and_more": "and {n} more",
         "client": "Prepared for", "notes": "Analyst summary", "review": "review",
         "reviewed_by": "Reviewed by {name}", "reviewed": "Reviewed by a person",
@@ -71,7 +84,13 @@ T = {
                      "fixed": ("{n} fixed during the audit", "{n} fixed during the audit"),
                      "": ("{n} not reviewed yet", "{n} not reviewed yet")},
         "discarded": "Discarded as false positives ({n})",
+        "gone": "Fixed during the audit, no longer in this scan ({n})",
         "grade_rule": "The grade leaves out false positives and what was fixed during the audit.",
+        "sarif_help": "The fix depends on the case: each alert says what to change. More about this rule: {url}",
+        "nothing_read": "No file was read (0 files), so there is nothing to grade. Check the path: the folder is empty, or "
+                        "everything in it was skipped (binary files, files that are too large, folders such as node_modules).",
+        "nothing_read_agents": "No agent configuration was found on this machine (0 files read), so there is nothing to grade.",
+        "summary_none": "Summary: 0 files read · no grade", "no_grade": "no grade",
     },
 }
 
@@ -104,6 +123,16 @@ def review_counts(findings, review, lang):
     return ", ".join(review_parts(findings, review, lang))
 
 
+def nothing_read(ctx, findings):
+    """Nenhum arquivo lido e nada achado: não há o que avaliar. Pasta vazia, caminho errado ou checkout esquecido no CI
+    não podem sair como um A limpo, com selo e veredito verde."""
+    return not ctx.files and not findings
+
+
+def nothing_read_text(ctx, lang):
+    return T[lang]["nothing_read_agents" if ctx.mode == "agents" else "nothing_read"]
+
+
 def grade(findings):
     c = Counter(f.severity for f in findings)
     if c["critical"]:
@@ -116,11 +145,18 @@ def grade(findings):
 
 
 # Nome de servidor, caminho e trecho vêm do código auditado: sem isso, um ESC[1A apagaria o veredito no terminal.
-_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
+# A quebra de linha também (\n, U+2028, U+2029): um arquivo chamado "x\nResumo: 0 · Nota: A" criaria uma linha falsa.
+_CONTROL = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]")
 
 
 def _clean(s):
     return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}" if ord(m.group()) < 0x100 else f"\\u{ord(m.group()):04x}", str(s))
+
+
+def shown_target(target):
+    """O alvo como a pessoa digitou, sem credencial: https://x-access-token:<token>@github.com/... (skill privada) sai
+    com o token mascarado no texto e na capa do HTML."""
+    return secrets.mask(str(target))
 
 
 def badge_md(g):
@@ -148,12 +184,19 @@ def _sources_line(ctx, lang):
         parts.append("OSV.dev")
     if ctx.sources.get("kev"):
         kv = ctx.sources["kev"]
-        parts.append(f"CISA KEV {kv}" if isinstance(kv, str) else "CISA KEV")
+        parts.append(f"CISA KEV {_clean(kv)}" if isinstance(kv, str) else "CISA KEV")  # a versão vem da rede
+    elif ctx.sources.get("kev_error"):  # sem a KEV, uma falha explorada agora não sobe para crítica
+        parts.append(t["kev_fail"])
     if ctx.sources.get("epss"):
         parts.append("EPSS (FIRST)")
     if ctx.sources.get("nvd"):
         parts.append("NVD")
     return " · ".join(parts)
+
+
+def source_failed(ctx):
+    """Alguma base não respondeu (OSV ou KEV): o relatório diz isso mesmo quando não há achado."""
+    return not ctx.offline and bool(ctx.sources.get("osv_error") or ctx.sources.get("kev_error"))
 
 
 def counts_line(findings, lang):
@@ -195,8 +238,34 @@ class Entry:
         return out
 
 
+# Ordem dos itens, de "corrija primeiro" e do plano: depois da severidade, o que um atacante aproveita mais rápido.
+# 0 falha com ataque em uso (KEV); 1 chave ou segredo exposto, que qualquer um usa sem esforço; 2 execução de código
+# ou comando, que entrega o servidor ou a máquina; 3 acesso aberto aos dados; 4 o resto. No empate, a ordem da
+# varredura: regra, arquivo e linha. Por regra ou prefixo; regra sem entrada fica no fim (4).
+PRIORITY = {
+    "SEC": 1, "APP001": 1, "APP002": 1,
+    "COD002": 2, "COD003": 2, "COD004": 2, "APP012": 2, "APP013": 2, "AGT002": 2, "SKL002": 2, "SKL009": 2, "SKL011": 2,
+    "APP004": 3, "APP005": 3, "APP006": 3, "APP008": 3, "COD001": 3,
+}
+# APP009 e APP014 dependem de onde chega o que o modelo escreveu.
+PRIORITY_BY_SINK = {
+    "APP009": {"code": 2, "shell": 2, "template": 2, "sql": 3},
+    "APP014": {"shell": 2, "code": 2, "template": 2, "deserialize": 2, "sql": 3},
+}
+_LLM_KIND = {v[1]: k for k, v in code._LLM_SINK.items()}  # a APP009 guarda o destino só como texto: "a shell command"
+
+
+def priority(entry):
+    if any("kev" in f.tags for f in entry.findings):
+        return 0
+    by_sink = PRIORITY_BY_SINK.get(entry.rule)
+    if by_sink is not None:
+        return by_sink.get(entry.params.get("kind") or _LLM_KIND.get(entry.params.get("sink_en"), ""), 4)
+    return PRIORITY.get(entry.rule, PRIORITY.get(entry.rule[:3], 4))
+
+
 def merge(findings, lang, review=None):
-    """Mesma regra e mesmo título viram um item só, na ordem em que os achados vêm (o pior primeiro).
+    """Mesma regra e mesmo título viram um item só, do pior para o menos grave e, na mesma severidade, pela PRIORITY.
 
     O "por quê" e o "como corrigir" também entram na chave: na SKL001 o "por quê" traz a mensagem escondida, e
     duas mensagens diferentes não podem virar uma. A severidade também: o mesmo segredo dentro de tests/ fica baixo
@@ -212,6 +281,7 @@ def merge(findings, lang, review=None):
         else:
             index[key] = Entry(f, title, why, fix, status, comment)
             entries.append(index[key])
+    entries.sort(key=lambda e: (-SEV_RANK[e.severity], priority(e)))  # estável: o empate fica na ordem da varredura
     return entries
 
 
@@ -399,7 +469,9 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
     rv = audit.review if audit else None
     valid = counted(findings, rv)
     shown, discarded = split(merge(findings, lang, rv))
-    out = [f"stingward {__version__} · {t['title']}: {_clean(target or ctx.root)}", f"{t['sources']}: {_sources_line(ctx, lang)}"]
+    empty = nothing_read(ctx, findings)
+    out = [f"stingward {__version__} · {t['title']}: {_clean(shown_target(target or ctx.root))}",
+           f"{t['sources']}: {_sources_line(ctx, lang)}"]
     out += [f"{_clean(k)}: {_clean(v)}" for k, v in _review_head(audit, findings, lang)]
     out.append("")
     if audit and audit.notes:
@@ -407,14 +479,16 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
         from .review import plain
         out += [f"  {_clean(line)}" if line else "" for line in plain(audit.notes, gap=True)]
         out.append("")
-    if show_verdict:
+    if show_verdict and not empty:
         out += [verdict(valid, lang), ""]
     first = _fix_first(shown)
     if first:
         out.append(f"{t['first']}:")
         out += [f" {i}. {ICON[e.severity]} {_clean(e.title)} · {_clean(_first_place(e))}" for i, e in enumerate(first, 1)]
         out.append("")
-    if not shown:
+    if empty:
+        out.append("⚠️ " + nothing_read_text(ctx, lang))
+    elif not shown:
         out.append(t["none"])
     shown_low = 0
     hidden = 0
@@ -439,17 +513,31 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
         out.append("")
     if hidden:
         out += [t["more"].format(n=hidden), ""]
+    gone = audit.gone if audit else []
+    if gone:  # do arquivo de revisão: o problema foi corrigido e sumiu da varredura
+        if not shown:
+            out.append("")  # depois de "Nada encontrado."
+        out.append(t["gone"].format(n=len(gone)) + ":")
+        for e in gone:
+            out.append(f" - {ICON[e.severity]} {_clean(e.title)}" + (f" · {_clean(e.where)}" if e.where else "")
+                       + (f"  [{e.rule}]" if e.rule else ""))
+            out += _comment_lines(audit, e, lang, label=False)
+        out.append("")
     if discarded:
         out.append(t["discarded"].format(n=sum(len(e.findings) for e in discarded)) + ":")
         for e in discarded:
             out.append(f" - {_clean(e.title)} · {_clean(places(e, lang))}  [{e.rule}]")
             out += _comment_lines(audit, e, lang, label=False)
         out.append("")
+    if empty:  # sem nota e sem selo
+        out.append(t["summary_none"])
+        return "\n".join(out) + "\n"
     g = grade(valid)
     out.append(f"{t['summary']}: {counts_line(valid, lang) or '0'} · {t['grade']}: {g}")
     if rv is not None:
         out.append(t["grade_rule"])
-    out.append(f"{t['badge']}: {badge_md(g)}")
+    if ctx.mode != "agents":  # a auditoria da própria máquina não tem README onde pôr o selo
+        out.append(f"{t['badge']}: {badge_md(g)}")
     return "\n".join(out) + "\n"
 
 
@@ -499,30 +587,43 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
     valid = counted(findings, rv)
     g = grade(valid)
     shown, discarded = split(merge(findings, lang, rv))
-    out = ["<!-- stingward-report -->", f"### {badge_md(g)} {t['title']}", ""]
+    empty = nothing_read(ctx, findings)
+    plain = empty or ctx.mode == "agents"  # sem nota, ou a própria máquina: sem selo
+    out = ["<!-- stingward-report -->", f"### {t['title']}" if plain else f"### {badge_md(g)} {t['title']}", ""]
     head = _review_head(audit, findings, lang)
     if head:
         out += [" · ".join(f"**{_esc(k)}:** {_esc(v)}" for k, v in head), ""]
     if audit and audit.notes:
         out += [f"**{_esc(t['notes'])}**", ""] + _md_blocks(audit.notes)
-    if show_verdict:
+    if show_verdict and not empty:
         out += [verdict(valid, lang), ""]
-    if not shown:
+    if empty:
+        out += ["⚠️ " + nothing_read_text(ctx, lang), ""]
+    elif not shown:
         out += [t["none"], ""]
+        if source_failed(ctx):  # "nada encontrado" com o OSV fora do ar não é um comentário limpo
+            out += [f"**{t['sources']}:** {_esc(_sources_line(ctx, lang))}", ""]
     else:
         first = _fix_first(shown)
         if first:
             out += [f"**{t['first']}**", ""]
             out += [f"{i}. {ICON[e.severity]} {_esc(e.title)} · <sub>{_esc(_first_place(e))}</sub>" for i, e in enumerate(first, 1)]
             out.append("")
-        out += [f"**{t['summary']}:** {counts_line(valid, lang) or '0'} · {t['sources']}: {_sources_line(ctx, lang)}", "",
+        out += [f"**{t['summary']}:** {counts_line(valid, lang) or '0'} · {t['sources']}: {_esc(_sources_line(ctx, lang))}", "",
                 "| | | |", "|---|---|---|"]
         for e in shown[:50]:
             note = f"<br><sub>{_md_comment(audit, e, lang)}</sub>" if rv is not None else ""
             out.append(f"| {ICON[e.severity]} {LABEL[lang][e.severity]} | {_esc(e.title)}<br><sub>{_esc(places(e, lang, limit=5))}</sub>{note} "
                        f"| {_esc(e.fix)} |")
-        if len(shown) > 50:
-            out.append(f"| | {t['more'].format(n=len(shown) - 50)} | |")
+        if len(shown) > 50:  # os que sobram podem ser de qualquer severidade: a linha diz quais são
+            rest = shown[50:]
+            out.append(f"| | {t['more_md'].format(n=len(rest), counts=counts_line(rest, lang))} | |")
+        out.append("")
+    gone = audit.gone if audit else []
+    if gone:
+        out += [f"**{_esc(t['gone'].format(n=len(gone)))}**", ""]
+        out += [f"- {ICON[e.severity]} {_esc(e.title)}" + (f" · <sub>{_esc(e.where)}</sub>" if e.where else "")
+                + f"<br><sub>{_md_comment(audit, e, lang)}</sub>" for e in gone[:50]]
         out.append("")
     if discarded:
         out += [f"**{_esc(t['discarded'].format(n=sum(len(e.findings) for e in discarded)))}**", ""]
@@ -536,12 +637,15 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
 
 
 _MD = {"\\": "\\\\", "|": "\\|", "<": "&lt;", ">": "&gt;", "&": "&amp;", "[": "\\[", "]": "\\]", "`": "\\`",
-       "*": "\\*", "_": "\\_", "!": "\\!", "\n": " ", "\r": " ", "@": "@&#8203;"}
+       "*": "\\*", "_": "\\_", "!": "\\!", "@": "@&#8203;", "\u200b": "&#8203;"}
+# O GitHub também faz link de endereço solto (https://..., www....) e de #12 ou dono/repo#3, que ainda aparece na
+# issue citada. Um espaço de largura zero depois de ":", "www" e "#" desfaz os três sem mudar o que se lê.
+_AUTOLINK = re.compile(r"(?i)(?<=:)(?=//)|(?<=www)(?=\.)|(?<=#)(?=\d)")
 
 
 def _esc(s):
-    """Texto do código auditado vira texto puro no comentário do PR: sem imagem, link, HTML ou @menção."""
-    return "".join(_MD.get(ch, ch) for ch in _clean(s))
+    """Texto do código auditado vira texto puro no comentário do PR: sem imagem, link, HTML, @menção ou #referência."""
+    return "".join(_MD.get(ch, ch) for ch in _AUTOLINK.sub("\u200b", _clean(s)))
 
 
 # --------------------------------------------------------------------------- JSON e SARIF: um registro por achado
@@ -560,14 +664,83 @@ def as_json(ctx, findings, lang="pt", audit=None):
             status, comment = rv.get(f)
             item["review"] = {"status": status or None, "comment": audit.mask.lines(comment)}
         items.append(item)
-    doc = {"tool": "stingward", "version": __version__, "grade": grade(counted(findings, rv)), "sources": ctx.sources, "findings": items}
+    empty = nothing_read(ctx, findings)
+    doc = {"tool": "stingward", "version": __version__, "grade": None if empty else grade(counted(findings, rv))}
+    if empty:
+        doc["warning"] = "nothing_read"  # nenhum arquivo lido: não há nota
+    doc.update(sources=ctx.sources, findings=items)
     if rv is not None:
         doc["review"] = {"reviewer": audit.reviewer or None, "counts": {k or "unreviewed": v for k, v in counts(findings, rv).items()}}
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
 
 
+# Nome genérico de cada regra, o da tabela de docs/rules.md e docs/rules.pt-BR.md (um teste confere). O SARIF
+# descreve a regra uma vez só para todos os alertas dela: o título de um achado fala do pacote ou do destino dele.
+RULE_NAME = {
+    "DEP001": ("Versão de dependência com falhas conhecidas", "Dependency version with known vulnerabilities"),
+    "DEP002": ("Pacote malicioso", "Malicious package"),
+    "DEP003": ("Manifesto sem lockfile", "Manifest without a lockfile"),
+    "DEP004": ("Faixa de versão aceita versões com falhas", "Version range allows vulnerable versions"),
+    "SEC001": ("Segredo no código", "Secret in code"),
+    "SEC002": (".env no git", ".env committed to git"),
+    "SEC003": (".env fora do .gitignore", ".env missing from .gitignore"),
+    "SEC004": ("Chave service_role do Supabase no código", "Supabase service_role key in code"),
+    "APP001": ("Segredo exposto ao navegador por prefixo público",
+               "Secret exposed to the browser through a public env prefix"),
+    "APP002": ("SDK de IA rodando no navegador", "AI SDK running in the browser"),
+    "APP003": ("CORS aberto para qualquer origem", "CORS open to any origin"),
+    "APP004": ("Tabela do Supabase sem Row Level Security", "Supabase table without Row Level Security"),
+    "APP005": ("Política do Supabase que libera para todos", "Supabase policy that allows everyone"),
+    "APP006": ("Regras do Firebase abertas", "Open Firebase rules"),
+    "APP007": ("Modo debug ligado", "Debug mode enabled"),
+    "APP008": ("JWT aceito sem verificar a assinatura", "JWT accepted without verifying the signature"),
+    "APP009": ("Saída do modelo chega a código, shell, SQL ou HTML", "Model output reaches code, a shell, SQL or HTML"),
+    "APP010": ("Dado da requisição entra no prompt de sistema", "Request input goes into the system prompt"),
+    "APP011": ("Rota de IA sem login e sem limite de uso", "AI endpoint with no login and no rate limit"),
+    "APP012": ("Carregar o modelo pode executar código", "Loading the model can run code"),
+    "APP013": ("Agente pode executar o que o modelo escrever", "Agent can run whatever the model writes"),
+    "APP014": ("Argumento que o modelo escreve na ferramenta chega a shell, código, SQL, caminho ou URL",
+               "Tool argument written by the model reaches a shell, code, SQL, a path or a URL"),
+    "COD001": ("Consulta SQL montada com dado de fora", "SQL query built from outside input"),
+    "COD002": ("Comando de shell montado com dado de fora", "Shell command built from outside input"),
+    "COD003": ("Código montado com dado de fora é executado", "Code built from outside input is executed"),
+    "COD004": ("Dados carregados com pickle ou YAML inseguro", "Data loaded with pickle or unsafe YAML"),
+    "COD005": ("HTML inserido sem limpar", "HTML inserted without sanitizing"),
+    "COD006": ("Verificação do certificado TLS desligada", "TLS certificate check turned off"),
+    "COD007": ("Caminho de arquivo montado com dados da requisição", "File path built from request input"),
+    "COD008": ("Servidor busca uma URL que veio da requisição", "Server fetches a URL taken from the request"),
+    "COD009": ("Redirecionamento para um endereço que veio da requisição",
+               "Redirect to an address taken from the request"),
+    "COD010": ("Número aleatório previsível usado num segredo", "Predictable random number used for a secret"),
+    "COD011": ("Senha guardada com hash rápido", "Password hashed with a fast hash"),
+    "AGT001": ("Permissão de agente ampla demais", "Agent permission too broad"),
+    "AGT002": ("Hook que baixa e executa código", "Hook downloads and runs remote code"),
+    "AGT003": ("Servidor MCP sem versão fixa", "MCP server without a pinned version"),
+    "AGT004": ("Credencial escrita na configuração do MCP", "Credential hard-coded in MCP config"),
+    "AGT005": ("Servidor MCP remoto sem HTTPS", "Remote MCP server over plain HTTP"),
+    "AGT006": ("Todos os servidores MCP do projeto aprovados automaticamente",
+               "Every project MCP server auto-approved"),
+    "SKL001": ("Caracteres Unicode invisíveis", "Invisible Unicode characters"),
+    "SKL002": ("Baixa um script e passa direto para o shell", "Downloads a script and pipes it into a shell"),
+    "SKL003": ("Injeção de prompt ou envenenamento de ferramenta", "Prompt injection phrasing or tool poisoning"),
+    "SKL004": ("Lê credenciais da máquina", "Reads machine credentials"),
+    "SKL005": ("Executa instruções vindas de arquivos ou páginas",
+               "Executes instructions taken from files or web pages"),
+    "SKL006": ("Skill pede shell sem restrição", "Skill requests unrestricted shell"),
+    "SKL007": ("Código ofuscado", "Obfuscated code"),
+    "SKL008": ("Envia dados para serviço de captura anônimo", "Sends data to an anonymous capture service"),
+    "SKL009": ("Script de instalação executa comandos", "Install script runs commands"),
+    "SKL010": ("Skill manda o agente não parar para falar com você", "Skill tells the agent not to pause for you"),
+    "SKL011": ("Reverse shell", "Reverse shell"),
+}
+
+
 _SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "note"}
 _SARIF_SCORE = {"critical": "9.5", "high": "8.0", "medium": "5.5", "low": "3.0", "info": "0.0"}
+
+
+def _fields(template):
+    return any(field for _, field, _, _ in string.Formatter().parse(template))
 
 
 def sarif(ctx, findings, lang="pt", prefix=""):
@@ -577,11 +750,18 @@ def sarif(ctx, findings, lang="pt", prefix=""):
     first = {}
     for f in findings:  # já vêm da mais grave para a menos grave
         first.setdefault(f.rule, f)
+    lang = lang if lang in ("pt", "en") else "en"
+    doc_page = "rules.pt-BR.md" if lang == "pt" else "rules.md"
     rules = []
     for r, f in sorted(first.items()):
-        title, why, fix = texts(r, lang, f.params)
-        rules.append({"id": r, "name": r, "shortDescription": {"text": title}, "fullDescription": {"text": why},
-                      "help": {"text": fix}, "helpUri": f"{REPO_URL}/blob/main/docs/rules.md#{r.lower()}",
+        # Texto da regra com campo a preencher depende do achado: no lugar dele vai o nome, ou a ajuda genérica.
+        name = RULE_NAME[r][0 if lang == "pt" else 1]
+        _, why, fix = RULES[r][lang]
+        uri = f"{REPO_URL}/blob/main/docs/{doc_page}#{r.lower()}"
+        rules.append({"id": r, "name": r, "shortDescription": {"text": name},
+                      "fullDescription": {"text": fill(why, lang, {}) if not _fields(why) else name},
+                      "help": {"text": fill(fix, lang, {}) if not _fields(fix) else T[lang]["sarif_help"].format(url=uri)},
+                      "helpUri": uri,
                       "properties": {"tags": ["security", RULES[r]["group"]] + STANDARDS.get(r, []),
                                      "security-severity": _SARIF_SCORE[f.severity]}})
     results = []

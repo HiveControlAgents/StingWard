@@ -41,6 +41,7 @@ from stingward import __version__  # noqa: E402
 from stingward import _redact as redact  # noqa: E402
 from stingward.checks import deps  # noqa: E402
 from stingward.model import Context  # noqa: E402
+from stingward.report import ICON  # noqa: E402
 from stingward.rules import RULES  # noqa: E402
 
 e = html.escape
@@ -60,6 +61,15 @@ def _cli(args, cwd, lang, fmt, online):
 
 def cli(args, cwd, lang, fmt="text", online=False):
     return _cli(tuple(args), cwd, lang, fmt, online)
+
+
+# A row of the PR comment's table: "| 🔴 CRITICAL | title<br><sub>.env:1, app/x.ts:3</sub>... | fix |".
+MD_ROW = re.compile(r"^\| (\S+) (\S+) \| (.*?)<br><sub>(.*?)</sub>", re.M)
+
+
+def unmd(text):
+    """Plain text again from the PR comment, which escapes what it quotes (report._esc), to escape it as HTML."""
+    return html.unescape(re.sub(r"\\(.)", r"\1", text)).replace("\u200b", "")
 
 
 def terminal(text):
@@ -145,6 +155,14 @@ def link_to(target, here):
     return "./" if path == "." else path + "/"
 
 
+def pairs(key, page, text):
+    """zip for a text.json list and what the page builds for it. A different length means the texts drifted from the
+    page, and zip would silently drop the extra entries."""
+    if len(page) != len(text):
+        raise SystemExit(f"site/text.json: {key} has {len(text)} entries, the page has {len(page)}")
+    return zip(page, text)
+
+
 def from_demo(demo, path, snippet):
     """A piece of a demo file shown on the page, checked against the file so the picture cannot drift from the demo."""
     with open(os.path.join(demo, path), encoding="utf-8") as fh:
@@ -205,7 +223,7 @@ class Page:
                 (["./my-saas"], self.demo, "stingward ./my-saas"),
                 (["skill", "skills/stingward"], ROOT, "stingward skill skills/stingward")]
         names, sheets, peek = [], [], ""
-        for i, ((args, cwd, shown), item) in enumerate(zip(runs, t["reports"])):
+        for i, ((args, cwd, shown), item) in enumerate(pairs("reports", runs, t["reports"])):
             text = cli(args, cwd, lang, online=self.online)
             if i == 0:  # the hero shows the verdict and the first finding of this report
                 blocks = text.split("\n\n")
@@ -250,7 +268,7 @@ class Page:
                       + "".join(f'<li{" class=is-on" if g == grade else ""}><b>{g}</b> {e(m)}</li>' for g, m in t["grades"]) + "</ol>")
         frags = [frag_files, frag_osv, frag_checks, frag_grade]
         panes, names = [], []
-        for i, (stage, frag) in enumerate(zip(t["stages"], frags)):
+        for i, (frag, stage) in enumerate(pairs("stages", frags, t["stages"])):
             hidden = "" if i == 0 else " hidden"
             panes.append(f'<div class="frag" data-ui data-stage="{i}"{hidden}>{frag}</div>')
             names.append(f'<li data-stage="{i}"{" class=is-on" if i == 0 else ""}>{e(stage["name"])}</li>')
@@ -315,12 +333,12 @@ class Page:
         counts = {}
         for fnd in app_text["findings"]:
             counts[fnd["severity"]] = counts.get(fnd["severity"], 0) + 1
-        sev_word = {"pt": {"critical": "CRÍTICO", "high": "ALTO", "medium": "MÉDIO", "low": "BAIXO"},
-                    "en": {"critical": "CRITICAL", "high": "HIGH", "medium": "MEDIUM", "low": "LOW"}}[lang]
-        sev_cls = {"critical": "crit", "high": "high", "medium": "med", "low": "low"}
+        # The first rows of the real PR comment: one row per problem, with every place it was found, in its order.
+        comment = cli(["./my-saas"], self.demo, lang, "markdown", self.online)
+        sev_cls = {ICON["critical"]: "crit", ICON["high"]: "high", ICON["medium"]: "med", ICON["low"]: "low"}
         comment_rows = "".join(
-            f'<li><b class="sev sev--{sev_cls[f["severity"]]}">{sev_word[f["severity"]]}</b> {e(f["title"])}'
-            f'<code>{e(f["file"])}{":" + str(f["line"]) if f.get("line") else ""}</code></li>' for f in app_text["findings"][:5])
+            f'<li><b class="sev sev--{sev_cls[icon]}">{e(label)}</b> {e(unmd(title))}<code>{e(unmd(where))}</code></li>'
+            for icon, label, title, where in MD_ROW.findall(comment)[:5])
         previews = [
             video(root, f"demo-app-{lang}", rows[0]["alt"], 758),
             video(root, f"demo-skill-{lang}", rows[1]["alt"], 858),
@@ -331,7 +349,7 @@ class Page:
              f'{e(rows[3]["comment_title"])}</p><ul class="pr__rows">{comment_rows}</ul></div>'),
         ]
         out = []
-        for i, (row, prev) in enumerate(zip(rows, previews)):
+        for i, (prev, row) in enumerate(pairs("where", previews, rows)):
             out.append(f'<li class="index__item" data-reveal><button class="index__row" type="button" data-pane="{i}">'
                        f'<span class="index__name">{e(row["name"])}</span><code class="index__cmd">{e(row["cmd"])}</code></button>'
                        f'<div class="index__thumb">{prev}</div></li>')
