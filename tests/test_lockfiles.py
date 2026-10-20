@@ -1235,6 +1235,26 @@ class NpmFloor(unittest.TestCase):
                 self.assertIsNone(lockfiles.npm_floor(spec))
 
 
+class HostileRanges(unittest.TestCase):
+    """A hostile repository chooses the text of its manifests: a range must not make the scan hang."""
+
+    def assertFast(self, fn, arg, limit=1.0):
+        start = time.perf_counter()
+        fn(arg)
+        self.assertLess(time.perf_counter() - start, limit, arg[:40])
+
+    def test_long_version_that_fails_to_parse_is_linear(self):
+        # The old version pattern backtracked exponentially on a long run of letters that ends in a bad character.
+        self.assertFast(lockfiles.python_floor, "foo>=1" + "a" * 26 + "*")
+        self.assertFast(lockfiles.npm_floor, "^1.2.3-" + "a" * 26 + ".")
+        self.assertIsNone(lockfiles.python_floor("foo>=1" + "a" * 26 + "*"))
+        self.assertIsNone(lockfiles.npm_floor("^1.2.3-" + "a" * 26 + "."))
+        # what the pattern accepts did not change
+        self.assertEqual(lockfiles.python_floor("foo>=1.0.0rc1")[3], "1.0.0rc1")
+        self.assertEqual(lockfiles.python_floor("foo>=1.0+local.7")[3], "1.0+local.7")
+        self.assertEqual(lockfiles.npm_floor(">=1.0.0-20210101-abc"), ("1.0.0-20210101-abc", None, False))
+
+
 class PyprojectRequirements(unittest.TestCase):
     def test_project_dependencies_and_optional_dependencies(self):
         doc = D('''\
