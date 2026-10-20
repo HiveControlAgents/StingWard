@@ -124,6 +124,7 @@ It comments the report on the PR (and updates the same comment on every run), up
 | `1` | Something at or above `--fail-on` was found |
 | `2` | Usage error |
 | `3` | OSV.dev did not answer, so dependencies were not checked. A CI gate should not pass silently; use `--offline` to skip them on purpose. |
+| `4` | No file was read, so there was nothing to grade: an empty folder, a wrong path, or in CI the code was not checked out first. A CI gate should not pass silently; `--fail-on never` accepts it. |
 
 Environment: `STINGWARD_LANG` sets the default language, `NVD_API_KEY` raises the NVD rate limit and `STINGWARD_CACHE` moves the cache folder.
 

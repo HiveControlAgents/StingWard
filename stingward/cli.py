@@ -119,11 +119,13 @@ MSG = {
     "pt": {"stale": "stingward: {n} item(ns) de {path} não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu).",
            "todo": "stingward: {n} achado(s) ainda sem status em {path}; eles contam como achados.",
            "masked": "stingward: mascarei algo que parece segredo num comentário ou no parecer. Confira o relatório antes de entregar.",
-           "template": "stingward: arquivo de revisão gravado em {path}: {n} achado(s), {kept} já revisado(s), {stale} que não batem mais com nenhum achado."},
+           "template": "stingward: arquivo de revisão gravado em {path}: {n} achado(s), {kept} já revisado(s), {stale} que não batem mais com nenhum achado.",
+           "nothing": "stingward: nenhum arquivo foi lido, então não há o que avaliar (código de saída 4). Confira o caminho e, no CI, se o código foi baixado antes (checkout)."},
     "en": {"stale": "stingward: {n} item(s) in {path} match no finding of this scan (the code changed or the finding is gone).",
            "todo": "stingward: {n} finding(s) still have no status in {path}; they count as found.",
            "masked": "stingward: masked something that looks like a secret in a comment or the notes. Check the report before you deliver it.",
-           "template": "stingward: review file written to {path}: {n} finding(s), {kept} already reviewed, {stale} no longer matching any finding."},
+           "template": "stingward: review file written to {path}: {n} finding(s), {kept} already reviewed, {stale} no longer matching any finding.",
+           "nothing": "stingward: no file was read, so there is nothing to grade (exit code 4). Check the path and, in CI, that the code was checked out first."},
 }
 
 
@@ -232,6 +234,10 @@ def main(argv=None):
     # Com revisão, alarme falso e o que foi corrigido não reprovam: valem os mesmos achados da nota.
     if any(SEV_RANK[f.severity] >= SEV_RANK[args.fail_on] for f in report.counted(findings, rv)):
         return 1
+    # Nem passar porque nada foi lido: pasta vazia, caminho errado ou checkout esquecido no CI dariam um A sem ler nada.
+    if report.nothing_read(ctx, findings):
+        _say(lang, "nothing")
+        return 4
     # Portão de CI não pode passar só porque a base não respondeu.
     if ctx.sources.get("osv_error"):
         msg = {"pt": "stingward: o OSV.dev não respondeu e as dependências não foram checadas (use --offline para pular de propósito).",
