@@ -504,12 +504,21 @@ class AgentRules(RuleTest):
 
     def test_agt001_broad_and_risky_bash_entries(self):
         cases = [("Bash(*)", "high"), ("Bash(:*)", "high"), ("Bash(**)", "high"), ("Bash(sudo:*)", "medium"),
-                 ("Bash(rm -rf:*)", "medium"), ("Bash(python3:*)", "medium"), ("Bash(npx:*)", "medium"), ("Bash(docker:*)", "medium")]
+                 ("Bash(rm -rf:*)", "medium"), ("Bash(python3:*)", "high"), ("Bash(npx:*)", "medium"), ("Bash(docker:*)", "medium")]
         for entry, sev in cases:
             with self.subTest(entry=entry):
                 text = '{\n  "permissions": {\n    "allow": [\n      "%s"\n    ]\n  }\n}\n' % entry
                 f = self.scan({".claude/settings.local.json": text})
                 hit = self.assertFires(f, "AGT001", ".claude/settings.local.json", 4, sev)
+                self.assertEqual(hit.params["what"], entry)
+
+    def test_agt001_interpreter_bash_is_high(self):
+        # Um interpretador liberado roda qualquer código, então é tão amplo quanto Bash(*): alto, não médio.
+        for entry in ("Bash(python3 *)", "Bash(python:*)", "Bash(node:*)", "Bash(bash:*)", "Bash(sh -c:*)",
+                      "Bash(deno:*)", "Bash(bun:*)", "Bash(pwsh:*)", "Bash(powershell:*)", "Bash(ruby:*)"):
+            with self.subTest(entry=entry):
+                text = '{\n  "permissions": {\n    "allow": [\n      "%s"\n    ]\n  }\n}\n' % entry
+                hit = self.assertFires(self.scan({".claude/settings.json": text}), "AGT001", ".claude/settings.json", 4, "high")
                 self.assertEqual(hit.params["what"], entry)
 
     def test_agt001_star_prefixed_bash_is_broad(self):
