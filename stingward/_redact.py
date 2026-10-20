@@ -186,8 +186,9 @@ def _restore_frames(s: str, frames) -> str:
 # Estágio 2: estruturas (JSON, cabeçalhos, chave=valor, caminhos de URL)
 # --------------------------------------------------------------------------
 
+# "chave" => "valor" é o array do PHP (config do Laravel, wp-config) e o hash do Ruby.
 _JSON_PLAIN = re.compile(
-    r"""(?<!\\)(?P<q>["'])(?P<key>[^"'\\\s:]{1,64})(?P=q)\s*:\s*"""
+    r"""(?<!\\)(?P<q>["'])(?P<key>[^"'\\\s:]{1,64})(?P=q)\s*(?::|=>)\s*"""
     r"""(?:(?P<vq>["'])(?P<sval>(?:\\.|(?!(?P=vq))[^\\\n])*)(?P<close>(?P=vq)|(?=\n)|\Z)"""
     r"""|(?P<nval>-?[\w.+\-]+))""")
 # JSON serializado dentro de string: {\"password\": \"x\"}. Até 8 barras (8 níveis de escape): sem teto, uma
@@ -242,7 +243,10 @@ def _apply_headers(s: str, f) -> str:
 
 # Casa só chave + separador. O valor é lido à mão para que uma chave não sensível
 # nunca "engula" um par sensível que vem depois (next=/cb?token=abc).
-_ASSIGN_KEY = re.compile(r"(?<![\w.\-\[\]%\"'\\])(?P<key>[A-Za-z_][\w.\-\[\]]{0,63})(?P<sep>\s*[=:]\s*)")
+# Separador: := e ::= (Go, Pascal, BNF), ?= (Makefile), == e != (senha comparada no código) e => só antes de aspas
+# (hash do Ruby; sem aspas é arrow function). Lidos como "=" ou ":", o valor virava o resto do operador e vazava.
+_ASSIGN_KEY = re.compile(r"(?<![\w.\-\[\]%\"'\\])(?P<key>[A-Za-z_][\w.\-\[\]]{0,63})"
+                         r"(?P<sep>\s*(?::{1,2}=|\?=|={2,3}|!={1,2}|=>(?=\s*[\"'])|[=:])\s*)")
 _UNQUOTED_STOP = set("&;,\"'<>#)]}") | {" ", "\t", "\r", "\n"}
 
 
