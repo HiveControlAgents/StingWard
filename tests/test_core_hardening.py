@@ -589,6 +589,52 @@ class OutputFiles(unittest.TestCase):
         self.assertIn(f"não consegui gravar {tmp.name}", err)
 
 
+class TargetAnywhere(unittest.TestCase):
+    """Opções antes do alvo e o `--` valem do Python 3.9 ao 3.13. Até o 3.12 o argparse preenchia os dois
+    posicionais opcionais de uma vez ao ver `skill`, e `skill --offline pasta` dava "unrecognized arguments"."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = os.path.join(self.tmp.name, "demo")
+        os.mkdir(self.dir)
+        with open(os.path.join(self.dir, "SKILL.md"), "w", encoding="utf-8") as fh:
+            fh.write("---\nname: demo\ndescription: Formats dates in reports.\n---\nFormat the date as YYYY-MM-DD.\n")
+
+    def _ok(self, argv):
+        code, out, err = run_main(argv)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(err, "")
+        return json.loads(out)
+
+    def test_options_before_the_target_and_double_dash(self):
+        for argv in (["skill", "--offline", "--format", "json", "--", self.dir],
+                     ["skill", "--offline", "--format", "json", self.dir],
+                     ["skill", "--format", "json", "--offline", "--", self.dir],
+                     ["--offline", "--format", "json", "skill", self.dir],
+                     ["--offline", "--format", "json", "--", self.dir],
+                     ["--format", "json", self.dir, "--offline"]):
+            with self.subTest(argv=argv):
+                self._ok(argv)
+
+    def test_folder_whose_name_starts_with_a_dash(self):
+        os.rename(self.dir, os.path.join(self.tmp.name, "-demo"))
+        old = os.getcwd()
+        os.chdir(self.tmp.name)
+        self.addCleanup(os.chdir, old)
+        for argv in (["--offline", "--format", "json", "--", "-demo"], ["skill", "--offline", "--format", "json", "--", "-demo"]):
+            with self.subTest(argv=argv):
+                self._ok(argv)
+
+    def test_too_many_targets_is_still_an_error(self):
+        code, out, err = run_main(["skill", self.dir, "--offline", "--", "extra"])
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("unrecognized arguments: extra", err)
+        code, out, err = run_main(["--offline", "--lang", "en", "--", self.dir, "extra"])
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn(f"unknown command: {self.dir}", err)
+
+
 
 class WhatWasNotRead(unittest.TestCase):
     """Arquivo grande demais ou pasta com arquivos demais: a auditoria cobre menos, e isso tem que ser dito."""

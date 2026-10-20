@@ -39,8 +39,9 @@ def _default_lang():
 
 def _parser():
     ap = argparse.ArgumentParser(prog="stingward", description="Auditoria de segurança para projetos feitos com IA, skills e MCP.")
-    ap.add_argument("command", nargs="?", default="scan", help="scan (padrão), skill ou agents")
-    ap.add_argument("target", nargs="?", default=".", help="pasta do projeto, ou caminho/URL da skill")
+    # Sem default: _parse precisa saber o que foi dado para pôr o alvo depois de `--` no lugar certo.
+    ap.add_argument("command", nargs="?", help="scan (padrão), skill ou agents")
+    ap.add_argument("target", nargs="?", help="pasta do projeto, ou caminho/URL da skill")
     ap.add_argument("--lang", choices=["pt", "en"], default=None, help="idioma do relatório")
     ap.add_argument("--format", choices=["text", "json", "markdown", "sarif", "html"], default="text", help="formato na saída padrão")
     ap.add_argument("--sarif", metavar="ARQ", help="grava SARIF (painel de segurança do GitHub)")
@@ -58,6 +59,27 @@ def _parser():
     ap.add_argument("--no-color", action="store_true")
     ap.add_argument("--version", action="version", version=f"stingward {__version__}")
     return ap
+
+
+def _parse(argv):
+    """Linha de comando com o alvo em qualquer posição e depois de `--`, igual do Python 3.9 ao 3.13.
+
+    Até o 3.12 o argparse preenchia command e target de uma vez ao ver `skill`: `skill --offline pasta` e
+    `skill --offline -- pasta` davam "unrecognized arguments". parse_intermixed_args lê as opções antes; o que vem
+    depois de `--` entra à parte porque, antes do 3.13, ele tomava `-- -pasta` por uma opção."""
+    ap = _parser()
+    head, tail = argv, []
+    if "--" in argv:
+        i = argv.index("--")
+        head, tail = argv[:i], argv[i + 1:]
+    args = ap.parse_intermixed_args(head)
+    pos = [p for p in (args.command, args.target) if p is not None] + tail
+    if len(pos) > 2:
+        ap.error("unrecognized arguments: " + " ".join(pos[2:]))
+    if len(pos) == 1 and pos[0] not in COMMANDS:
+        pos.insert(0, "scan")  # `stingward minha-pasta`: o único posicional é a pasta
+    args.command, args.target = (pos + ["scan", "."][len(pos):])[:2]
+    return args
 
 
 def _is_remote(target):
@@ -239,16 +261,11 @@ def _emit(args, ctx, findings, lang, label, only, remote, audit=None):
 def main(argv=None):
     _utf8_output()
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and not argv[0].startswith("-") and argv[0] not in COMMANDS:
-        argv.insert(0, "scan")
-    args = _parser().parse_args(argv)
+    args = _parse(argv)
     lang = args.lang or _default_lang()
     if args.command not in COMMANDS:
-        # `stingward --offline minha-pasta`: o primeiro posicional é a pasta, não um comando.
-        if args.target != ".":
-            _say(lang, "unknown", cmd=args.command)
-            return 2
-        args.command, args.target = "scan", args.command
+        _say(lang, "unknown", cmd=args.command)
+        return 2
     only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
     if only is not None and (not only or only - set(scan.CHECKS)):
         _say(lang, "only", checks=",".join(scan.CHECKS))
