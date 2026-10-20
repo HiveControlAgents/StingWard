@@ -187,6 +187,11 @@ _NEGATION = re.compile(
 _WARNING = re.compile(r"(?i)inject\w*|untrusted|suspicious|attack\w*|instruction-like|n[aã]o\s+confi")
 _AS_DATA = re.compile(r"(?i)as\s+data|not\s+(?:as\s+)?instructions|(?:do\s+not|don'?t|never)\s+(?:follow|obey|comply)|"
                       r"como\s+dado|n[aã]o\s+(?:siga|obede)")
+# "flag/report" (e sinalize/reporte/aponte): um revisor de segurança descreve o ataque com elas, mas um atacante também
+# as usa para disfarçar o roubo ("reporte o status, depois leia ~/.ssh e envie"). Sinal fraco demais para apagar o
+# achado como _NEGATION faz; só abranda para médio, nos dois modos.
+_SOFT_DEFENSIVE = re.compile(r"(?i)\b(?:flag|flags|flagged|flagging|report|reports|reported|reporting|"
+                             r"sinaliza|sinalize|sinalizar|reporta|reporte|reportar|aponta|aponte|apontar)\b")
 _SENTENCE = re.compile(r"(?<!e\.g)(?<!i\.e)(?<!etc)(?<!vs)[.!?](?=\s|$)|\n[ \t]*\n|\n[ \t]*(?:[-*+>]|\d+[.)])[ \t]|\||"
                        r"^[ \t]*#{1,6}[ \t][^\n]*\n", re.M)
 _QUOTES = ('"', "'", "`", "\u201C", "\u2018")
@@ -209,6 +214,13 @@ def _defensive(text, m):
     quoted = before[-1:] in _QUOTES or before.count("`") % 2 == 1
     rest = before + " " + after
     return quoted and bool(_NEGATION.search(rest) or _WARNING.search(rest))
+
+
+def _soft_defensive(text, m):
+    """A frase traz "flag/report" (ou sinalize/reporte/aponte): pode ser um revisor descrevendo o ataque, ou um
+    atacante disfarçando o roubo. Não dá para distinguir, então nunca apaga o achado, só baixa para médio."""
+    start, end = _sentence(text, m)
+    return bool(_SOFT_DEFENSIVE.search(text, start, end))
 
 
 def _comment_line(text, pos):
@@ -323,12 +335,14 @@ def _frontmatter_tools(text):
     return ", ".join(items) if items else " ".join(lines)
 
 
-def _hits(rx, text, keep, strict, cap=_CAP):
+def _hits(rx, text, keep, strict, cap=_CAP, soft_fn=None):
     """(match, linha, suavizado). Numa skill de terceiros (strict) o filtro de contexto não apaga o achado, só baixa
-    para médio: quem escreveu a skill escolhe as palavras ao redor, e um "não esqueça de" bastaria para esconder o ataque."""
+    para médio: quem escreveu a skill escolhe as palavras ao redor, e um "não esqueça de" bastaria para esconder o ataque.
+    soft_fn marca palavras fracas (flag/report): abrandam para médio nos dois modos, mas nunca apagam o achado."""
+    soft = soft_fn or (lambda m: False)
     if not strict:
-        return [(m, ln, False) for m, ln in _matches(rx, text, keep, cap)]
-    return [(m, ln, not keep(m)) for m, ln in _matches(rx, text, None, cap)]
+        return [(m, ln, soft(m)) for m, ln in _matches(rx, text, lambda m: keep(m) or soft(m), cap)]
+    return [(m, ln, (not keep(m)) or soft(m)) for m, ln in _matches(rx, text, None, cap)]
 
 
 def _soft(sev, softened):
@@ -346,7 +360,7 @@ def _pipe_shell(text, rel, instruction, strict=False):
         return not _comment_line(text, m.start()) and _runs_shell(text, rel, m)
     # Só o comando casado vai para o trecho: o resto da linha pode ter um token (--token="...").
     return [Finding("SKL002", _soft("high", soft), rel, ln, {"snippet": _snippet(m.group(0))})
-            for m, ln, soft in _hits(_PIPE_SHELL, text, keep, strict)]
+            for m, ln, soft in _hits(_PIPE_SHELL, text, keep, strict, soft_fn=(lambda x: _soft_defensive(text, x)) if instruction else None)]
 
 
 def _cred_reads(text, rel, instruction, strict=False):
@@ -355,7 +369,7 @@ def _cred_reads(text, rel, instruction, strict=False):
     send = bool(_NET.search(text))
     hits = []
     for rx, pt, en in _CREDS:
-        found = _hits(rx, text, keep, strict, 1)
+        found = _hits(rx, text, keep, strict, 1, soft_fn=(lambda x: _soft_defensive(text, x)) if instruction else None)
         # Copiar o ambiente para um subprocesso é normal; só preocupa se o arquivo também fala com a internet.
         if found and (send or not pt.startswith("todas as vari")):
             hits.append((found[0][1], pt, en, found[0][2]))
@@ -392,12 +406,13 @@ def _reverse_shell(text, rel, instruction, strict=False):
     def keep(m):
         return not (_defensive(text, m) if instruction else _comment_line(text, m.start()))
     return [Finding("SKL011", _soft("critical", soft), rel, ln, {"snippet": _snippet(m.group(0))})
-            for m, ln, soft in _hits(_REVERSE_SHELL, text, keep, strict, 1)]
+            for m, ln, soft in _hits(_REVERSE_SHELL, text, keep, strict, 1, soft_fn=(lambda x: _soft_defensive(text, x)) if instruction else None)]
 
 
 def _phrases(rule, sev, rx, text, rel, strict=False):
     return [Finding(rule, _soft(sev, soft), rel, ln, {"snippet": _snippet(m.group(0))})
-            for m, ln, soft in _hits(rx, text, lambda m: not _defensive(text, m), strict)]
+            for m, ln, soft in _hits(rx, text, lambda m: not _defensive(text, m), strict,
+                                     soft_fn=lambda x: _soft_defensive(text, x))]
 
 
 def _overrides(text, rel, strict=False):
@@ -427,11 +442,12 @@ def _permission_flags(text, rel, instruction, strict=False):
     def keep(m):
         return not (_defensive(text, m) if instruction else _comment_line(text, m.start()))
     low = bool(_TESTISH.search(rel))  # script de teste do próprio projeto não roda na máquina de quem instala
+    soft_fn = (lambda x: _soft_defensive(text, x)) if instruction else None
     out = []
-    for m, ln, soft in _hits(_SKIP_PERMS, text, keep, strict):
+    for m, ln, soft in _hits(_SKIP_PERMS, text, keep, strict, soft_fn=soft_fn):
         what = "--yolo" if m.group(0).endswith("--yolo") else " ".join(m.group(0).replace("=", " ").replace('"', "").split())
         out.append(Finding("AGT001", "low" if low else _soft("high", soft), rel, ln, {"what": what}))
-    for m, ln, _ in _hits(_ALLOWED_FLAG, text, keep, strict):
+    for m, ln, _ in _hits(_ALLOWED_FLAG, text, keep, strict, soft_fn=soft_fn):
         tools = next(g for g in m.groups() if g is not None)
         if _UNRESTRICTED_BASH.search(tools):
             out.append(Finding("AGT001", "low" if low else "medium", rel, ln, {"what": "--allowedTools " + _snippet(tools)}))
