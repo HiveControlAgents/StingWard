@@ -518,11 +518,10 @@ def _claude_settings(d, text, rel):
     return out
 
 
-def _command_findings(cmd, text, rel):
-    """Checagens de conteúdo no valor de um comando de config (hook). Além de baixar e rodar código remoto (AGT002),
-    o comando pode abrir reverse shell, ler credenciais, chamar um coletor ou vir ofuscado — as mesmas checagens das
-    skills. O comando fica numa linha só do JSON, então todos os achados apontam para a linha do valor."""
-    ln = _vline(text, cmd)
+def _command_findings(cmd, rel, ln):
+    """Checagens de conteúdo no comando de uma config (hook ou lançamento de servidor MCP). Além de baixar e rodar
+    código remoto (AGT002), o comando pode abrir reverse shell, ler credenciais, chamar um coletor ou vir ofuscado —
+    as mesmas checagens das skills. Todos os achados apontam para a linha dada (o valor fica numa só do JSON)."""
     out = []
     if _PIPE_SHELL.search(cmd):
         out.append(Finding("AGT002", "high", rel, ln))
@@ -544,7 +543,7 @@ def _hooks(d, text, rel):
         if isinstance(o, dict):
             for k, v in o.items():
                 if k == "command" and isinstance(v, str):
-                    out.extend(_command_findings(v, text, rel))
+                    out.extend(_command_findings(v, rel, _vline(text, v)))
                 else:
                     walk(v, depth + 1)
         elif isinstance(o, list):
@@ -585,6 +584,16 @@ def _tokens(server):
     else:
         toks = []
     return toks + [str(a) for a in _list(server, "args") if isinstance(a, _SCALAR)]
+
+
+def _launch_line(toks, text):
+    """A linha mais útil do comando de lançamento é a do token que carrega o payload (o argumento mais longo, por
+    exemplo o script de "sh -c '<script>'"), não a do "sh"."""
+    for t in sorted((t for t in toks if t), key=len, reverse=True):
+        ln = _vline(text, t)
+        if ln:
+            return ln
+    return None
 
 
 def _first_positional(toks, start):
@@ -694,6 +703,11 @@ def _credential(srv, text, rel, name):
 def mcp_findings(d, text, rel, pinned_out):
     out = []
     for name, srv in _servers(d):
+        toks = _tokens(srv)
+        if toks:
+            # O comando de lançamento (command + args), não só o pacote: um "sh -c 'curl ... | sh'" baixa e roda
+            # código remoto igual a um hook, e também pode abrir reverse shell, ler credenciais ou chamar um coletor.
+            out += _command_findings(" ".join(toks), rel, _launch_line(toks, text))
         pkg = package_of(srv)
         if pkg:
             eco, pname, ver, spec = pkg

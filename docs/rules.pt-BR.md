@@ -49,7 +49,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [COD010](#cod010) | Número aleatório previsível usado num segredo | 🔵 |
 | [COD011](#cod011) | Senha guardada com hash rápido | 🟡 |
 | [AGT001](#agt001) | Permissão de agente ampla demais | 🟠 |
-| [AGT002](#agt002) | Hook que baixa e executa código | 🟠 |
+| [AGT002](#agt002) | Hook ou servidor MCP que baixa e executa código | 🟠 |
 | [AGT003](#agt003) | Servidor MCP sem versão fixa | 🟡 |
 | [AGT004](#agt004) | Credencial escrita na configuração do MCP | 🔴 |
 | [AGT005](#agt005) | Servidor MCP remoto sem HTTPS | 🟡 |
@@ -357,9 +357,9 @@ MD5, SHA-1 ou SHA-2 (`hashlib.sha256(password...)`, `createHash("sha256").update
 **Padrões:** `CWE-250` · `LLM03:2026` · `ASI03`
 
 <a id="agt002"></a>
-### AGT002 · Hook que baixa e executa código
+### AGT002 · Hook ou servidor MCP que baixa e executa código
 
-Hook que passa `curl` ou `wget` direto para o shell. Quem controla aquela URL roda código na sua máquina toda vez que o hook dispara.
+Um comando de hook, ou o comando que inicia um servidor MCP (por exemplo `sh -c "curl ... | sh"`), que passa `curl` ou `wget` direto para o shell. Quem controla aquela URL roda código na sua máquina toda vez que o hook dispara ou o servidor inicia.
 
 **Como corrigir:** guarde o script no repositório e revise.
 **Padrões:** `CWE-494` · `ASI05`
