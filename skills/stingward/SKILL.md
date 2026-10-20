@@ -1,6 +1,6 @@
 ---
 name: stingward
-description: Security check for projects built with AI and for skills, plugins and MCP servers before installing them. Finds vulnerable or malicious dependencies (OSV.dev, NVD, CISA KEV, EPSS), leaked secrets, AI-app mistakes (keys exposed in the frontend, open CORS, Supabase without RLS, open Firebase rules), flaws in the app's code (SQL and shell injection, XSS, SSRF, path traversal, model output run as code, AI routes with no login or rate limit) and risky agent setups (broad permissions, unpinned MCP servers, hidden instructions in skills). Use when the user asks whether their project is secure, before deploying or publishing, or before installing a skill, plugin or MCP server.
+description: Security check for projects built with AI and for skills, plugins and MCP servers before installing them. Finds vulnerable or malicious dependencies (OSV.dev, NVD, CISA KEV, EPSS), leaked secrets, AI-app mistakes (keys exposed in the frontend, open CORS, Supabase without RLS, open Firebase rules), flaws in the app's code (SQL and shell injection, XSS, SSRF, path traversal, model output run as code, MCP and agent tool arguments reaching a shell, SQL, files or URLs, AI routes with no login or rate limit) and risky agent setups (broad permissions, unpinned MCP servers, hidden instructions in skills). Use when the user asks whether their project is secure, before deploying or publishing, or before installing a skill, plugin or MCP server.
 allowed-tools: Read, Grep, Glob, Bash(python3 *scripts/run.py:*), Bash(stingward:*)
 ---
 

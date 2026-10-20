@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 from . import __version__
 from .model import SEV_RANK, SEVERITIES
-from .rules import RULES, STANDARDS, fill, texts
+from .rules import RULES, STANDARDS, fill, standards, texts
 
 REPO_URL = "https://github.com/HiveControlAgents/StingWard"
 
@@ -361,6 +361,8 @@ IMPACT = {
                "Downloading or loading the model runs its publisher's code, with access to your machine and your keys."),
     "APP013": ("Uma prompt injection vira execução de código: o que o modelo escrever roda na sua máquina ou no seu servidor.",
                "A prompt injection becomes code execution: whatever the model writes runs on your machine or server."),
+    "APP014": ("Uma instrução escondida em qualquer página, arquivo ou mensagem que o modelo leia faz esta ferramenta {impact}.",
+               "A hidden instruction in any page, file or message the model reads makes this tool {impact}."),
     "DEP004": ("Sem lockfile, uma instalação pode ficar com {pkg} {floor}, que tem falhas públicas com ataque pronto. Subir o mínimo da faixa fecha essa porta.{exploit}",
                "Without a lockfile, an install can stay on {pkg} {floor}, which has public flaws with ready-made attacks. Raising the range's minimum closes that door.{exploit}"),
 }
@@ -428,7 +430,7 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
         if color:
             head = f"{COLOR[e.severity]}{head}\033[0m"
         out.append(head)
-        out.append(f"   {t['where']}: {_clean(places(e, lang))}  [{' · '.join([e.rule] + STANDARDS.get(e.rule, []))}]")
+        out.append(f"   {t['where']}: {_clean(places(e, lang))}  [{' · '.join([e.rule] + standards(e.rule, e.params))}]")
         out.append(f"   {t['why']}: {why}")
         out.append(f"   {t['fix']}: {fix}")
         if e.refs:
@@ -552,7 +554,7 @@ def as_json(ctx, findings, lang="pt", audit=None):
     for f in findings:
         title, why, fix = texts(f.rule, lang, f.params)
         item = {"rule": f.rule, "severity": f.severity, "file": f.file, "line": f.line, "fingerprint": f.fingerprint, "title": title,
-                "why": why, "fix": fix, "refs": f.refs, "tags": f.tags, "standards": STANDARDS.get(f.rule, []),
+                "why": why, "fix": fix, "refs": f.refs, "tags": f.tags, "standards": standards(f.rule, f.params),
                 "data": {k: v for k, v in f.params.items() if not k.endswith(("_pt", "_en"))}}
         if rv is not None:
             status, comment = rv.get(f)
@@ -590,7 +592,8 @@ def sarif(ctx, findings, lang="pt", prefix=""):
             loc["physicalLocation"]["region"] = {"startLine": f.line}
         results.append({"ruleId": f.rule, "level": _SARIF_LEVEL[f.severity],
                         "message": {"text": f"{title}. {why} {fix}"}, "locations": [loc],
-                        "properties": {"security-severity": _SARIF_SCORE[f.severity], "tags": f.tags,
+                        "properties": {"security-severity": _SARIF_SCORE[f.severity],
+                                       "tags": f.tags + [s for s in standards(f.rule, f.params) if s not in STANDARDS.get(f.rule, [])],
                                        "fingerprint": f.fingerprint}})
     doc = {"$schema": "https://json.schemastore.org/sarif-2.1.0.json", "version": "2.1.0",
            "runs": [{"tool": {"driver": {"name": "stingward", "version": __version__, "informationUri": REPO_URL, "rules": rules}},

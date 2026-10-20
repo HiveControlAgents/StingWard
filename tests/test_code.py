@@ -1,8 +1,9 @@
-"""Falhas no código (COD001-COD011) e erros de código que chama modelos (APP009-APP013).
+"""Falhas no código (COD001-COD011) e erros de código que chama modelos ou expõe ferramentas a eles (APP009-APP014).
 
 Cada regra tem o caso que precisa disparar e o quase-acerto que não pode disparar: a consulta com parâmetro, o
 comando em lista, o HTML limpo com DOMPurify. Nada aqui roda o código auditado; os arquivos só existem para serem lidos.
 """
+import json
 import os
 import sys
 import tempfile
@@ -32,7 +33,7 @@ def run(files, mode="project", only=("app", "code")):
     return scan.run(d.name, mode=mode, offline=True, only=set(only) if only else None)[1]
 
 
-NEW = ("COD", "APP009", "APP010", "APP011", "APP012", "APP013")
+NEW = ("COD", "APP009", "APP010", "APP011", "APP012", "APP013", "APP014")
 
 
 def got(findings):
@@ -422,7 +423,18 @@ class CodeRules(Checks):
         self.assertEqual(got(f), [("APP009", "agent.py", 7, "critical"), ("APP009", "agent.py", 8, "critical")])
         self.assertIn("exec", f[0].params["sink_en"] + f[0].params["fix_en"])
 
-    def test_app009_tool_argument_runs(self):
+    # ------------------------------------------------------------------ APP014 argumento de ferramenta
+
+    def test_app014_portuguese_titles_read_right(self):
+        """O lugar vem com a preposição: "chega à página", nunca "chega a a página"."""
+        titles = {kind: texts("APP014", "pt", code._tool_params(kind.replace("_any", ""), "_any" not in kind))[0]
+                  for kind in code._TOOL_SINK}
+        self.assertEqual(titles["html"], "Argumento que o modelo escreve na ferramenta chega à página como HTML")
+        self.assertEqual(titles["shell_any"], "Argumento que o modelo escreve na ferramenta chega a um comando de shell")
+        for kind, title in titles.items():
+            self.assertNotRegex(title, r"\ba a\b|chega (?!à |a )", kind)
+
+    def test_app014_tool_argument_runs(self):
         py = ("from mcp.server.fastmcp import FastMCP\nimport subprocess\nmcp = FastMCP('x')\n"
               "@mcp.tool()\n"
               "def run(cmd: str) -> str:\n"
@@ -433,8 +445,24 @@ class CodeRules(Checks):
               "  execute: async ({ command }) => exec(command),\n"
               "})\n"
               "export const calc = tool({ execute: async ({ expression }) => eval(expression) })\n")
-        self.check({"server.py": py, "tools.ts": js},
-                   [("APP009", "server.py", 6, "high"), ("APP009", "tools.ts", 5, "high"), ("APP009", "tools.ts", 7, "high")])
+        f = run({"server.py": py, "tools.ts": js})
+        self.assertEqual(got(f), [("APP014", "server.py", 6, "high"), ("APP014", "tools.ts", 5, "high"),
+                                  ("APP014", "tools.ts", 7, "high")])
+        for lang in ("pt", "en"):
+            title, why, fix = texts("APP014", lang, f[0].params)
+            self.assertIn("modelo" if lang == "pt" else "model", why)
+            self.assertTrue(title and fix)
+
+    def test_app014_built_command_is_critical_and_quoting_is_silent(self):
+        py = ("from mcp.server.fastmcp import FastMCP\nimport os, subprocess, shlex\nmcp = FastMCP('x')\n"
+              "@mcp.tool()\n"
+              "def log(ref: str) -> str:\n"
+              "    os.system('git log ' + ref)\n"
+              "    subprocess.run(['sh', '-c', f'ls {ref}'])\n"
+              "    os.system('git log ' + shlex.quote(ref))\n"
+              "    subprocess.run(['git', 'log', ref])\n"
+              "    return ''\n")
+        self.check({"server.py": py}, [("APP014", "server.py", 6, "critical"), ("APP014", "server.py", 7, "critical")])
 
     def test_app009_model_html_and_sql(self):
         js = ("'use client'\nimport { useChat } from '@ai-sdk/react'\n"
@@ -766,8 +794,10 @@ class JsFlows(Checks):
         src = ("import { Server } from '@modelcontextprotocol/sdk/server/index.js'\nimport { exec } from 'child_process'\n"
                "const server = new Server({ name: 'x' })\n"
                "server.setRequestHandler(CallToolRequestSchema, async (request) => {\n"
-               "  exec(request.params.arguments.cmd)\n})\n")
-        self.check({"mcp.js": src}, [("APP009", "mcp.js", 5, "high")])
+               "  exec(request.params.arguments.cmd)\n"
+               "  const { name, arguments: input = {} } = request.params\n"
+               "  exec(`kubectl scale ${input.kind} ${input.name}`)\n})\n")
+        self.check({"mcp.js": src}, [("APP014", "mcp.js", 5, "high"), ("APP014", "mcp.js", 7, "critical")])
 
     def test_dom_sinks_and_redirect_guard(self):
         src = ("const box = document.getElementById('b')\n"
@@ -840,6 +870,338 @@ class JsFlows(Checks):
                    [("APP011", "pages/api/chat.ts", 4, "medium"), ("APP011", "app/actions.ts", 5, "medium"),
                     ("APP011", "server.js", 5, "medium")])
         self.silent({"server.js": express, "src/app.js": "app.use(passport.authenticate('jwt', { session: false }))\n"})
+
+
+FMCP = "from mcp.server.fastmcp import FastMCP, Context\nmcp = FastMCP('x')\n"
+MCPJS = ("import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'\nimport { z } from 'zod'\n"
+         "import { exec, execFile } from 'child_process'\nimport fs from 'fs'\nimport path from 'path'\n"
+         "const server = new McpServer({ name: 'x', version: '1' })\n")
+
+
+class ToolArguments(Checks):
+    """APP014: quem escreve os argumentos de uma ferramenta (MCP, LangChain, tool calling, AI SDK) é o modelo."""
+
+    def test_typed_enum_pattern_and_injected_params_stay_silent(self):
+        src = FMCP + ("import os, enum\nfrom typing import Literal, Annotated\nfrom pydantic import Field\n"
+                      "class Mode(enum.Enum):\n    A = 'a'\n"
+                      "@mcp.tool()\n"
+                      "def t(n: int, flag: bool, kind: Literal['a', 'b'], mode: Mode,\n"
+                      "      ref: Annotated[str, Field(pattern=r'^[a-z]+$')], ctx: Context) -> str:\n"
+                      "    os.system(f'ls {n} {flag} {kind} {mode} {ref}')\n"
+                      "    os.system('ls ' + ctx.request_id)\n"
+                      "    return ''\n")
+        self.silent({"server.py": src})
+
+    def test_code_and_deserialization(self):
+        src = FMCP + ("import pickle, base64\n"
+                      "@mcp.tool()\ndef calc(expression: str) -> str:\n    return str(eval(expression))\n"
+                      "@mcp.tool()\ndef calc2(a: str) -> str:\n    return str(eval('1 + ' + a))\n"
+                      "@mcp.tool()\ndef load(data: str):\n    return pickle.loads(base64.b64decode(data))\n")
+        f = run({"server.py": src})
+        self.assertEqual(got(f), [("APP014", "server.py", 6, "high"), ("APP014", "server.py", 9, "critical"),
+                                  ("APP014", "server.py", 12, "high")])
+        self.assertEqual([x.params["kind"] for x in sorted(f, key=lambda x: x.line)], ["code", "code", "deserialize"])
+
+    def test_sql_built_from_argument_but_not_parameters_or_whole_query(self):
+        src = FMCP + ("import sqlite3\nconn = sqlite3.connect('d.db')\n"
+                      "@mcp.tool()\ndef find(name: str):\n"
+                      "    a = conn.execute(f\"SELECT * FROM users WHERE name = '{name}'\").fetchall()\n"
+                      "    b = conn.execute('SELECT * FROM users WHERE name = ?', (name,)).fetchall()\n"
+                      "    return a + b\n"
+                      "@mcp.tool()\ndef read_query(query: str):\n"
+                      "    return conn.execute(query).fetchall()\n")
+        self.check({"server.py": src}, [("APP014", "server.py", 7, "high")])
+
+    def test_paths(self):
+        """Pasta do código + nome do modelo é alto (../ sai dela); caminho inteiro é médio; resolve + checagem, basename
+        e nome de arquivo fixo ficam quietos."""
+        src = FMCP + ("import os\nfrom pathlib import Path\nBASE = Path('/srv/notes')\n"
+                      "@mcp.tool()\ndef read(name: str) -> str:\n    return open(os.path.join(BASE, name)).read()\n"
+                      "@mcp.tool()\ndef cat(path: str) -> str:\n    return open(path).read()\n"
+                      "@mcp.tool()\ndef safe(name: str) -> str:\n"
+                      "    p = (BASE / name).resolve()\n"
+                      "    if not p.is_relative_to(BASE):\n        raise ValueError('outside')\n"
+                      "    return p.read_text()\n"
+                      "@mcp.tool()\ndef base(name: str) -> str:\n"
+                      "    return open(os.path.join(BASE, os.path.basename(name))).read()\n"
+                      "@mcp.tool()\ndef save(workspace_dir: str, body: str) -> str:\n"
+                      "    with open(os.path.join(workspace_dir, 'model.json'), 'w') as f:\n"
+                      "        f.write(body)\n"
+                      "    open(f'{workspace_dir}/notes.txt').read()\n"
+                      "    return 'ok'\n")
+        self.check({"server.py": src}, [("APP014", "server.py", 8, "high"), ("APP014", "server.py", 11, "medium")])
+
+    def test_urls_fixed_host_and_guard(self):
+        src = FMCP + ("import requests\nfrom urllib.parse import urlparse\n"
+                      "@mcp.tool()\ndef get(url: str) -> str:\n    return requests.get(url).text\n"
+                      "@mcp.tool()\ndef search(q: str) -> str:\n"
+                      "    return requests.get(f'https://api.example.com/search?q={q}').text\n"
+                      "@mcp.tool()\ndef guarded(url: str) -> str:\n"
+                      "    if urlparse(url).hostname not in ALLOWED_HOSTS:\n        raise ValueError('host')\n"
+                      "    return requests.get(url).text\n")
+        self.check({"server.py": src}, [("APP014", "server.py", 7, "medium")])
+
+    def test_low_level_server_dispatch_and_helpers(self):
+        low = ("from mcp.server import Server\nimport subprocess\nserver = Server('x')\n"
+               "def run_cmd(cmd):\n    return subprocess.run(cmd, shell=True).stdout\n"
+               "def read_file(path, encoding='utf-8'):\n    return open(path, encoding=encoding).read()\n"
+               "TOOLS = {'run': run_cmd, 'read': read_file}\n"
+               "@server.call_tool()\nasync def call(name: str, arguments: dict):\n"
+               "    if name == 'sh':\n        return subprocess.run(arguments['cmd'], shell=True).stdout\n"
+               "    return TOOLS[name](**arguments)\n")
+        helper = FMCP + ("def _read(p):\n    return open(p).read()\n"
+                         "@mcp.tool()\ndef read(path: str) -> str:\n    return _read(path)\n")
+        plain = "import subprocess\ndef run(cmd: str) -> str:\n    return subprocess.run(cmd, shell=True).stdout\n"
+        self.check({"low.py": low, "helper.py": helper, "util.py": plain},
+                   [("APP014", "helper.py", 4, "medium"), ("APP014", "low.py", 5, "high"), ("APP014", "low.py", 7, "medium"),
+                    ("APP014", "low.py", 12, "high")])
+
+    def test_agent_frameworks_and_api_tool_calls(self):
+        lc = ("from langchain_core.tools import tool, BaseTool\nimport subprocess\n"
+              "@tool\ndef shell(command: str) -> str:\n    '''Run a command.'''\n"
+              "    return subprocess.check_output(command, shell=True).decode()\n"
+              "class Reader(BaseTool):\n    name: str = 'reader'\n"
+              "    def _run(self, path: str) -> str:\n        return open(path).read()\n")
+        oa = ("import json, subprocess\nfrom openai import OpenAI\nclient = OpenAI()\n"
+              "resp = client.chat.completions.create(model='m', messages=[], tools=[])\n"
+              "for tool_call in resp.choices[0].message.tool_calls:\n"
+              "    args = json.loads(tool_call.function.arguments)\n"
+              "    subprocess.run(args['cmd'], shell=True)\n")
+        an = ("import anthropic\nclient = anthropic.Anthropic()\n"
+              "msg = client.messages.create(model='m', max_tokens=10, messages=[], tools=[])\n"
+              "for block in msg.content:\n"
+              "    if block.type == 'tool_use':\n        data = open(block.input['path']).read()\n")
+        reg = FMCP + "import subprocess\ndef run(cmd: str) -> str:\n    return subprocess.run(cmd, shell=True).stdout\nmcp.add_tool(run)\n"
+        sdk = ("from agents import Agent\nimport subprocess\n"
+               "def sh(cmd: str) -> str:\n    return subprocess.run(cmd, shell=True).stdout\n"
+               "agent = Agent(name='a', tools=[sh])\n")
+        self.check({"lc.py": lc, "oa.py": oa, "an.py": an, "reg.py": reg, "sdk.py": sdk},
+                   [("APP014", "an.py", 6, "medium"), ("APP014", "lc.py", 6, "high"), ("APP014", "lc.py", 10, "medium"),
+                    ("APP014", "oa.py", 7, "high"), ("APP014", "reg.py", 5, "high"), ("APP014", "sdk.py", 4, "high")])
+
+    def test_js_mcp_server_tool_and_zod_types(self):
+        src = MCPJS + ("server.tool('run', { cmd: z.string() }, async ({ cmd }) => {\n"
+                       "  exec(cmd)\n  exec(`git log ${cmd}`)\n  execFile('git', ['log', cmd])\n"
+                       "  return { content: [] }\n})\n"
+                       "server.tool('n', { n: z.number(), mode: z.enum(['a', 'b']) }, async ({ n, mode }) => {\n"
+                       "  exec(`ls ${n} ${mode}`)\n  return { content: [] }\n})\n")
+        self.check({"server.ts": src}, [("APP014", "server.ts", 8, "high"), ("APP014", "server.ts", 9, "critical")])
+
+    def test_js_register_tool_paths_and_guards(self):
+        src = MCPJS + ("const ROOT = '/srv/notes'\n"
+                       "server.registerTool('read', { inputSchema: { p: z.string() } }, async ({ p }) => {\n"
+                       "  const a = fs.readFileSync(p, 'utf8')\n"
+                       "  const b = fs.readFileSync(path.join(ROOT, p), 'utf8')\n"
+                       "  const c = fs.readFileSync(path.join(ROOT, path.basename(p)), 'utf8')\n"
+                       "  fs.writeFileSync(path.join(p, 'config.json'), '{}')\n"
+                       "  const full = path.resolve(ROOT, p)\n"
+                       "  if (!full.startsWith(ROOT + path.sep)) throw new Error('outside')\n"
+                       "  const d = fs.readFileSync(full, 'utf8')\n"
+                       "  return { content: [{ type: 'text', text: a + b + c + d }] }\n})\n")
+        self.check({"server.ts": src}, [("APP014", "server.ts", 9, "medium"), ("APP014", "server.ts", 10, "high")])
+
+    def test_js_call_tool_handler_and_fixed_hosts(self):
+        src = ("import { Server } from '@modelcontextprotocol/sdk/server/index.js'\n"
+               "import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'\n"
+               "const server = new Server({ name: 'x' })\nconst apiUrl = 'https://api.example.com'\n"
+               "server.setRequestHandler(CallToolRequestSchema, async (request) => {\n"
+               "  const { url, q } = request.params.arguments\n"
+               "  const r = await fetch(url)\n"
+               "  const s = await fetch(`https://api.example.com/search?q=${q}`)\n"
+               "  const u = new URL(`${apiUrl}/items/${q}`)\n"
+               "  const t = await fetch(u)\n"
+               "  return { content: [] }\n})\n")
+        self.check({"server.js": src}, [("APP014", "server.js", 7, "medium")])
+
+    def test_js_ai_sdk_openai_helpers_and_callbacks(self):
+        ai = ("import { tool } from 'ai'\nimport { z } from 'zod'\nimport { db } from './db'\n"
+              "export const search = tool({\n  description: 'search',\n  parameters: z.object({ name: z.string() }),\n"
+              "  execute: async ({ name }) => db.query(`SELECT * FROM users WHERE name = '${name}'`),\n})\n"
+              "export const safe = tool({\n  parameters: z.object({ name: z.string() }),\n"
+              "  execute: async ({ name }) => db.query('SELECT * FROM users WHERE name = $1', [name]),\n})\n")
+        oa = ("import OpenAI from 'openai'\nimport { exec } from 'child_process'\nconst openai = new OpenAI()\n"
+              "const r = await openai.chat.completions.create({ model: 'm', messages: [], tools: [] })\n"
+              "for (const toolCall of r.choices[0].message.tool_calls ?? []) {\n"
+              "  const args = JSON.parse(toolCall.function.arguments)\n  exec(args.cmd)\n}\n")
+        helper = MCPJS + ("async function readNote(p: string) {\n  return fs.promises.readFile(p, 'utf8')\n}\n"
+                          "server.tool('read', { p: z.string() }, async ({ p }) => {\n"
+                          "  return { content: [{ type: 'text', text: await readNote(p) }] }\n})\n")
+        callback = MCPJS + ("server.tool('ls', { dir: z.string() }, async ({ dir }) => {\n"
+                            "  const names = ['a.md', 'b.md']\n  names.forEach((name) => exec('wc -l ' + name))\n"
+                            "  return { content: [] }\n})\n")
+        browser = ("'use client'\nimport { tool } from 'ai'\n"
+                   "export const f = tool({ parameters: {}, execute: async ({ url }) => fetch(url) })\n")
+        self.check({"tools.ts": ai, "agent.ts": oa, "helper.ts": helper, "callback.ts": callback, "app/page.tsx": browser},
+                   [("APP014", "agent.ts", 7, "high"), ("APP014", "helper.ts", 8, "medium"), ("APP014", "tools.ts", 7, "high")])
+
+    def test_python_helpers_in_other_files_of_the_project(self):
+        server = ("from mcp.server.fastmcp import FastMCP\nfrom .db import run_query, by_id\nfrom pkg.shell import sh\n"
+                  "mcp = FastMCP('x')\n"
+                  "@mcp.tool()\ndef find(name: str, cmd: str, n: int):\n"
+                  "    sh(cmd)\n    by_id(n)\n    return run_query(name)\n")
+        db = ("import sqlite3\nconn = sqlite3.connect('d')\n"
+              "def run_query(name):\n    return conn.execute(f\"SELECT * FROM t WHERE name = '{name}'\").fetchall()\n"
+              "def by_id(n):\n    return conn.execute(f\"SELECT * FROM t WHERE id = {n}\").fetchall()\n")
+        shell = ("import subprocess\nfrom .util import log_run\n"
+                 "def sh(cmd):\n    log_run(cmd)\n    return subprocess.run('git ' + cmd, shell=True)\n")
+        util = "import os\ndef log_run(c):\n    os.system('echo ' + c)\n"
+        other = "import subprocess\ndef sh2(cmd):\n    return subprocess.run('git ' + cmd, shell=True)\n"
+        self.check({"pkg/server.py": server, "pkg/db.py": db, "pkg/shell.py": shell, "pkg/util.py": util, "pkg/other.py": other},
+                   [("APP014", "pkg/db.py", 4, "high"), ("APP014", "pkg/shell.py", 5, "critical"),
+                    ("APP014", "pkg/util.py", 3, "critical")])
+
+    def test_js_handlers_in_other_files_of_the_project(self):
+        index = ("import { Server } from '@modelcontextprotocol/sdk/server/index.js'\n"
+                 "import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'\n"
+                 "import { kubectlScale, other } from './tools/kubectl-scale.js'\n"
+                 "const { readIt } = require('./tools/read')\n"
+                 "const server = new Server({ name: 'x' })\n"
+                 "server.setRequestHandler(CallToolRequestSchema, async (request) => {\n"
+                 "  const { name, arguments: input = {} } = request.params\n"
+                 "  if (name === 'kubectl_scale') return await kubectlScale(k8sManager, input as { name: string })\n"
+                 "  if (name === 'read') return readIt(input.path)\n"
+                 "  return other(k8sManager)\n})\n")
+        scale = ("import { execSync } from 'child_process'\n"
+                 "export const kubectlScaleSchema = { name: 'kubectl_scale', inputSchema: { type: 'object' } }\n"
+                 "export async function kubectlScale(k8sManager: any, input: { name: string; replicas: number }) {\n"
+                 "  const command = `kubectl scale deployment ${input.name} --replicas=${input.replicas}`\n"
+                 "  return execSync(command).toString()\n}\n"
+                 "export async function other(k8sManager: any, input?: any) {\n"
+                 "  return execSync(`kubectl get ${input}`).toString()\n}\n")
+        read = "const fs = require('fs')\nconst readIt = async (p) => fs.readFileSync(p, 'utf8')\nmodule.exports = { readIt }\n"
+        self.check({"src/index.ts": index, "src/tools/kubectl-scale.ts": scale, "src/tools/read.js": read},
+                   [("APP014", "src/tools/kubectl-scale.ts", 5, "critical"), ("APP014", "src/tools/read.js", 2, "medium")])
+
+    def test_validation_calls_and_fixed_programs(self):
+        """validate_app_name(x) antes do uso, validatePath(p) no JS e uma lista de argumentos com o programa escrito no
+        código, passada a um helper que roda o comando: nada disso é reportado."""
+        py = FMCP + ("import os, subprocess\nBASE = '/srv'\n"
+                     "@mcp.tool()\ndef w(app_name: str, other: str, ctx_dir: str):\n"
+                     "    validate_app_name(app_name)\n"
+                     "    open(os.path.join(BASE, f'{app_name}-x.json'), 'w').write('x')\n"
+                     "    open(os.path.join(BASE, f'{other}-x.json'), 'w').write('x')\n"
+                     "    run(['docker', 'build', ctx_dir])\n"
+                     "    cmd = ['docker', 'build']\n    cmd.append(ctx_dir)\n    run(cmd)\n"
+                     "    run([ctx_dir])\n"
+                     "    return 'ok'\n"
+                     "def run(command):\n    return subprocess.run(command, capture_output=True)\n")
+        js = MCPJS + ("function run(argv: string[]) { return execFile(argv[0], argv.slice(1)) }\n"
+                      "server.tool('r', { p: z.string() }, async ({ p }) => {\n"
+                      "  await validatePath(p)\n  const t = fs.readFileSync(p, 'utf8')\n  run(['git', 'log', p])\n"
+                      "  return { content: [] }\n})\n")
+        self.check({"server.py": py, "server.ts": js}, [("APP014", "server.py", 9, "high"), ("APP014", "server.py", 17, "high")])
+
+    def test_helpers_that_create_folders_are_not_checks(self):
+        """ensure_dir(x), fse.ensureDir(x) e revalidatePath('/') não conferem o valor: o caminho continua do modelo."""
+        py = FMCP + ("import os\nBASE = '/srv'\n"
+                     "@mcp.tool()\ndef save(name: str, text: str):\n"
+                     "    ensure_dir(name)\n    check_file_exists(name)\n"
+                     "    open(os.path.join(BASE, name), 'w').write(text)\n    return 'ok'\n")
+        js = MCPJS + ("import fse from 'fs-extra'\n"
+                      "server.tool('w', { p: z.string() }, async ({ p }) => {\n"
+                      "  await fse.ensureDir(path.dirname(p))\n  revalidatePath('/')\n  fs.writeFileSync(p, 'x')\n"
+                      "  return { content: [] }\n})\n")
+        self.check({"server.py": py, "server.ts": js}, [("APP014", "server.py", 9, "high"), ("APP014", "server.ts", 11, "medium")])
+
+    def test_skill_mode_keeps_full_severity(self):
+        src = FMCP + ("import os, requests\n"
+                      "@mcp.tool()\ndef t(cmd: str, url: str) -> str:\n"
+                      "    os.system('git log ' + cmd)\n    return requests.get(url).text\n")
+        want = [("APP014", "server.py", 6, "critical"), ("APP014", "server.py", 7, "medium")]
+        self.check({"server.py": src}, want, mode="skill")
+        self.check({"server.py": src}, want)
+
+    def test_standards_follow_the_sink(self):
+        src = FMCP + ("import os\n"
+                      "@mcp.tool()\ndef t(cmd: str, path: str) -> str:\n"
+                      "    os.system(cmd)\n    return open(path).read()\n")
+        d = tempfile.TemporaryDirectory()
+        _DIRS.append(d)
+        with open(os.path.join(d.name, "server.py"), "w", encoding="utf-8") as fh:
+            fh.write(src)
+        ctx, findings = scan.run(d.name, offline=True, only={"code", "app"})
+        findings = [f for f in findings if f.rule == "APP014"]
+        data = json.loads(report.as_json(ctx, findings, "en"))
+        std = {x["line"]: x["standards"] for x in data["findings"]}
+        self.assertEqual(std, {6: ["CWE-78", "LLM03:2026", "ASI05"], 7: ["CWE-22", "LLM03:2026", "ASI02"]})
+        tags = {r["locations"][0]["physicalLocation"]["region"]["startLine"]: r["properties"]["tags"]
+                for r in json.loads(report.sarif(ctx, findings, "en"))["runs"][0]["results"]}
+        self.assertIn("CWE-78", tags[6])
+        self.assertIn("ASI02", tags[7])
+        self.assertIn("CWE-78 · LLM03:2026 · ASI05", report.text(ctx, findings, "en"))
+
+
+class ServerOutputShellAndRandom(Checks):
+    """HTML montado com a requisição na resposta, comando que passa por um shell, aleatório de módulo e de cookie."""
+
+    def test_request_data_in_query_helpers_promise_fs_and_private_fields(self):
+        """execute_query(f"...") com a requisição, fsp.readFile(req.query.p) e fetch(req.query.url) numa classe com campo
+        private: o private do TypeScript não é checagem de endereço."""
+        py = ("from flask import Flask, request\napp = Flask(__name__)\n@app.route('/u')\ndef u():\n"
+              "    return execute_query(f\"SELECT * FROM t WHERE name = '{request.args['n']}'\")\n"
+              "@app.route('/v')\ndef v():\n    return execute_query('SELECT * FROM t WHERE name = ?', (request.args['n'],))\n")
+        js = ("const express = require('express')\nconst fsp = require('fs/promises')\nconst app = express()\n"
+              "class Api { private base = 'x' }\n"
+              "app.get('/f', async (req, res) => res.send(await fsp.readFile(req.query.p, 'utf8')))\n"
+              "app.get('/g', async (req, res) => { const r = await fetch(req.query.url); res.json(await r.json()) })\n")
+        self.check({"app.py": py, "srv.ts": js}, [("COD001", "app.py", 5, "high"), ("COD007", "srv.ts", 5, "high"),
+                                                   ("COD008", "srv.ts", 6, "high")])
+
+    def test_express_and_hono_html_responses(self):
+        src = EXPRESS + ("const escapeHtml = require('escape-html')\n"
+                         "app.get('/a', (req, res) => res.send(`<h1>Hello ${req.query.name}</h1>`))\n"
+                         "app.get('/b', (req, res) => { res.write('<p>' + req.query.q + '</p>'); res.end() })\n"
+                         "app.get('/c', (req, res) => res.status(200).end(`<div>${req.params.id}</div>`))\n"
+                         "app.get('/d', (req, res) => res.send(`<h1>${escapeHtml(req.query.name)}</h1>`))\n"
+                         "app.get('/e', (req, res) => res.send(`Hello ${req.query.name}`))\n"
+                         "app.get('/f', (req, res) => res.json({ html: `<b>${req.query.name}</b>` }))\n")
+        hono = ("import { Hono } from 'hono'\nconst app = new Hono()\n"
+                "app.get('/a', (c) => c.html(`<h1>${c.req.query('name')}</h1>`))\n")
+        self.check({"server.js": src, "hono.ts": hono},
+                   [("COD005", "hono.ts", 3, "medium"), ("COD005", "server.js", 4, "medium"), ("COD005", "server.js", 5, "medium"),
+                    ("COD005", "server.js", 6, "medium")])
+
+    def test_flask_and_fastapi_html_returns(self):
+        flask = FLASK + ("@app.get('/a')\ndef a():\n    return f\"<h1>Hello {request.args['name']}</h1>\"\n"
+                         "@app.get('/b')\ndef b():\n    html = '<ul>'\n    html += '<li>' + request.args['q'] + '</li>'\n"
+                         "    return html, 200\n"
+                         "@app.get('/c')\ndef c():\n    return f\"Hello {request.args['name']}\"\n")
+        fast = ("from fastapi import FastAPI\nfrom fastapi.responses import HTMLResponse\napp = FastAPI()\n"
+                "@app.get('/a', response_class=HTMLResponse)\ndef a(name: str):\n    return f'<h1>Hello {name}</h1>'\n"
+                "@app.get('/b')\ndef b(name: str):\n    return f'<h1>Hello {name}</h1>'\n")
+        self.check({"app.py": flask, "main.py": fast},
+                   [("COD005", "app.py", 5, "medium"), ("COD005", "app.py", 10, "medium"), ("COD005", "main.py", 6, "medium")])
+
+    def test_spawn_through_a_shell(self):
+        src = EXPRESS + ("const { spawn } = require('child_process')\nconst { execa } = require('execa')\n"
+                         "app.get('/a', (req, res) => { spawn('sh', ['-c', req.query.cmd]) })\n"
+                         "app.get('/b', (req, res) => { spawn(req.query.cmd, { shell: true }) })\n"
+                         "app.get('/c', (req, res) => { spawn('ls', [req.query.dir], { shell: true }) })\n"
+                         "app.get('/d', async (req, res) => { await execa(req.query.cmd, { shell: true }) })\n"
+                         "app.get('/e', (req, res) => { spawn('ls', [req.query.dir]) })\n"
+                         "app.get('/f', async (req, res) => { await execa('ls', [req.query.dir]) })\n")
+        py = FLASK + ("import subprocess\n"
+                      "@app.get('/a')\ndef a():\n    return subprocess.run(['bash', '-c', request.args['cmd']]).stdout\n"
+                      "@app.get('/b')\ndef b():\n    return subprocess.run(['ls', request.args['d']]).stdout\n")
+        self.check({"server.js": src, "app.py": py}, [("COD002", "app.py", 6, "critical")] +
+                   [("COD002", "server.js", n, "critical") for n in (5, 6, 7, 8)])
+
+    def test_weak_random_in_module_values_and_session_cookies(self):
+        js = ("const sessionToken = Math.random().toString(36).slice(2)\n"
+              "const apiKey = [...Array(32)].map(() => chars[Math.floor(Math.random() * chars.length)]).join('')\n"
+              "const resetToken =\n  Math.random().toString(36).slice(2)\n"
+              "module.exports = { sessionToken, apiKey, resetToken }\n")
+        cookie = EXPRESS + ("app.post('/login', (req, res) => {\n  const sessionId = Math.random().toString(36).slice(2)\n"
+                            "  res.cookie('sid', sessionId, { httpOnly: true })\n  res.end()\n})\n")
+        quiet = ("const sessionId = Math.random().toString(36).slice(2)\nconsole.log(sessionId)\n"
+                 "async function fetchToken() {\n  await sleep(Math.random() * 1000)\n  return fetch('/token')\n}\n")
+        py = FLASK + ("import random\nfrom flask import make_response\n"
+                      "@app.post('/login')\ndef login():\n    session_id = str(random.random())\n"
+                      "    r = make_response('ok')\n    r.set_cookie('session', session_id)\n    return r\n"
+                      "def log():\n    session_id = str(random.random())\n    print(session_id)\n")
+        self.check({"lib/session.js": js, "cookie.js": cookie, "quiet.js": quiet, "app.py": py},
+                   [("COD010", "app.py", 7, "low"), ("COD010", "cookie.js", 4, "low"), ("COD010", "lib/session.js", 1, "low"),
+                    ("COD010", "lib/session.js", 2, "low"), ("COD010", "lib/session.js", 4, "low")])
 
 
 class CodeEngine(unittest.TestCase):
@@ -942,10 +1304,14 @@ class CodeEngine(unittest.TestCase):
               "  return Response.json(r)\n}\n")
         agent = ("from langchain_experimental.tools import PythonREPLTool\nimport torch\n"
                  "t = PythonREPLTool()\nm = torch.load('m.pt', weights_only=False)\n")
-        found = run({"app.py": py, "app/api/chat/route.ts": js, "agent.py": agent})
+        tools = ("from mcp.server.fastmcp import FastMCP\nimport os, requests\nmcp = FastMCP('x')\n"
+                 "@mcp.tool()\ndef t(cmd: str, path: str, url: str) -> str:\n"
+                 "    os.system(cmd)\n    open(path).read()\n    return requests.get(url).text\n")
+        found = run({"app.py": py, "app/api/chat/route.ts": js, "agent.py": agent, "server.py": tools})
         rules = {f.rule for f in found}
         self.assertTrue({"COD001", "COD002", "COD003", "COD004", "COD006", "COD007", "COD009", "COD010", "COD011",
-                         "APP009", "APP010", "APP011", "APP012", "APP013", "COD005"} <= rules, rules)
+                         "APP009", "APP010", "APP011", "APP012", "APP013", "APP014", "COD005"} <= rules, rules)
+        self.assertEqual({f.params["kind"] for f in found if f.rule == "APP014"}, {"shell", "path", "url"})
         fmt = __import__("string").Formatter()
         for f in found:
             for lang in ("pt", "en"):
