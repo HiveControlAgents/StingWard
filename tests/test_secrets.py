@@ -89,5 +89,45 @@ class HostileInput(Case):
         self.assertNotIn(pw, secrets.mask(f"foo-token={pw}"))
 
 
+# =========================================================================== senha em URL
+
+class UrlPasswords(Case):
+    def test_urls_built_by_code_are_not_hard_coded_passwords(self):
+        lines = [
+            'DATABASE_URL = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:5432/app"',
+            'url = "postgresql://{}:{}@{}/{}".format(user, pw, host, db)',
+            'url = "postgresql://{0}:{1}@{2}/app".format(user, pw, host)',
+            'url = "mysql://%s:%s@%s/%s" % (user, pw, host, db)',
+            'url = "mysql://%(user)s:%(password)s@%(host)s/db" % cfg',
+            'dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", u, p, h, port, db)',
+            'url = "postgres://#{user}:#{password}@#{host}/db"',
+            'let url = "postgres://\\(user):\\(password)@\\(host)/db"',
+        ]
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertEqual(brief(scan_files({"src/db.py": line + "\n"}), "SEC001"), [])
+
+    def test_translated_placeholders_are_not_passwords(self):
+        lines = [
+            '"Enter proxy URL (e.g. https://user:password@host:port)": "Proksi URL (m\u0259s. https://istifad\u0259\u00e7i:\u015fifr\u0259@host:port)",',
+            '"proxy": "Zadejte URL proxy (nap\u0159. https://uzivatel:heslo@hostitel:port)",',
+            '"proxy": "Kirjoita osoite (esim. https://k\u00e4ytt\u00e4j\u00e4:salasana@host:portti)",',
+            '"proxy": "URL del proxy (p. ej. https://usuario:contrase\u00f1a@servidor/db)",',
+        ]
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertEqual(brief(scan_files({"src/i18n/locale.json": line + "\n"}), "SEC001"), [])
+
+    def test_real_passwords_in_urls_still_fire(self):
+        pw = "Tr0ub4dor" + "77xK"
+        lines = [f"DATABASE_URL = 'postgres://app:{pw}@db.prod.acme-corp.net:5432/app'",
+                 f'MONGO = "mongodb+srv://admin:{pw}@cluster0.abcde.mongodb.net/?retryWrites=true"',
+                 f'REDIS = "redis://:{pw}@cache.acme-corp.net:6379/0"',
+                 f'url = f"postgresql://app:{pw}@{{host}}/app"', f'url = f"postgresql://app:{pw}@{{DB_HOST}}:{{DB_PORT}}/app"']
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertEqual(brief(scan_files({"src/db.py": line + "\n"}), "SEC001"), [("SEC001", "src/db.py", 1, "high")])
+
+
 if __name__ == "__main__":
     unittest.main()

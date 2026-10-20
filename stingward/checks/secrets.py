@@ -122,10 +122,20 @@ def _tokens(line):
     return out
 
 
+# Senha que o código preenche: f"{settings.DB_PASSWORD}", "{}".format, "%s", "%(password)s", Ruby "#{pw}", Swift "\(pw)".
+_INTERP = re.compile(r"(?:\{[^{}]*\}|%(?:\([^)]*\))?[-+ #0-9.]*[sdrv]|#\{[^}]*\}|\\\([^)]*\))+")
+# Porta escrita como palavra (host:port, servidor:porta, 主机名:端口): é modelo de URL, não endereço de verdade.
+# Só letras: "{host}:{port}" é código que monta a URL e a senha ao lado dele pode ser de verdade.
+_WORD_PORT = re.compile(r"[^\s/?#@:\[\]]*:[^\W\d_]+(?!\w)")
+
+
 def _url_password(m, line):
     """None se for senha de exemplo; "low" se o banco é local; "high" no resto."""
     pw = m["pw"]
-    if _PLACEHOLDER.search(pw) or pw.lower() in _WEAK_PW or pw.startswith("$"):
+    if _PLACEHOLDER.search(pw) or pw.lower() in _WEAK_PW or pw.startswith("$") or _INTERP.fullmatch(pw):
+        return None
+    # Letra fora do ASCII só entra numa URL de verdade codificada (%C3%A7): "usuario:contraseña@" é texto de exemplo.
+    if not pw.isascii() or _WORD_PORT.match(line, m.end()):
         return None
     return "low" if _LOCAL_HOST.match(line, m.end()) else "high"
 
