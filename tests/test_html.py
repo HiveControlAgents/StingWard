@@ -588,6 +588,20 @@ class TextAndMarkdown(unittest.TestCase):
         # os links do próprio Stingward continuam
         self.assertIn("(https://github.com/HiveControlAgents/StingWard)", md)
 
+    def test_a_token_in_the_target_url_never_shows(self):
+        # `stingward skill https://x-access-token:<token>@github.com/org/skill` clona um repositório privado: o
+        # endereço aparece no topo do texto e na capa do HTML, e o token não pode ir junto.
+        target = f"https://x-access-token:{GH}@github.com/org/private-skill"
+        bare = f"https://{GH}@github.com/org/private-skill"
+        root = tree({"a.py": "x = 1\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        ctx = ctx_for(root, files=["a.py"], packages=0)
+        for t in (target, bare):
+            for out in (report.text(ctx, [], "en", target=t), report_html.render(ctx, [], "en", target=t)):
+                self.assertNotIn(FAKE_KEY_PART, out)
+                self.assertIn("@github.com/", out)  # o resto do endereço continua
+                self.assertIn("private-skill", out)
+
     def test_every_impact_text_fills(self):
         for rule in RULES:
             entry = report.merge([Finding(rule, "high", "a.py", 1, {})], "en")[0]

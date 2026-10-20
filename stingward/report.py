@@ -11,6 +11,7 @@ from collections import Counter
 from urllib.parse import quote
 
 from . import __version__
+from .checks import secrets
 from .model import SEV_RANK, SEVERITIES
 from .rules import RULES, STANDARDS, fill, standards, texts
 
@@ -122,6 +123,12 @@ _CONTROL = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2
 
 def _clean(s):
     return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}" if ord(m.group()) < 0x100 else f"\\u{ord(m.group()):04x}", str(s))
+
+
+def shown_target(target):
+    """O alvo como a pessoa digitou, sem credencial: https://x-access-token:<token>@github.com/... (skill privada) sai
+    com o token mascarado no texto e na capa do HTML."""
+    return secrets.mask(str(target))
 
 
 def badge_md(g):
@@ -400,7 +407,8 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
     rv = audit.review if audit else None
     valid = counted(findings, rv)
     shown, discarded = split(merge(findings, lang, rv))
-    out = [f"stingward {__version__} · {t['title']}: {_clean(target or ctx.root)}", f"{t['sources']}: {_sources_line(ctx, lang)}"]
+    out = [f"stingward {__version__} · {t['title']}: {_clean(shown_target(target or ctx.root))}",
+           f"{t['sources']}: {_sources_line(ctx, lang)}"]
     out += [f"{_clean(k)}: {_clean(v)}" for k, v in _review_head(audit, findings, lang)]
     out.append("")
     if audit and audit.notes:
