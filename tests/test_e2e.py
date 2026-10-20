@@ -373,6 +373,13 @@ class ActionSteps(unittest.TestCase):
 
 
 class ActionPermissions(unittest.TestCase):
+    def test_two_runs_in_one_workflow_can_keep_their_own_sarif(self):
+        """Com uma categoria fixa, duas pastas auditadas no mesmo workflow (um monorepo) apagam o SARIF uma da outra."""
+        action = _read("action.yml")
+        self.assertRegex(action, r"\n  category:\n    description: .+\n    default: stingward\n")
+        sarif_step = next(step for step in re.split(r"\n(?=    - )", action) if "upload-sarif" in step)
+        self.assertIn("category: ${{ inputs.category }}", sarif_step)
+
     def test_the_sarif_input_names_every_permission_the_upload_needs(self):
         """O upload-sarif pergunta à API qual workflow está rodando: num repositório privado isso pede actions: read, e
         sem ela o envio falha calado (o passo tem continue-on-error)."""

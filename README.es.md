@@ -104,6 +104,7 @@ Comenta el informe en el PR (y actualiza el mismo comentario en cada ejecución)
 | `lang` | `en` | Idioma del informe: `en` o `pt` |
 | `comment` | `true` | Comenta en los pull requests (necesita `pull-requests: write`) |
 | `sarif` | `true` | Sube SARIF a code scanning (necesita `security-events: write` y, en repositorios privados, `actions: read`) |
+| `category` | `stingward` | Categoría del SARIF en code scanning. Usa una distinta en cada ejecución cuando el mismo workflow audita varias carpetas |
 
 ## Referencia de la línea de comandos
 
