@@ -76,7 +76,7 @@ class HostileInput(Case):
         found = self.assertFast(secrets.scan_text, text, "src/gen.ts", limit=3.0)
         self.assertEqual(len(found), len({f.line for f in found}))
         self.assertGreater(len(found), 14000)
-        both = 'API_TOKEN = "' + "ghp_" + R36 + '"; secret_key = "Q8w3E5r7T9y1"\n'
+        both = 'API_TOKEN = "' + "ghp_" + R36 + '"; secret_key = "' + "Q8w3E5r7" + 'T9y1"\n'
         self.assertEqual([f.params["kind_en"] for f in secrets.scan_text(both, "src/a.py")], ["GitHub token"])
 
     def test_command_line_flags_are_still_masked(self):
@@ -108,7 +108,7 @@ class UrlPasswords(Case):
             'url = "mysql://%(user)s:%(password)s@%(host)s/db" % cfg',
             'dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", u, p, h, port, db)',
             'url = "postgres://#{user}:#{password}@#{host}/db"',
-            'let url = "postgres://\\(user):\\(password)@\\(host)/db"',
+            'let url = "postgres://\\(user):' + '\\(password)@\\(host)/db"',
         ]
         for line in lines:
             with self.subTest(line=line):
@@ -119,7 +119,7 @@ class UrlPasswords(Case):
             '"Enter proxy URL (e.g. https://user:password@host:port)": "Proksi URL (m\u0259s. https://istifad\u0259\u00e7i:\u015fifr\u0259@host:port)",',
             '"proxy": "Zadejte URL proxy (nap\u0159. https://uzivatel:heslo@hostitel:port)",',
             '"proxy": "Kirjoita osoite (esim. https://k\u00e4ytt\u00e4j\u00e4:salasana@host:portti)",',
-            '"proxy": "URL del proxy (p. ej. https://usuario:contrase\u00f1a@servidor/db)",',
+            '"proxy": "URL del proxy (p. ej. https://usuario:' + 'contrase\u00f1a@servidor/db)",',
         ]
         for line in lines:
             with self.subTest(line=line):
@@ -292,9 +292,9 @@ class GenericAssignments(Case):
                 self.assertEqual(brief(scan_files({"src/app.ts": line + "\n"}), "SEC001"), [])
 
     def test_hard_coded_secrets_still_fire(self):
-        lines = ['ORACLE_DB_PASSWORD = "Welcome123456"', 'password: "ADMINadmin2022!",', 'const password = "Tr0ub4dor-77-xK"',
-                 "JWT_SECRET = 'super-secret-jwt-token-with-at-least-32-characters-long'",
-                 'api_token = "0cc0e6c35519bba620c9360cfe3e68d0"', 'secret = "A1B2C3D4E5F6G7H8"']
+        lines = ['ORACLE_DB_PASSWORD = "' + 'Welcome123456"', 'password: "' + 'ADMINadmin2022!",', 'const password = "' + 'Tr0ub4dor-77-xK"',
+                 "JWT_SECRET = '" + "super-secret-jwt-token-with-at-least-32-characters-long'",
+                 'api_token = "' + '0cc0e6c35519bba620c9360cfe3e68d0"', 'secret = "' + 'A1B2C3D4E5F6G7H8"']
         for line in lines:
             with self.subTest(line=line):
                 self.assertEqual(brief(scan_files({"src/app.py": line + "\n"}), "SEC001"), [("SEC001", "src/app.py", 1, "high")])
@@ -372,7 +372,7 @@ class CommittedEnv(Case):
             with self.subTest(line=line):
                 self.assertEqual(self.sev(".env", line + "\n"), ["low"])
         for line in ("AUTH_WEBHOOK=https://hooks.acme.dev/x?token=Q8w3E5r7T9y1U2",
-                     "DATABASE_PASSWORD_URL=postgres://app:Tr0ub4dor77xK@db.prod.acme.dev/app"):
+                     "DATABASE_PASSWORD_URL=postgres://app:" + "Tr0ub4dor77xK@db.prod.acme.dev/app"):
             with self.subTest(line=line):
                 self.assertEqual(self.sev(".env", line + "\n"), ["high"])
 
