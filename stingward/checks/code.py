@@ -396,6 +396,7 @@ _PY_FILE_SINKS = {"open", "io.open", "codecs.open", "aiofiles.open", "builtins.o
                   "shutil.rmtree", "os.rmdir", "flask.send_file", "send_file", "starlette.responses.FileResponse",
                   "fastapi.responses.FileResponse", "FileResponse", "django.http.FileResponse", "os.listdir",
                   "shutil.copy", "shutil.copyfile", "shutil.move"}
+_SAFE_LOADERS = ("SafeLoader", "BaseLoader", "FullLoader")
 _EXT_STR = {"lower", "upper", "casefold", "strip", "lstrip", "rstrip"}
 _PATH_METHODS = {"read_text", "read_bytes", "open", "write_text", "write_bytes", "unlink", "rmdir", "iterdir"}
 _PY_REDIRECT = ("redirect", "RedirectResponse", "HttpResponseRedirect", "HttpResponsePermanentRedirect")
@@ -615,6 +616,7 @@ class _Py:
         # nome -> origens só para caminhos, quando o dado de fora nele é só a extensão (os.path.splitext(nome)[1]).
         self.path_env = {}
         self.has_ext = "splitext" in text
+        self._safe_loaders = None
         self.clients = set()
         self.hashers = {}
         self.llm_funcs = set()
@@ -1318,6 +1320,26 @@ class _Py:
         else:
             self.out.add("COD001", sev, ln, _src(origin))
 
+    def safe_loaders(self):
+        """Classes do próprio arquivo que herdam só de loaders seguros (class StrictLoader(yaml.SafeLoader), também em
+        mais de um passo): o yaml.load com elas é seguro como com o SafeLoader."""
+        if self._safe_loaders is None:
+            classes = [n for n in _walk(self.tree) if isinstance(n, ast.ClassDef)]
+            safe = set()
+            for _ in range(4):
+                more = set()
+                for c in classes:
+                    bases = [self._dot(b) for b in c.bases]
+                    loaders = [b for b in bases if b.endswith("Loader")]
+                    if c.name not in safe and loaders and \
+                            all(b.endswith(_SAFE_LOADERS) or b.rsplit(".", 1)[-1] in safe for b in loaders):
+                        more.add(c.name)
+                if not more:
+                    break
+                safe |= more
+            self._safe_loaders = safe
+        return self._safe_loaders
+
     def deserialize(self, call, d, env, ln):
         if d in ("yaml.load", "yaml.load_all", "yaml.unsafe_load", "yaml.unsafe_load_all"):
             if not self.imported(call.func):
@@ -1326,7 +1348,7 @@ class _Py:
             ld = self._dot(loader) if loader is not None else ""
             if "unsafe" not in d and loader is not None and not ld.endswith(("Loader", "UnsafeLoader")):
                 return  # SafeLoader, CSafeLoader, BaseLoader, FullLoader
-            if ld.endswith(("SafeLoader", "BaseLoader", "FullLoader")):
+            if ld.endswith(_SAFE_LOADERS) or ld.rsplit(".", 1)[-1] in self.safe_loaders():
                 return
             data = _arg(call, 0, "stream")
             o = self.origins(data, env) if data is not None else set()
