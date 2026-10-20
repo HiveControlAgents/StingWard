@@ -215,6 +215,49 @@ class DepsDegradeGracefully(unittest.TestCase):
         self.assertEqual(got[0].params["fixed"], "")
         self.assertIn("No fixed version yet", got[0].params["fix_en"])
 
+    def check_ids(self, ids, docs, files=None):
+        """OSV lists ids for the package, but only the details in docs could be downloaded."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        files = files or {"package-lock.json": {"lockfileVersion": 3, "packages": {"": {}, "node_modules/left": {"version": "1.0.0"}}}}
+        for rel, content in files.items():
+            with open(os.path.join(tmp.name, rel), "w") as fh:
+                json.dump(content, fh)
+        ctx = Context(tmp.name, sorted(files))
+        with mock.patch.object(vulndb, "osv_query", return_value=[list(ids)]), \
+                mock.patch.object(vulndb, "osv_vulns", side_effect=lambda want: {i: docs[i] for i in want if i in docs}), \
+                mock.patch.object(vulndb, "kev", return_value=({}, "")), mock.patch.object(vulndb, "epss", return_value={}), \
+                mock.patch.object(vulndb, "nvd_severity", return_value=None):
+            return deps.check(ctx)
+
+    def test_advisory_whose_details_did_not_download_is_still_reported(self):
+        got = self.check_ids(["GHSA-gone"], {})
+        self.assertEqual([(f.rule, f.severity) for f in got], [("DEP001", "medium")])
+        p = got[0].params
+        self.assertEqual(p["headline_en"], "GHSA-gone")
+        self.assertNotIn("No fixed version yet", p["fix_en"])
+        self.assertIn("did not send the details of GHSA-gone", p["fix_en"])
+        self.assertIn("não mandou os detalhes de GHSA-gone", p["fix_pt"])
+
+    def test_missing_details_do_not_count_as_unfixed(self):
+        got = self.check_ids(["GHSA-1", "GHSA-gone"], {"GHSA-1": self.vuln("GHSA-1", "1.2.0")})
+        p = got[0].params
+        self.assertEqual((got[0].severity, p["fixed"]), ("high", "1.2.0"))
+        self.assertNotIn("still unfixed", p["fix_en"])
+        self.assertIn("did not send the details of GHSA-gone", p["fix_en"])
+
+    def test_malicious_record_whose_details_did_not_download_is_still_reported(self):
+        got = self.check_ids(["MAL-2025-1"], {})
+        self.assertEqual([(f.rule, f.severity, f.params["vuln_id"]) for f in got], [("DEP002", "critical", "MAL-2025-1")])
+
+    def test_alias_of_a_downloaded_advisory_is_not_reported_twice(self):
+        got = self.check_ids(["GHSA-1", "CVE-1"], {"GHSA-1": self.vuln("GHSA-1", "1.2.0")})
+        self.assertEqual(len(got[0].params["vulns"]), 1)
+
+    def test_range_floor_with_missing_details(self):
+        got = self.check_ids(["GHSA-gone"], {}, {"package.json": {"dependencies": {"left": "^1.0.0"}}})
+        self.assertEqual(sorted((f.rule, f.severity) for f in got), [("DEP003", "low"), ("DEP004", "low")])
+
 
 class ListingLimits(unittest.TestCase):
     def test_max_files_stops_early(self):

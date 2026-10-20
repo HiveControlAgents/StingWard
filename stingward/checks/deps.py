@@ -183,11 +183,14 @@ def check(ctx):
         """(falhas, avisos de malware) de uma versão, com a severidade já ajustada por KEV e EPSS."""
         nonlocal nvd_budget
         seen_alias = set()
-        vulns, malware = [], []
+        vulns, malware, missing = [], [], []
         # Malicioso primeiro, depois GHSA (texto melhor), depois o resto.
         order = sorted(ids, key=lambda i: (not i.startswith("MAL-"), not i.startswith("GHSA-"), i))
         for vid in order:
             v = docs.get(vid)
+            if vid not in docs:
+                missing.append(vid)
+                continue
             if not v or v.get("withdrawn"):
                 continue
             aliases = {vid, *(v.get("aliases") or [])}
@@ -216,6 +219,17 @@ def check(ctx):
             vulns.append({"id": vcves[0] if vcves else vid, "osv": vid, "severity": sev, "cvss": score,
                           "summary": _summary(v), "kev": in_kev[0] if in_kev else None,
                           "epss": best[0] if best else None, "fixed": vulndb.fixed_version(v, eco, name, version)})
+        # O detalhe que não baixou (a rede falhou depois das novas tentativas) não pode sumir calado: o ID basta
+        # para avisar, sem severidade nem correção conhecidas, e um MAL- continua sendo pacote malicioso.
+        for vid in missing:
+            if vid in seen_alias:
+                continue
+            seen_alias.add(vid)
+            if vid.startswith("MAL-"):
+                malware.append(vid)
+                continue
+            vulns.append({"id": vid, "osv": vid, "severity": "medium", "cvss": None, "summary": "", "kev": None,
+                          "epss": None, "fixed": None, "details": False})
         return vulns, malware
 
     def malicious(name, version, rel, line, advisories):
@@ -239,10 +253,15 @@ def check(ctx):
         if malware:
             out.append(malicious(r.name, r.floor, r.file, r.line, malware))
         if vulns:
-            vulns = [dict(x, spans=vulndb.affects_whole_range(docs[x["osv"]], r.eco, r.name, r.floor, r.upper, r.inclusive))
+            vulns = [dict(x, spans=vulndb.affects_whole_range(docs.get(x["osv"], {}), r.eco, r.name, r.floor, r.upper, r.inclusive))
                      for x in vulns]
             out.append(_range_finding(r, vulns, kev))
     return out
+
+
+def _named(x):
+    """ID e resumo do aviso; sem resumo (aviso sem texto ou detalhe que não baixou), só o ID."""
+    return f"{x['id']} ({x['summary']})" if x["summary"] else x["id"]
 
 
 def _rank(x):
@@ -276,9 +295,24 @@ def _others(vulns):
 
 
 def _target(vulns):
-    """A menor versão que corrige tudo o que tem correção, e quantas falhas ainda não têm."""
+    """A menor versão que corrige tudo o que tem correção, e quantas falhas ainda não têm (o aviso sem detalhe
+    não conta: dele não se sabe se tem correção)."""
     fixes = [x["fixed"] for x in vulns if x["fixed"]]
-    return (max(fixes, key=vulndb._vkey) if fixes else None), len(vulns) - len(fixes)
+    unfixed = sum(1 for x in vulns if not x["fixed"] and x.get("details", True))
+    return (max(fixes, key=vulndb._vkey) if fixes else None), unfixed
+
+
+_MISSING = ("O OSV.dev não mandou os detalhes de {ids}: veja o aviso no link e rode de novo.",
+            "OSV.dev did not send the details of {ids}: read the advisory at the link and run again.")
+
+
+def _with_missing(vulns, fix_pt, fix_en, alone):
+    """Junta à correção o aviso dos detalhes que não vieram; alone: não há outra correção a dizer."""
+    ids = ", ".join(x["id"] for x in vulns if not x.get("details", True))
+    if not ids:
+        return fix_pt, fix_en
+    pt, en = _MISSING[0].format(ids=ids), _MISSING[1].format(ids=ids)
+    return (pt, en) if alone else (f"{fix_pt} {pt}", f"{fix_en} {en}")
 
 
 _UNFIXED = (" {n} falha(s) ainda sem correção: veja se dá para trocar de pacote.",
@@ -301,11 +335,11 @@ def _package_finding(eco, name, version, rel, line, vulns, kev):
     tags, exploit_pt, exploit_en = _exploit(vulns, kev)
     n = len(vulns)
     if n == 1:
-        head_pt = head_en = f"{worst['id']} ({worst['summary']})"
+        head_pt = head_en = f"{_named(worst)}"
         why_pt, why_en = "Esta versão tem uma falha pública conhecida.", "This version has a publicly known vulnerability."
     else:
-        head_pt = f"{n} falhas conhecidas; a pior é {worst['id']} ({worst['summary']})"
-        head_en = f"{n} known vulnerabilities; worst is {worst['id']} ({worst['summary']})"
+        head_pt = f"{n} falhas conhecidas; a pior é {_named(worst)}"
+        head_en = f"{n} known vulnerabilities; worst is {_named(worst)}"
         others_pt, others_en = _others(vulns)
         why_pt, why_en = f"Esta versão tem falhas públicas. Outras: {others_pt}.", f"This version has public vulnerabilities. Others: {others_en}."
     target, unfixed = _target(vulns)
@@ -316,6 +350,7 @@ def _package_finding(eco, name, version, rel, line, vulns, kev):
             fix_en += _UNFIXED[1].format(n=unfixed)
     else:
         fix_pt, fix_en = _NO_FIX
+    fix_pt, fix_en = _with_missing(vulns, fix_pt, fix_en, alone=not target and not unfixed)
     return Finding("DEP001", worst["severity"], rel, line, {
         "pkg": name, "version": version, "ecosystem": eco, "fixed": target or "", "vulns": vulns,
         "headline_pt": head_pt, "headline_en": head_en, "why_pt": why_pt, "why_en": why_en,
@@ -337,8 +372,8 @@ def _range_finding(r, vulns, kev):
     n, floor = len(vulns), r.floor
     lead = whole[0] if whole else worst
     if whole:
-        head_pt = f"toda versão aceita tem a {lead['id']} ({lead['summary']})"
-        head_en = f"every version it allows has {lead['id']} ({lead['summary']})"
+        head_pt = f"toda versão aceita tem a {_named(lead)}"
+        head_en = f"every version it allows has {_named(lead)}"
         why_pt = f"Toda versão que essa faixa aceita tem a {lead['id']}, então a que estiver instalada também tem."
         why_en = f"Every version this range allows has {lead['id']}, so whichever one is installed has it too."
         if n > 1:
@@ -346,11 +381,11 @@ def _range_finding(r, vulns, kev):
             why_en += f" Version {floor}, the lowest, has {n} known vulnerabilities" + (f"; worst is {worst['id']}." if worst is not lead else ".")
     else:
         if n == 1:
-            head_pt = f"a menor versão aceita ({floor}) tem a {worst['id']} ({worst['summary']})"
-            head_en = f"the lowest version it allows ({floor}) has {worst['id']} ({worst['summary']})"
+            head_pt = f"a menor versão aceita ({floor}) tem a {_named(worst)}"
+            head_en = f"the lowest version it allows ({floor}) has {_named(worst)}"
         else:
-            head_pt = f"a menor versão aceita ({floor}) tem {n} falhas conhecidas; a pior é {worst['id']} ({worst['summary']})"
-            head_en = f"the lowest version it allows ({floor}) has {n} known vulnerabilities; worst is {worst['id']} ({worst['summary']})"
+            head_pt = f"a menor versão aceita ({floor}) tem {n} falhas conhecidas; a pior é {_named(worst)}"
+            head_en = f"the lowest version it allows ({floor}) has {n} known vulnerabilities; worst is {_named(worst)}"
         why_pt = (f"Sem lockfile, a faixa é a única regra: quem já tem a versão {floor} instalada continua com ela, porque ela "
                   "cabe na faixa, e a instalação pode escolhê-la para atender outros pacotes.")
         why_en = (f"Without a lockfile the range is the only rule: a machine that already has version {floor} keeps it, "
@@ -375,6 +410,7 @@ def _range_finding(r, vulns, kev):
             fix_en += _UNFIXED[1].format(n=unfixed)
     else:
         fix_pt, fix_en = _NO_FIX
+    fix_pt, fix_en = _with_missing(vulns, fix_pt, fix_en, alone=not target and not unfixed)
     return Finding("DEP004", sev, r.file, r.line, {
         "pkg": r.name, "spec": r.spec, "floor": floor, "upper": r.upper or "", "ecosystem": r.eco,
         "fixed": target or "", "whole_range": bool(whole), "vulns": vulns,
