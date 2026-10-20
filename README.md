@@ -114,6 +114,9 @@ It comments the report on the PR (and updates the same comment on every run), up
 | `--only deps,secrets,app,code,agents` | Run only some checks |
 | `--offline` | Skip the online databases (dependencies are not checked) |
 | `--no-color` | Plain text output |
+| `--review-template FILE` | Write the human review file: one entry per finding, keeping what was already reviewed |
+| `--review FILE` | Apply the human review: a status and a comment for each finding |
+| `--client NAME`, `--notes FILE` | "Prepared for" on the cover, and the analyst summary (paragraphs, `-` lists, `**bold**`, `` `code` ``) |
 
 | Exit code | Meaning |
 |---|---|
@@ -129,6 +132,8 @@ Environment: `STINGWARD_LANG` sets the default language, `NVD_API_KEY` raises th
 ```markdown
 [![stingward: A](https://img.shields.io/badge/stingward-A-brightgreen)](https://github.com/HiveControlAgents/StingWard)
 ```
+
+**Human review:** for an audit you hand over to someone, write the review file with `stingward . --review-template review.json`. Each entry points at a finding by its `fingerprint` (also in the JSON and SARIF output), which does not change when other parts of the file are edited. Set `status` to `confirmed`, `false_positive`, `accepted_risk` or `fixed`, add a `comment`, then run `stingward . --review review.json --client "Client name" --notes notes.md --html report.html`. False positives move to an appendix; they and the findings fixed during the audit leave the grade, the fix-first list and `--fail-on`. Accepted risks stay in the grade but leave the fix-first list. The text and Markdown reports follow the review too. Comments and notes are escaped and go through the same secret masking as code excerpts.
 
 **False positives:** add a line to `.stingwardignore` in the project root (`RULE path/glob`, `RULE` or `path/glob`), or put `stingward:ignore` in a comment on the line. If a rule is wrong, [tell us](https://github.com/HiveControlAgents/StingWard/issues/new?template=false-positive.yml) with a minimal sample.
 

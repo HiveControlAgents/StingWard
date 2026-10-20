@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 
-from . import __version__, gitsafe, report, report_html, scan
+from . import __version__, gitsafe, report, report_html, review, scan
 from .model import SEV_RANK
 
 COMMANDS = {"scan", "skill", "agents"}
@@ -39,6 +39,10 @@ def _parser():
     ap.add_argument("--markdown", metavar="ARQ", help="grava Markdown (comentário de PR)")
     ap.add_argument("--json", metavar="ARQ", help="grava JSON")
     ap.add_argument("--html", metavar="ARQ", help="grava o relatório em HTML (um arquivo só, para entregar ou imprimir em PDF)")
+    ap.add_argument("--review", metavar="ARQ", help="arquivo de revisão (JSON): o status e o comentário de quem revisou cada achado")
+    ap.add_argument("--review-template", metavar="ARQ", help="grava o arquivo de revisão com um item por achado (mantém o que já foi revisado)")
+    ap.add_argument("--client", metavar="NOME", help="para quem é o relatório: aparece na capa como \"Preparado para\"")
+    ap.add_argument("--notes", metavar="ARQ", help="parecer do analista em Markdown simples (parágrafos, listas, **negrito**, `código`)")
     ap.add_argument("--fail-on", choices=["critical", "high", "medium", "low", "never"], default="high",
                     help="sai com código 1 se houver achado desta severidade ou acima (padrão: high)")
     ap.add_argument("--only", default=None, help="só estas verificações: deps,secrets,app,code,agents")
@@ -111,16 +115,33 @@ def _git_prefix(path):
     return gitsafe.prefix(path)
 
 
-def _emit(args, ctx, findings, lang, label, only, remote):
+MSG = {
+    "pt": {"stale": "stingward: {n} item(ns) de {path} não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu).",
+           "todo": "stingward: {n} achado(s) ainda sem status em {path}; eles contam como achados.",
+           "masked": "stingward: mascarei algo que parece segredo num comentário ou no parecer. Confira o relatório antes de entregar.",
+           "template": "stingward: arquivo de revisão gravado em {path}: {n} achado(s), {kept} já revisado(s), {stale} que não batem mais com nenhum achado."},
+    "en": {"stale": "stingward: {n} item(s) in {path} match no finding of this scan (the code changed or the finding is gone).",
+           "todo": "stingward: {n} finding(s) still have no status in {path}; they count as found.",
+           "masked": "stingward: masked something that looks like a secret in a comment or the notes. Check the report before you deliver it.",
+           "template": "stingward: review file written to {path}: {n} finding(s), {kept} already reviewed, {stale} no longer matching any finding."},
+}
+
+
+def _say(lang, key, **kw):
+    print(MSG[lang][key].format(**kw), file=sys.stderr)
+
+
+def _emit(args, ctx, findings, lang, label, only, remote, audit=None):
     verdict = args.command == "skill"
     # Skill baixada não tem prefixo no SARIF: os caminhos são da pasta auditada, não do repositório clonado.
     prefix = lambda: "" if args.command == "agents" or remote else _git_prefix(ctx.root)
     outputs = {
-        "text": lambda: report.text(ctx, findings, lang, color=not args.no_color and sys.stdout.isatty(), target=label, show_verdict=verdict),
-        "json": lambda: report.as_json(ctx, findings, lang),
-        "markdown": lambda: report.markdown(ctx, findings, lang, target=label, show_verdict=verdict),
+        "text": lambda: report.text(ctx, findings, lang, color=not args.no_color and sys.stdout.isatty(), target=label, show_verdict=verdict,
+                                    audit=audit),
+        "json": lambda: report.as_json(ctx, findings, lang, audit=audit),
+        "markdown": lambda: report.markdown(ctx, findings, lang, target=label, show_verdict=verdict, audit=audit),
         "sarif": lambda: report.sarif(ctx, findings, lang, prefix=prefix()),
-        "html": lambda: report_html.render(ctx, findings, lang, target=label, checks=only),
+        "html": lambda: report_html.render(ctx, findings, lang, target=label, checks=only, audit=audit),
     }
     done = {}
 
@@ -154,6 +175,14 @@ def main(argv=None):
         print(f"stingward: --only aceita {','.join(scan.CHECKS)}", file=sys.stderr)
         return 2
 
+    try:
+        rv = review.load(args.review) if args.review else None
+        notes = review.load_notes(args.notes) if args.notes else ""
+        old = review.load(args.review_template) if args.review_template and os.path.exists(args.review_template) else None
+    except review.ReviewError as e:
+        print(f"stingward: {e}", file=sys.stderr)
+        return 2
+
     tmp = None
     try:
         if args.command == "agents":
@@ -175,15 +204,33 @@ def main(argv=None):
                 return 2
             ctx, findings = scan.run(args.target, mode="project", offline=args.offline, only=only)
             label = args.target
+        audit = None
+        if rv is not None or notes or args.client:
+            audit = review.Audit(ctx, findings, rv, client=args.client or "", notes=notes)
+        if rv is not None:
+            stale = rv.stale(findings)
+            todo = sum(1 for f in findings if not rv.status(f))
+            if stale:
+                _say(lang, "stale", n=len(stale), path=args.review)
+            if todo:
+                _say(lang, "todo", n=todo, path=args.review)
         # Os relatórios saem antes de apagar a skill baixada: o HTML lê dela os trechos de código e o commit.
-        _emit(args, ctx, findings, lang, label, only, remote=tmp is not None)
+        _emit(args, ctx, findings, lang, label, only, remote=tmp is not None, audit=audit)
+        if audit is not None and audit.mask.changed:
+            _say(lang, "masked")
+        if args.review_template:
+            text, kept, stale = review.template(findings, lang, old=old, target=report_html._name(ctx, label, report_html.H[lang]))
+            with open(args.review_template, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            _say(lang, "template", path=args.review_template, n=len(findings), kept=kept, stale=stale)
     finally:
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)
 
     if args.fail_on == "never":
         return 0
-    if any(SEV_RANK[f.severity] >= SEV_RANK[args.fail_on] for f in findings):
+    # Com revisão, alarme falso e o que foi corrigido não reprovam: valem os mesmos achados da nota.
+    if any(SEV_RANK[f.severity] >= SEV_RANK[args.fail_on] for f in report.counted(findings, rv)):
         return 1
     # Portão de CI não pode passar só porque a base não respondeu.
     if ctx.sources.get("osv_error"):
