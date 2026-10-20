@@ -460,6 +460,41 @@ class CodeRules(Checks):
         self.check({"app.py": py, "app/api/proxy/route.ts": js},
                    [("COD008", "app.py", 15, "high"), ("COD008", "app/api/proxy/route.ts", 10, "high")])
 
+    def test_cod008_host_written_into_the_address(self):
+        """f"https://{host}/x", "https://" + t + ".example.com": o texto fixo para antes do fim do host, então quem manda o
+        valor escolhe o servidor (t = "evil.com/?" ou "@evil.com"). Depois da primeira / é só caminho. No redirect para
+        https://{Host}/ (de http para https) o cabeçalho é do próprio navegador: fica quieto."""
+        py = FLASK + ("import requests\n"
+                      "@app.get('/a')\ndef a():\n"
+                      "    host = request.args['h']\n"
+                      "    r = requests.get(f'https://{host}/v1/x')\n"
+                      "    s = requests.get(f\"http://localhost:{request.args['port']}/x\")\n"
+                      "    t = requests.get('https://' + request.args['t'] + '.example.com/x')\n"
+                      "    u = requests.get(f'https://api.example.com/{host}?q={host}')\n"
+                      "    return r.text + s.text + t.text + u.text\n"
+                      "@app.get('/b')\ndef b():\n"
+                      "    return redirect(f\"https://{request.headers['Host']}{request.full_path}\")\n")
+        express = EXPRESS + ("app.use((req, res, next) => {\n"
+                             "  if (!req.secure) return res.redirect('https://' + req.headers.host + req.url)\n"
+                             "  next()\n})\n")
+        js = ("export async function GET(req) {\n"
+              "  const { searchParams } = new URL(req.url)\n"
+              "  const host = searchParams.get('h')\n"
+              "  const a = await fetch(`https://${host}/v1/x`)\n"
+              "  const b = await fetch('https://' + searchParams.get('t') + '.example.com/x')\n"
+              "  const c = await fetch(`https://api.example.com/${host}`)\n"
+              "  return new Response((await a.text()) + (await b.text()) + (await c.text()))\n}\n")
+        mcp = FMCP + ("import httpx\n@mcp.tool()\nasync def get(region: str, path: str) -> str:\n"
+                      "    a = httpx.get(f'https://{region}.api.example.com/v1')\n"
+                      "    b = httpx.get(f'https://api.example.com/{path}')\n"
+                      "    return a.text + b.text\n")
+        f = run({"app.py": py, "app/api/proxy/route.ts": js, "server.py": mcp, "web.js": express})
+        self.assertEqual(got(f), [("APP014", "server.py", 6, "medium"), ("COD008", "app.py", 7, "high"),
+                                  ("COD008", "app.py", 8, "high"), ("COD008", "app.py", 9, "high"),
+                                  ("COD008", "app/api/proxy/route.ts", 4, "high"),
+                                  ("COD008", "app/api/proxy/route.ts", 5, "high")])
+        self.assertEqual([x.params["kind"] for x in f if x.rule == "APP014"], ["url"])
+
     # ------------------------------------------------------------------ COD009 redirect
 
     def test_cod009_redirect_to_request_address(self):
