@@ -1,4 +1,4 @@
-"""Segredos no código e arquivos .env no git. Reaproveita os padrões do CEOVul."""
+"""Segredos no código e arquivos .env no git. Usa os padrões do motor de mascaramento (_redact)."""
 from __future__ import annotations
 
 import base64
@@ -7,14 +7,14 @@ import itertools
 import json
 import re
 
-from .. import _ceovul as cv, gitsafe
+from .. import _redact as redact, gitsafe
 from ..model import Finding
 from . import is_text_source
 
-# Os padrões do CEOVul aceitam rabo curto de propósito (pegam token truncado em log). Aqui o formato
+# Os padrões do _redact aceitam rabo curto de propósito (pegam token truncado em log). Aqui o formato
 # precisa ser o real, senão npm_registry, "xoxp-new-..." e "sk-ant-admin..." viram segredo.
 TOKEN_PATTERNS = [
-    ("private_key", cv._TOKEN_PATTERNS[0][1]),
+    ("private_key", redact._TOKEN_PATTERNS[0][1]),
     ("jwt", re.compile(r"(?<![\w-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_-]*)?")),
     ("aws_access_key", re.compile(r"\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\b")),
     ("github_token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36,251}|github_pat_[A-Za-z0-9_]{40,})\b")),
@@ -131,25 +131,25 @@ def _url_password(m, line):
 
 
 def known_kinds(text: str):
-    """Tipos de segredo num valor solto (config de MCP). Formatos estritos daqui + estruturas do CEOVul."""
+    """Tipos de segredo num valor solto (config de MCP). Formatos estritos daqui + estruturas do _redact."""
     kinds = [k for k, _ in _tokens(text)]
-    kinds += ["url_password" for m in cv._URL_CREDS.finditer(text) if _url_password(m, text) == "high"]
+    kinds += ["url_password" for m in redact._URL_CREDS.finditer(text) if _url_password(m, text) == "high"]
     found = []
-    cv.sanitize_text(text, found)
-    skip = {k for k, _ in cv._TOKEN_PATTERNS} | {"url_password", "sanitizer_error"}
+    redact.sanitize_text(text, found)
+    skip = {k for k, _ in redact._TOKEN_PATTERNS} | {"url_password", "sanitizer_error"}
     return kinds + [f for f in found if f not in skip]
 
 
-# Opção de linha de comando com segredo (--token=..., --api-key ...), que o CEOVul não pega por causa do hífen.
+# Opção de linha de comando com segredo (--token=..., --api-key ...), que o _redact não pega por causa do hífen.
 _FLAG_SECRET = re.compile(r"(?i)(--?[\w-]*(?:token|key|secret|passw(?:or)?d|pwd|auth|credential)[\w-]*(?:=|\s+)[\"']?)([^\s\"']{6,})")
 
 
 def mask(text: str) -> str:
-    """Texto seguro para o relatório: token vira prefixo + reticências e o resto que o CEOVul reconhece vira [REDACTED:tipo]."""
+    """Texto seguro para o relatório: token vira prefixo + reticências e o resto que o _redact reconhece vira [REDACTED:tipo]."""
     for _, rx in TOKEN_PATTERNS[1:]:
         text = rx.sub(lambda m: m.group(0)[:4] + "\u2026", text)
     text = _FLAG_SECRET.sub(lambda m: m.group(1) + "[REDACTED]", text)
-    return cv.sanitize_text(text)
+    return redact.sanitize_text(text)
 
 
 def drop_inline_ignored(ctx, findings):
@@ -187,22 +187,22 @@ def _known(line, n, rel, low_conf, out):
                 out.append(Finding("SEC001", "medium", rel, n, _kind("jwt")))
             continue
         out.append(Finding("SEC001", "low" if low_conf else _known_sev(kind, m.group(0)), rel, n, _kind(kind)))
-    for rx, kind in ((cv._DISCORD_HOOK, "discord_webhook"), (cv._SLACK_HOOK, "slack_webhook")):
+    for rx, kind in ((redact._DISCORD_HOOK, "discord_webhook"), (redact._SLACK_HOOK, "slack_webhook")):
         if rx.search(line) and not _PLACEHOLDER.search(line):
             out.append(Finding("SEC001", "low" if low_conf else "high", rel, n, _kind(kind)))
 
 
 def _generic(line, n, rel, low, out):
     """Senha em URL e atribuição a campo sensível. low=True para exemplo (docs, referência de skill, bloco de código)."""
-    for m in cv._URL_CREDS.finditer(line):
+    for m in redact._URL_CREDS.finditer(line):
         sev = _url_password(m, line)
         if sev:
             out.append(Finding("SEC001", "low" if low else sev, rel, n, _kind("url_password")))
     for m in _ASSIGN.finditer(line):
         key, val = m["key"].rsplit(".", 1)[-1], m["val"]
-        if not cv.is_sensitive_key(key) or _PLACEHOLDER.search(val) or cv._PH_RE.search(val):
+        if not redact.is_sensitive_key(key) or _PLACEHOLDER.search(val) or redact._PH_RE.search(val):
             continue
-        if cv._entropy(val) < 3.3 or not re.search(r"\d", val) or re.fullmatch(r"[\w-]+\.(?:js|ts|py|json|html)", val):
+        if redact._entropy(val) < 3.3 or not re.search(r"\d", val) or re.fullmatch(r"[\w-]+\.(?:js|ts|py|json|html)", val):
             continue
         if any(f.line == n for f in out):
             continue
@@ -253,10 +253,10 @@ def _env_has_secret(text: str) -> bool:
         key, val = m["key"], m["val"].split(" #", 1)[0].strip().strip("\"'")
         if not val or _PLACEHOLDER.search(val) or val.lower() in _WEAK_PW:
             continue
-        if _tokens(val) or any(_url_password(u, val) == "high" for u in cv._URL_CREDS.finditer(val)):
+        if _tokens(val) or any(_url_password(u, val) == "high" for u in redact._URL_CREDS.finditer(val)):
             return True
-        if cv.is_sensitive_key(key) and not re.search(r"(?i)(?:^|_)(?:url|uri|host|port|path|file|dir|user|username|email)$", key) \
-                and not cv._URL_CREDS.search(val):
+        if redact.is_sensitive_key(key) and not re.search(r"(?i)(?:^|_)(?:url|uri|host|port|path|file|dir|user|username|email)$", key) \
+                and not redact._URL_CREDS.search(val):
             return True
     return False
 

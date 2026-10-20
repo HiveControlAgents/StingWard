@@ -1,4 +1,3 @@
-# Motor de segredos do CEOVul (cópia de ceovul/sanitizer.py, sem alterações de lógica).
 """Sanitizador central de segredos para logs, diagnósticos, banco e notificações.
 
 Regras de projeto:
