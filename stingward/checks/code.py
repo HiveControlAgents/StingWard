@@ -332,6 +332,11 @@ _SQL_HELPER = re.compile(r"(?i)^_*(?:(?:execute|exec|run|raw)_?(?:query|sql|stat
                          r"query_?(?:db|sql|database)|sql_?query|run_?read_?only_?query)$")
 _NOT_REQ_ANN = re.compile(r"(?i)(?:dep|deps|dependency|session|db|user|request|response|websocket|tasks?|connection|"
                           r"settings|config|client|logger|context|ctx|engine|cursor)$")
+# Fim do nome de um modelo do corpo da requisição (ChatRequest, UserCreate, ItemUpdate, QueryIn, SearchPayload), depois de
+# uma letra minúscula ou dígito: Request sozinho, Login e Plugin não contam.
+_BODY_ANN = re.compile(r"(?<=[a-z0-9])(?:Request|Req|Create|Update|Upsert|Patch|In|Input|Body|Payload|Params|Form|Data|"
+                       r"Query|Message|Schema|Dto|DTO)$")
+_FRAMEWORK_REQ_ANN = {"HttpRequest", "BaseRequest"}  # Django, aiohttp: também quando a anotação é texto
 _NOT_REQ_PARAM = {"request", "req", "db", "session", "background_tasks", "response", "websocket", "current_user", "user",
                   "settings", "self", "cls", "ctx", "context"}
 
@@ -1625,10 +1630,27 @@ def _format_pieces(fmt, call):
     return out
 
 
+def _body_model(ann, imports):
+    """request: ChatRequest, user: UserCreate, req: Annotated[QueryIn, Body()]: o tipo é o modelo do corpo da requisição
+    (FastAPI, Litestar). Request, HttpRequest e o que vem de um módulo de framework web são o próprio framework."""
+    if isinstance(ann, ast.Subscript) and (_dotted(ann.value, imports) or "").endswith("Annotated"):
+        sl = ann.slice
+        ann = sl.elts[0] if isinstance(sl, ast.Tuple) and sl.elts else sl
+    if isinstance(ann, ast.Constant) and isinstance(ann.value, str):
+        name = full = ann.value.strip()
+    elif isinstance(ann, (ast.Name, ast.Attribute)):
+        full = _dotted(ann, imports) or ""
+        name = ann.id if isinstance(ann, ast.Name) else ann.attr
+    else:
+        return False
+    name = name.rsplit(".", 1)[-1]
+    if not _BODY_ANN.search(name) or name in _FRAMEWORK_REQ_ANN:
+        return False
+    return full.split(".")[0] not in _PY_WEB
+
+
 def _framework_param(p, default, imports):
     """Parâmetro de rota que o framework injeta (banco, usuário logado, Request), não dado de quem chama."""
-    if p.arg in _NOT_REQ_PARAM:
-        return True
     if default is not None and isinstance(default, ast.Call):
         d = _dotted(default.func, imports) or ""
         if d.endswith(("Depends", "Security")):
@@ -1638,6 +1660,11 @@ def _framework_param(p, default, imports):
         for n in _walk(ann):
             if isinstance(n, ast.Call) and (_dotted(n.func, imports) or "").endswith(("Depends", "Security")):
                 return True
+        if _body_model(ann, imports):
+            return False  # o tipo diz mais que o nome: request: ChatRequest é o corpo
+    if p.arg in _NOT_REQ_PARAM:
+        return True
+    if ann is not None:
         if isinstance(ann, ast.Name) and _NOT_REQ_ANN.search(ann.id):
             return True
         if isinstance(ann, ast.Attribute) and _NOT_REQ_ANN.search(ann.attr):

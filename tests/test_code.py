@@ -74,6 +74,30 @@ class CodeRules(Checks):
                          "    return db.execute(text(f\"SELECT * FROM items WHERE title LIKE '%{q}%'\")).all()\n")
         self.check({"main.py": src}, [("COD001", "main.py", 6, "high")])
 
+    def test_fastapi_body_models_are_request_data(self):
+        """request: ChatRequest, req: QueryIn, user: UserCreate: o modelo é o corpo da requisição. O nome do parâmetro e o
+        fim "Request" do tipo só dizem "injetado pelo framework" quando o tipo é do framework (Request, Depends)."""
+        src = FASTAPI + ("import subprocess, httpx\nfrom typing import Annotated\n"
+                         "from fastapi import Request, Body\nfrom starlette.requests import Request as StarletteRequest\n"
+                         "from pydantic import BaseModel\n"
+                         "class ChatRequest(BaseModel):\n    message: str\n    url: str\n"
+                         "@app.post('/chat')\n"
+                         "async def chat(request: ChatRequest):\n"
+                         "    subprocess.run(request.message, shell=True)\n"
+                         "@app.post('/users')\n"
+                         "def create(user: 'schemas.UserCreate', db=Depends(get_db)):\n"
+                         "    db.execute(f\"INSERT INTO users (name) VALUES ('{user.name}')\")\n"
+                         "@app.post('/fetch')\n"
+                         "async def fetch(req: Annotated[ChatRequest, Body()]):\n"
+                         "    return httpx.get(req.url)\n"
+                         "@app.get('/ok')\n"
+                         "async def ok(request: Request, raw: StarletteRequest, user: User = Depends(current_user),\n"
+                         "             db: Session = Depends(get_db), settings: AppSettings = Depends(get_settings)):\n"
+                         "    subprocess.run(request.app.state.cmd + raw.scope['x'] + user.home + settings.cmd, shell=True)\n")
+        # Injetados pelo framework: argumento de função (médio), não dado da requisição.
+        self.check({"main.py": src}, [("COD002", "main.py", 13, "critical"), ("COD001", "main.py", 16, "high"),
+                                      ("COD008", "main.py", 19, "high"), ("COD002", "main.py", 23, "medium")])
+
     def test_cod001_function_argument_in_value_position_is_medium(self):
         src = "def find(conn, name):\n    return conn.execute(f\"SELECT * FROM t WHERE name = '{name}'\")\n"
         f = run({"db.py": src})
