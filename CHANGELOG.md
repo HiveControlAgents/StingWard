@@ -30,6 +30,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 ### Fixed
 - A version range in `requirements*.txt`, `package.json` or `pyproject.toml` with a long version that does not parse (for example `foo>=1aaaaaaaaaaaaaaaaaaaaaaaaaaaa*`) no longer makes the scan hang: the version pattern backtracked exponentially.
 - A long run of spaces on a line of `requirements*.txt` no longer slows the scan down quadratically.
+- A committed `.env` with a long run of spaces inside a value no longer slows the scan down quadratically (60 000 spaces took 15 seconds).
 
 ## [0.1.5] - 2026-10-20
 

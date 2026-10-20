@@ -241,7 +241,9 @@ def _ignored_by_gitignore(ctx, rel: str) -> bool:
     return any(fnmatch.fnmatch(name, p.lstrip("/")) or fnmatch.fnmatch(rel, p.lstrip("/")) for p in patterns)
 
 
-_ENV_LINE = re.compile(r"^\s*(?:export\s+)?(?P<key>[A-Za-z_][\w.-]*)\s*=\s*(?P<val>.*?)\s*$")
+# O valor vai até o fim da linha e o strip() tira os espaços do fim: "(?P<val>.*?)\s*$" testava o fim de novo a cada
+# caractere do valor, quadrático numa sequência longa de espaços.
+_ENV_LINE = re.compile(r"^\s*(?:export\s+)?(?P<key>[A-Za-z_][\w.-]*)\s*=(?P<val>.*)")
 
 
 def _env_has_secret(text: str) -> bool:
@@ -250,7 +252,7 @@ def _env_has_secret(text: str) -> bool:
         m = _ENV_LINE.match(line)
         if not m or line.lstrip().startswith("#"):
             continue
-        key, val = m["key"], m["val"].split(" #", 1)[0].strip().strip("\"'")
+        key, val = m["key"], m["val"].strip().split(" #", 1)[0].strip().strip("\"'")
         if not val or _PLACEHOLDER.search(val) or val.lower() in _WEAK_PW:
             continue
         if _tokens(val) or any(_url_password(u, val) == "high" for u in redact._URL_CREDS.finditer(val)):
