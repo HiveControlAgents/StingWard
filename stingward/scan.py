@@ -77,7 +77,8 @@ def load_ignore(root: str):
     """Linhas do .stingwardignore: `REGRA`, `caminho/glob` ou `REGRA caminho/glob`."""
     rules = []
     try:
-        with open(os.path.join(root, ".stingwardignore"), encoding="utf-8") as fh:
+        # Comentário em Latin-1 ou BOM no início não podem derrubar a varredura nem anular a primeira linha.
+        with open(os.path.join(root, ".stingwardignore"), encoding="utf-8-sig", errors="replace") as fh:
             for line in fh:
                 line = line.split("#", 1)[0].strip()
                 if not line:

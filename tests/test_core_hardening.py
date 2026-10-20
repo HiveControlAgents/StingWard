@@ -392,6 +392,15 @@ class TextWithABom(unittest.TestCase):
                 _, findings = scan.run(self.tmp.name, mode=mode, offline=True)
                 self.assertIn(("AGT003", ".mcp.json"), [(f.rule, f.file) for f in findings])
 
+    def test_ignore_file_with_a_bom_or_in_latin1(self):
+        self._write(".mcp.json", json.dumps({"mcpServers": {"x": {"command": "npx", "args": ["-y", "some-mcp-server"]}}}))
+        for raw in (b"\xef\xbb\xbfAGT003\n", b"# n\xe3o reportar\nAGT003\n"):
+            with self.subTest(raw=raw):
+                with open(os.path.join(self.tmp.name, ".stingwardignore"), "wb") as fh:
+                    fh.write(raw)
+                _, findings = scan.run(self.tmp.name, offline=True)
+                self.assertEqual([f.rule for f in findings], [])
+
     def test_read_drops_only_a_leading_bom(self):
         self._write("a.txt", "x = 1\n\ufeffy\n")
         ctx = scan.Context(self.tmp.name, ["a.txt"])
