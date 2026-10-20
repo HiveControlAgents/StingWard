@@ -424,7 +424,8 @@ class AgentsCommand(CliTest):
         empty = tree({"notes.txt": "x\n"})
         code, out, _ = run_main(["agents", "--offline", "--lang", "en"], env={"HOME": empty, "USERPROFILE": empty})
         self.assertEqual(code, 0)
-        self.assertIn("Nothing found", out)
+        self.assertIn("No agent configuration was found on this machine (0 files read)", out)
+        self.assertNotIn("Grade: A", out)
 
 
 # =========================================================================== idioma
