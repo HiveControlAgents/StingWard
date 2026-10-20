@@ -168,6 +168,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A review file (`--review`, `--review-template`) or notes file (`--notes`) saved in UTF-16 with a byte order mark, as Windows PowerShell writes with `>`, is read. It was refused as "not UTF-8". A file in another encoding, such as Windows-1252, is still refused instead of being read with its accents garbled.
 - DEP002 on the lowest version of a range without a lockfile, when the range also allows clean versions (high), no longer says "Remove it now": it says to raise the range's minimum past the malicious version and commit a lockfile, and to delete `node_modules`/the virtualenv and rotate the keys only if the installed version is a malicious one. A malicious version that is pinned, locked or the whole range (critical) still says to remove it now.
 - An OpenAI-style value (`sk-`, `sk-proj-`, `sk-svcacct-`, `sk-admin-`) or npm-style value (`npm_`) with only upper case letters and digits after the prefix is no longer reported as a key (SEC001 critical): the lower case prefix counted as the lower case letter a random key has. Real OpenAI keys and npm tokens have both letter cases and a digit after the prefix and are still found, as with `r8_` and `re_`.
+- The README (English, Portuguese and Spanish) lists NuGet among the ecosystems whose lockfiles are audited: DEP001 reads `packages.lock.json`, but the list stopped at Composer.
 
 ## [0.1.5] - 2026-10-20
 
