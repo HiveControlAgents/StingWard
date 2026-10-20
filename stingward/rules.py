@@ -35,6 +35,15 @@ RULES = {
                "Without a lockfile nobody knows which version gets installed, so it cannot be audited.",
                "Generate and commit a lockfile (npm install, poetry lock, uv lock) or pin versions with ==."),
     },
+    "DEP004": {
+        "group": "deps",
+        "pt": ("{pkg} {spec}: {headline}",
+               "{why}{exploit}",
+               "{fix}"),
+        "en": ("{pkg} {spec}: {headline}",
+               "{why}{exploit}",
+               "{fix}"),
+    },
     # ------------------------------------------------------------------ segredos
     "SEC001": {
         "group": "secrets",
@@ -326,6 +335,7 @@ STANDARDS = {
     "DEP001": ["CWE-1395"],
     "DEP002": ["CWE-506", "LLM04:2026", "AST02"],
     "DEP003": ["CWE-1395"],
+    "DEP004": ["CWE-1395"],
     "SEC001": ["CWE-798", "LLM02:2026"],
     "SEC002": ["CWE-538"],
     "SEC003": ["CWE-538"],
