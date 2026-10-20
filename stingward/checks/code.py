@@ -390,6 +390,8 @@ _PY_SHELL = {"os.system", "os.popen", "subprocess.getoutput", "subprocess.getsta
 _PY_EXEC_ARGV = {"asyncio.create_subprocess_exec", "os.execv", "os.execvp", "os.execvpe", "os.spawnv", "os.spawnvp"}
 _PY_SQL_METHODS = {"execute", "executemany", "executescript", "exec_driver_sql", "raw", "read_sql", "read_sql_query",
                    "mogrify", "fetch", "fetchrow", "fetchval", "query", "sql"}
+# Argumentos do QuerySet.extra do Django que vão crus para o SQL.
+_DJ_EXTRA = ("where", "select", "tables")
 _PY_SQL_RECEIVER = re.compile(r"(?i)cur|conn|con$|db|database|session|engine|sql|sqlite|pg|mysql|duck|client|pool|tx|"
                               r"transaction|executor|pd|pandas|spark")
 _SQL_BUILDERS = {"select", "insert", "update", "delete", "where", "filter", "filter_by", "order_by", "group_by", "limit",
@@ -899,14 +901,15 @@ class _Py:
                            for c in _walk(node) if c is not node.func)
         return False
 
-    def sql_verdict(self, node, env):
-        """(severidade, origem) para uma consulta montada com valores no meio do texto, ou None."""
+    def sql_verdict(self, node, env, need_sql=True):
+        """(severidade, origem) para uma consulta montada com valores no meio do texto, ou None. need_sql: o texto fixo
+        precisa parecer SQL (não num pedaço que já vai para o SQL, como o where do .extra do Django)."""
         parts = self.pieces(node, env)
         exprs = [(i, p) for i, (k, p) in enumerate(parts) if k == "expr"]
         if not exprs:
             return None
         lit = "".join(p if k == "lit" else "x1" for k, p in parts)
-        if not looks_sql(lit):
+        if need_sql and not looks_sql(lit):
             return None
         # PRAGMA e DDL não aceitam parâmetros (nome de tabela, de índice): com origem desconhecida, não há o que corrigir.
         ddl = bool(_SQL_DDL.match(lit))
@@ -1396,6 +1399,9 @@ class _Py:
         return self.origins(q, env)
 
     def sql(self, call, d, last, env, ln):
+        if last == "extra" and isinstance(call.func, ast.Attribute) and any(k.arg in _DJ_EXTRA for k in call.keywords):
+            self.extra_sql(call, env, ln)
+            return
         text_call = d in ("sqlalchemy.text", "sqlalchemy.sql.text", "sqlalchemy.sql.expression.text", "sqlmodel.text")
         # db._execute_query(f"... {x}"): helper do próprio código que recebe o SQL pronto; só vale com SQL montado.
         low = last.lower()
@@ -1417,6 +1423,24 @@ class _Py:
             # inteira é uma ferramenta de SQL por desenho: o risco está nas permissões do banco, não neste código.
             o = self.whole_query(q, env)
             v = ("high", LLM) if LLM in o else ("high", REQ) if o & REQ_ANY else None
+        self.report_sql(v, ln)
+
+    def extra_sql(self, call, env, ln):
+        """QuerySet.extra(where=[...], select={...}, tables=[...]) do Django: cada pedaço vai cru para o SQL, como no
+        RawSQL. Só o valor de fora no meio do pedaço (ou o pedaço inteiro) conta; %s com params=[...] é parâmetro."""
+        best = None
+        for k in call.keywords:
+            if k.arg not in _DJ_EXTRA:
+                continue
+            v = k.value
+            items = v.values if isinstance(v, ast.Dict) else v.elts if isinstance(v, (ast.List, ast.Tuple)) else [v]
+            for it in items:
+                r = None if it is None or _const_str(it) else self.sql_verdict(it, env, need_sql=False)
+                if r:
+                    best = _sql_best(best, r)
+        self.report_sql(best, ln)
+
+    def report_sql(self, v, ln):
         if v is None:
             return
         sev, origin = v
