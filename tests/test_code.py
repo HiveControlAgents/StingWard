@@ -301,6 +301,20 @@ class CodeRules(Checks):
                     ("APP009", "llm.py", 8, "medium"), ("COD001", "server.js", 8, "medium"),
                     ("COD001", "server.js", 10, "high"), ("APP014", "mcp.ts", 9, "medium")])
 
+    def test_cod001_fix_says_how_to_pick_a_column_or_table_name(self):
+        # A column or table name (ORDER BY {order}, medium) cannot be a query parameter: "pass values as parameters"
+        # alone does not fix it, so the fix also says to pick the name from a fixed list.
+        py = FLASK + ("import sqlite3\ncur = sqlite3.connect('x').cursor()\n@app.get('/s')\ndef s():\n"
+                      "    order = request.args.get('order', 'id')\n"
+                      "    cur.execute(f'SELECT * FROM docs ORDER BY {order}')\n    return 'x'\n")
+        (f,) = [x for x in run({"app.py": py}) if x.rule == "COD001"]
+        self.assertEqual(f.severity, "medium")
+        pt, en = texts("COD001", "pt", f.params)[2], texts("COD001", "en", f.params)[2]
+        self.assertIn("Passe os valores como parâmetros", pt)
+        self.assertIn("Pass values as parameters", en)
+        self.assertIn("Nome de coluna ou de tabela não pode ser parâmetro: escolha o nome numa lista fixa", pt)
+        self.assertIn("A column or table name cannot be a parameter: pick it from a fixed list", en)
+
     def test_cod001_js_allowlists_before_the_query(self):
         """ALLOWED.includes(x) ? x : 'name', if (!LISTA.includes(x)) return, if (!/^...$/.test(x)) throw: depois disso o
         valor é um dos permitidos. Um if que não sai, uma regex sem âncora ou o outro lado do ? vindo de fora não protegem."""

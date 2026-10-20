@@ -170,6 +170,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - An OpenAI-style value (`sk-`, `sk-proj-`, `sk-svcacct-`, `sk-admin-`) or npm-style value (`npm_`) with only upper case letters and digits after the prefix is no longer reported as a key (SEC001 critical): the lower case prefix counted as the lower case letter a random key has. Real OpenAI keys and npm tokens have both letter cases and a digit after the prefix and are still found, as with `r8_` and `re_`.
 - The README (English, Portuguese and Spanish) lists NuGet among the ecosystems whose lockfiles are audited: DEP001 reads `packages.lock.json`, but the list stopped at Composer.
 - An answer from OSV.dev, KEV, EPSS or NVD just saved to the local cache is used again on the next run, also on Windows with Python 3.12 and with the cache on a network drive. Its time could read a fraction of a second, or a few seconds, ahead of the clock, and a cache entry dated in the future was always fetched again. Up to a minute ahead now counts; an entry further in the future (a cache copied from a machine with a wrong clock) is still fetched again.
+- COD001's fix also says what to do with a column or table name chosen from outside (`ORDER BY {order}`, medium): a name cannot be a query parameter, so pick it from a fixed list. It used to say only "pass values as parameters", which does not fix that case.
 
 ## [0.1.5] - 2026-10-20
 
