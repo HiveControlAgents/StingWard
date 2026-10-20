@@ -53,9 +53,10 @@ _LLM_SINK = {
                  "use um template fixo e passe a resposta como variável.", "use a fixed template and pass the answer as a variable."),
     "sql": ("a uma consulta SQL", "a SQL query", "leitura ou exclusão dos seus dados", "reading or deleting your data",
             "rode com um usuário de banco só de leitura, limitado às tabelas necessárias, ou deixe o modelo só preencher "
-            "parâmetros de consultas escritas por você.",
+            "parâmetros de consultas escritas por você. Nome de coluna ou de tabela não pode ser parâmetro: escolha o nome "
+            "numa lista fixa.",
             "run it with a read-only database user limited to the tables it needs, or let the model only fill parameters "
-            "of queries you wrote."),
+            "of queries you wrote. A column or table name cannot be a parameter: pick it from a fixed list."),
     "html": ("à página como HTML", "the page as HTML", "scripts rodando no navegador de quem usa o app",
              "scripts running in your users' browsers",
              "mostre como texto, ou converta o Markdown e limpe com DOMPurify.sanitize antes de inserir.",
@@ -110,8 +111,9 @@ _TOOL_SINK = {
             "Um valor como ' OR '1'='1 muda a consulta e pode ler, alterar ou apagar dados do banco.",
             "A value such as ' OR '1'='1 changes the query and can read, change or delete data in the database.",
             "Passe o valor como parâmetro da consulta (?, %s, $1) e use um usuário de banco só com as permissões de que a "
-            "ferramenta precisa.",
-            "Pass the value as a query parameter (?, %s, $1) and use a database user with only the permissions the tool needs.",
+            "ferramenta precisa. Nome de coluna ou de tabela não pode ser parâmetro: escolha o nome numa lista fixa.",
+            "Pass the value as a query parameter (?, %s, $1) and use a database user with only the permissions the tool needs. "
+            "A column or table name cannot be a parameter: pick it from a fixed list.",
             "ler, alterar ou apagar dados do banco", "read, change or delete data in the database"),
     "path": ("a um caminho de arquivo", "a file path",
              "Um valor como ../../.ssh/id_rsa sai da pasta que a ferramenta deveria usar e lê ou sobrescreve qualquer arquivo "
