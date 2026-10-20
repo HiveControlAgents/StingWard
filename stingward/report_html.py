@@ -85,7 +85,7 @@ H = {
         "ev_long": "linha longa ({n} caracteres), não exibida",
         "ev_more": ("Trecho do outro lugar omitido.", "Trechos dos outros {n} lugares omitidos."),
         "hidden": ("{n} caractere invisível", "{n} caracteres invisíveis"),
-        "vulns": "Falhas conhecidas nesta versão", "v_id": "ID", "v_sev": "Severidade", "v_summary": "Resumo", "v_fixed": "Corrigida em",
+        "vulns": "Falhas conhecidas nesta versão", "vulns_floor": "Falhas conhecidas na menor versão aceita", "v_id": "ID", "v_sev": "Severidade", "v_summary": "Resumo", "v_fixed": "Corrigida em",
         "v_more": ("e mais {n} falha", "e mais {n} falhas"), "v_none": "sem correção",
         "no_findings": "Nenhum achado.",
         "scope_what": "O que foi verificado",
@@ -170,7 +170,7 @@ H = {
         "ev_long": "long line ({n} characters), not shown",
         "ev_more": ("Excerpt for the other place left out.", "Excerpts for the other {n} places left out."),
         "hidden": ("{n} invisible character", "{n} invisible characters"),
-        "vulns": "Known vulnerabilities in this version", "v_id": "ID", "v_sev": "Severity", "v_summary": "Summary", "v_fixed": "Fixed in",
+        "vulns": "Known vulnerabilities in this version", "vulns_floor": "Known vulnerabilities in the lowest version allowed", "v_id": "ID", "v_sev": "Severity", "v_summary": "Summary", "v_fixed": "Fixed in",
         "v_more": ("and {n} more", "and {n} more"), "v_none": "no fix yet",
         "no_findings": "No findings.",
         "scope_what": "What was checked",
@@ -561,7 +561,7 @@ def _evidence_html(ctx, entry, t):
 
 
 def _vulns_html(entry, t):
-    vulns = entry.params.get("vulns") if entry.rule == "DEP001" else None
+    vulns = entry.params.get("vulns") if entry.rule in ("DEP001", "DEP004") else None
     if not isinstance(vulns, list) or not vulns:
         return ""
     rows = []
@@ -579,7 +579,8 @@ def _vulns_html(entry, t):
         rows.append(f'<tr><td class="vid">{ident}</td><td class="vsev">{_badge(sev, t)}</td><td class="vsum">{_h(v.get("summary") or "")}{tags}</td>'
                     f'<td class="vfix">{_h(v.get("fixed") or t["v_none"])}</td></tr>')
     more = (f'<p class="ev-more">{_html.escape(_n(t, "v_more", len(vulns) - MAX_VULNS))}</p>' if len(vulns) > MAX_VULNS else "")
-    return (f'<h5>{_html.escape(t["vulns"])}</h5><table class="vulns"><thead><tr><th scope="col">{t["v_id"]}</th>'
+    head = t["vulns_floor"] if entry.rule == "DEP004" else t["vulns"]
+    return (f'<h5>{_html.escape(head)}</h5><table class="vulns"><thead><tr><th scope="col">{t["v_id"]}</th>'
             f'<th scope="col">{_html.escape(t["v_sev"])}</th><th scope="col">{_html.escape(t["v_summary"])}</th>'
             f'<th scope="col">{_html.escape(t["v_fixed"])}</th></tr></thead><tbody>{"".join(rows)}</tbody></table>{more}')
 
