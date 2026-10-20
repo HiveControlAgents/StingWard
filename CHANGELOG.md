@@ -117,6 +117,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A field masked earlier in the pipeline (`foo-token=[REDACTED]`) no longer comes out as `[REDACTED:secret_field]]` with a stray bracket.
 - An OSV.dev record outside the schema (an alias that is not text, `affected` that is not a list, a version that is a number) no longer crashes the whole dependency check with a traceback. It counts as an advisory whose details could not be downloaded: the package stays in the report and the CLI exits with 3. EPSS values that are not probabilities (`n/a`, `NaN`, `1.5`) are skipped.
 - Versions are compared with the rules of their ecosystem when a fix or a range is checked: PEP 440 for PyPI and semver for npm, Go and crates.io. On PyPI `1.0-1` is the post-release `1.0.post1` (it used to sort below `1.0`, so a fixed version was reported as vulnerable), `1.0rc1` equals `1.0c1`, and `1.0a1.dev1` and `1.0.post1.dev1` sort before `1.0a1` and `1.0.post1`. On npm `1.0.0-1` stays a pre-release.
+- The suggested fix is a final release when the advisory lists one above your version: `26.4.1` instead of `26.4.0rc2`, `1.1.0` instead of `1.1.0-beta.1`. A pre-release is suggested only when it is the only fix listed.
 
 ### Fixed
 - The code check reads JavaScript and TypeScript files longer than about 2000 lines again. Everything after line 2000 was counted as one long line, so ordinary files of that size (a large MCP server, a big page component) were taken for minified bundles and skipped without a word; only real long lines mark a bundle now.
