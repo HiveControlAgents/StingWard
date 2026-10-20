@@ -2341,6 +2341,7 @@ class _Js:
         self.tool_rx = None      # leitura dos argumentos de tool calling da API, quando o arquivo trata disso
         self.typed = set()       # argumentos de ferramenta que o Zod restringe a número, enum, uuid...
         self._depth = None       # (posições, profundidade) dos parênteses, para saber se a função é o handler
+        self._opens = None       # profundidade -> posições dos que abrem, para achar o ( de uma seta
         self.seeds = {}          # helper -> índices dos parâmetros que recebem argumento de ferramenta
         self.fn_groups = {}      # helper -> nomes de cada parâmetro (o padrão desestruturado conta como um)
         self.fn_tool = set()     # helpers cujos parâmetros já eram argumento de ferramenta
@@ -2395,17 +2396,17 @@ class _Js:
         return -1
 
     def open_before(self, j, limit=2000):
-        """Posição do ( que abre o ) em j, ou -1."""
-        depth = 0
-        for i in range(j, max(-1, j - limit), -1):
-            c = self.mask[i]
-            if c in ")]}":
-                depth += 1
-            elif c in "([{":
-                depth -= 1
-                if depth == 0:
-                    return i
-        return -1
+        """Posição do (, [ ou { que abre o fechamento em j (até limit caracteres antes), ou -1. Usa o índice de
+        depth_at: voltar caractere por caractere a cada => custava até 2000 passos por seta, sem teto no arquivo."""
+        if self.mask[j:j + 1] not in (")", "]", "}"):
+            return -1
+        self.depth_at(j)
+        ps, ds = self._depth
+        k = bisect.bisect_left(ps, j)
+        # Quem abre é o último que abre antes de j e deixa a profundidade em uma a mais que a de depois de j.
+        opens = self._opens.get(ds[k] + 1, ())
+        i = bisect.bisect_left(opens, j) - 1
+        return opens[i] if i >= 0 and j - opens[i] < limit else -1
 
     def args(self, i):
         """i logo depois do "(": [(a, b)] dos argumentos de nível zero."""
@@ -2927,12 +2928,17 @@ class _Js:
         """Quantos (, [ e { estão abertos antes de pos."""
         if self._depth is None:
             ps, ds, d = [], [], 0
+            opens = collections.defaultdict(list)  # profundidade depois de abrir -> posições, em ordem
             for m in _BRACKETS.finditer(self.mask):
-                d += 1 if m.group() in "([{" else -1
+                if m.group() in "([{":
+                    d += 1
+                    opens[d].append(m.start())
+                else:
+                    d -= 1
                 ps.append(m.start())
                 ds.append(d)
             self.spend(len(self.mask) // 4)
-            self._depth = (ps, ds)
+            self._depth, self._opens = (ps, ds), opens
         ps, ds = self._depth
         i = bisect.bisect_left(ps, pos) - 1
         return ds[i] if i >= 0 else 0

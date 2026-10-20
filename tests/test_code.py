@@ -1305,6 +1305,17 @@ class CodeEngine(unittest.TestCase):
         self.assertTrue(js.server_side())
         self.assertTrue(code._JS_ROUTE_FN.search("export const GET: RequestHandler = async (req) => {}"))
 
+    def test_arrows_without_their_parenthesis_stay_fast(self):
+        """") =>" sem o "(" que o abre: cada seta voltava até 2000 caracteres, um por um, sem teto no arquivo."""
+        src = "const q = req.query.a\neval(q)\n" + (") => " * 500 + "\n") * 200
+        t = time.time()
+        found = code.scan_js("a.js", src)
+        self.assertLess(time.time() - t, 2)
+        self.assertEqual([(f.rule, f.line) for f in found], [("COD003", 2)])
+        js = code._Js("a.js", "f((a, [b]) => { g(c) }, (d) => d)", {})
+        self.assertEqual([js.open_before(i) for i in (9, 19, 21, 26, 32)], [2, 17, 14, 24, 1])
+        self.assertEqual(js.open_before(0), -1)
+
     def test_line_numbers_follow_comments_and_strings(self):
         src = EXPRESS + ("/* a comment\n   eval(req.body.a)\n*/\n"
                          "const s = `multi\nline ${1}\ntext`\n"
