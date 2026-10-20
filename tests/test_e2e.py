@@ -168,6 +168,11 @@ class SkillReportBack(unittest.TestCase):
         for key in ("verdict_bad", "verdict_mid", "verdict_ok"):
             with self.subTest(key=key):
                 self.assertIn(report.T["en"][key].split(" ", 1)[1], body)
+        # Arquivo que a varredura não leu: o veredito de "incompleta", com as mesmas palavras fixas.
+        for piece in report.T["en"]["verdict_incomplete"].split(" ", 1)[1].split("{why}"):
+            self.assertIn(piece.strip(" ,.:"), body)
+        self.assertIn("`not_read.too_big`", body)
+        self.assertIn("`not_read.truncated`", body)
 
     def test_the_skill_says_when_dependencies_were_not_checked(self):
         """Com --fail-on never o código de saída 3 some; só `sources` mostra que o OSV.dev não respondeu."""

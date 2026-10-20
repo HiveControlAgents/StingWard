@@ -853,6 +853,80 @@ class NotReadInHtml(_Unread, unittest.TestCase):
         self.assertIn("lib/<wbr>x\\u202e.js", page)
 
 
+class IncompleteVerdict(_Unread, unittest.TestCase):
+    """stingward skill com arquivo sem ler: o veredito não diz que a skill parece segura. A nota continua a das
+    severidades; mudam só as palavras e a cor do veredito, e o código de saída fica o mesmo."""
+    BIG = {"pt": "⚠️ Auditoria incompleta: o limite de 10 MB deixou 1 arquivo(s) sem ler (dist/server.js), então isto não "
+                 "mostra que a skill é segura. Leia o que ficou de fora antes de instalar.",
+           "en": "⚠️ Incomplete audit: the 10 MB size limit left 1 file(s) unread (dist/server.js), so this does not show "
+                 "the skill is safe. Read what was left out before you install it."}
+    MEDIUM = Finding("SKL010", "medium", "SKILL.md", 3, {"snippet": "x"})
+
+    def skill(self, too_big=("dist/server.js",), truncated=False):
+        return self.ctx(too_big, truncated, mode="skill")
+
+    def test_text_and_markdown_say_the_audit_is_incomplete(self):
+        for lang in ("pt", "en"):
+            for findings in ([], [self.MEDIUM]):
+                with self.subTest(lang=lang, findings=len(findings)):
+                    text = report.text(self.skill(), list(findings), lang, show_verdict=True)
+                    self.assertIn(self.BIG[lang], text.splitlines())
+                    for key in ("verdict_ok", "verdict_mid"):
+                        self.assertNotIn(report.T[lang][key], text)
+                    self.assertIn(f"{report.T[lang]['grade']}: {'B' if findings else 'A'}", text)  # a nota não muda
+                    self.assertIn(self.BIG[lang], report.markdown(self.skill(), list(findings), lang, show_verdict=True))
+
+    def test_a_serious_problem_keeps_its_verdict(self):
+        bad = Finding("SKL004", "critical", "run.sh", 2, {"snippet": "x"})
+        for lang in ("pt", "en"):
+            text = report.text(self.skill(), [bad], lang, show_verdict=True)
+            self.assertIn(report.T[lang]["verdict_bad"], text)
+            self.assertNotIn(self.BIG[lang], text)
+
+    def test_the_file_limit_also_makes_it_incomplete(self):
+        text = report.text(self.skill((), True), [], "en", show_verdict=True)
+        self.assertIn(f"⚠️ Incomplete audit: reading stopped at {scan.MAX_FILES:,} files, so this does not show", text)
+        both = report.text(self.skill(["a.js"], True), [], "pt", show_verdict=True)
+        many = f"{scan.MAX_FILES:,}".replace(",", ".")
+        self.assertIn(f"(a.js) e a leitura parou em {many} arquivos, então", both)
+
+    def test_a_full_read_keeps_the_usual_verdict(self):
+        for lang in ("pt", "en"):
+            self.assertIn(report.T[lang]["verdict_ok"], report.text(self.skill(()), [], lang, show_verdict=True))
+
+    def test_the_html_cover_has_its_own_wording_and_colour(self):
+        for lang in ("pt", "en"):
+            with self.subTest(lang=lang):
+                page = report_html.render(self.skill(), [], lang)
+                cover = page.split('<section class="cover"', 1)[1].split("</section>", 1)[0]
+                self.assertIn(f'<p class="verdict-text verdict-incomplete">{self.BIG[lang].split(" ", 1)[1]}</p>', cover)
+                self.assertIn('class="grade grade-A"', cover)
+                self.assertIn(".verdict-incomplete{", page)
+        project = report_html.render(self.ctx(["dist/server.js"]), [], "en")
+        self.assertNotIn("verdict-incomplete\">", project)
+
+    def test_hostile_names_in_the_verdict(self):
+        ctx = self.skill(self.HOSTILE)
+        text = report.text(ctx, [], "en", show_verdict=True)  # texto puro: só controle e bidi importam
+        for raw in ("\x1b", "\u202e"):
+            self.assertNotIn(raw, text)
+        md = report.markdown(ctx, [], "en", show_verdict=True)
+        for raw in ("\x1b", "\u202e", "<img", "[go](", "@team"):
+            self.assertNotIn(raw, md)
+        page = report_html.render(ctx, [], "en")  # no HTML um colchete é só texto
+        for raw in ("\x1b", "\u202e", "<img"):
+            self.assertNotIn(raw, page)
+
+    def test_the_command_line_keeps_its_exit_code(self):
+        root = tree({"SKILL.md": "---\nname: s\ndescription: d\n---\nHello\n", "dist/server.js": "x" * 500})
+        self.addCleanup(shutil.rmtree, root, True)
+        with mock.patch.object(scan, "SKILL_MAX_BYTES", 100):
+            code, out = run(["skill", root, "--offline", "--lang", "en"])
+        self.assertEqual(code, 0)
+        self.assertIn("⚠️ Incomplete audit: the ", out)
+        self.assertIn(" left 1 file(s) unread (dist/server.js), so this does not show the skill is safe.", out)
+
+
 class NothingRead(unittest.TestCase):
     """Nenhum arquivo lido (pasta vazia, caminho errado, checkout esquecido no CI): o relatório não pode parecer um A limpo."""
     EN = "No file was read (0 files), so there is nothing to grade."
