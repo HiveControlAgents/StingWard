@@ -753,5 +753,20 @@ class AssignmentOperators(unittest.TestCase):
                 self.assertEqual(redact.sanitize_text(text), text)
 
 
+class AlreadyMasked(unittest.TestCase):
+    """Valor que já veio mascarado ([REDACTED], de outra etapa) não ganha um segundo marcador nem um "]" sobrando."""
+
+    def test_masked_value_is_kept_as_is(self):
+        for text in ("api_key=[REDACTED]", "api_key=[REDACTED]&page=2", "token: [REDACTED] # ok", "password=[REDACTED:secret_field]"):
+            with self.subTest(text=text):
+                self.assertEqual(redact.sanitize_text(text), text)
+
+    def test_mask_of_a_token_field_has_one_bracket(self):
+        out = secrets.mask("foo-token=" + "Xk9mQ2vL8pR4tZ7w")
+        self.assertNotIn("]]", out)
+        self.assertNotIn("Xk9mQ2", out)
+        self.assertTrue(out.startswith("foo-token=[REDACTED"), out)
+
+
 if __name__ == "__main__":
     unittest.main()
