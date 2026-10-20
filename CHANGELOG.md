@@ -33,6 +33,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - `stingward skill <url>` that cannot download the skill exits with code 2 and a one-line message, also when `git clone` takes more than 180 seconds or git is not installed. It used to exit with 1, the code for "findings", or crash with a traceback, and a timeout or Ctrl+C left the temporary clone behind.
 - `stingward skill https://github.com/<owner>/<repo>/tree/<branch>/<folder>` only audits a folder inside the downloaded repository. A folder such as `../../etc`, or one that the repository makes a symbolic link to a folder on your machine, used to be audited instead of the skill, and the verdict was about that folder.
 - `stingward skill <url>` clones with git hooks turned off. A `post-checkout` hook from your own git setup (`core.hooksPath` or `init.templateDir`) used to run inside the downloaded skill before it was audited.
+- A token or password in the address given to `stingward skill` (`https://x-access-token:<token>@github.com/...`) no longer shows up in the text and HTML reports or in the download error, and the git message in that error is masked and loses terminal escape sequences sent by the server.
 
 ## [0.1.5] - 2026-10-20
 

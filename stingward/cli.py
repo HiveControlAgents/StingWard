@@ -14,11 +14,19 @@ import subprocess
 import sys
 import tempfile
 
-from . import __version__, gitsafe, report, report_html, review, scan
+from . import __version__, _redact as redact, gitsafe, report, report_html, review, scan
 from .model import SEV_RANK
 
 COMMANDS = {"scan", "skill", "agents"}
 _OWNER_REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*/[\w.-]+")
+# Usuário e senha (ou token) dentro de uma URL: https://x-access-token:<token>@github.com/... Vai até o último @ do host.
+_USERINFO = re.compile(r"\b([A-Za-z][A-Za-z0-9+.-]{0,30}://)[^/?#\s]*@")
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def _shown(text):
+    """Texto que vai para a tela e para os relatórios: sem a credencial de uma URL e sem sequências de terminal."""
+    return _CONTROL.sub("", _USERINFO.sub(r"\1", str(text)))
 
 
 def _default_lang():
@@ -95,7 +103,8 @@ def _fetch(target):
         except OSError as e:
             raise FetchError("nogit", str(e)) from None
         if r.returncode != 0:
-            raise FetchError("git", (r.stderr or "").strip())
+            # A mensagem do git traz texto do servidor remoto ("remote: ..."): sai mascarada e sem sequências de terminal.
+            raise FetchError("git", redact.sanitize_text((r.stderr or "").strip()))
         repo = os.path.realpath(os.path.join(tmp, "repo"))
         path = os.path.join(tmp, "repo", sub)
         # A subpasta vem da URL e os links simbólicos, do autor da skill: "../.." ou skill -> ~ levariam a auditoria
@@ -171,7 +180,7 @@ MSG = {
 
 
 def _say(lang, key, **kw):
-    print(MSG[lang][key].format(**kw), file=sys.stderr)
+    print(MSG[lang][key].format(**{k: _shown(v) for k, v in kw.items()}), file=sys.stderr)
 
 
 def _emit(args, ctx, findings, lang, label, only, remote, audit=None):
@@ -244,7 +253,7 @@ def main(argv=None):
                 _say(lang, "nodir", path=path)
                 return 2
             ctx, findings = scan.run(path, mode="skill", offline=args.offline, only=only)
-            label = args.target
+            label = _shown(args.target)
         else:
             if not os.path.isdir(args.target):
                 _say(lang, "nodir", path=args.target)
