@@ -100,7 +100,7 @@ class RemoteSkills(unittest.TestCase):
         with mock.patch("subprocess.run", return_value=subprocess.CompletedProcess([], returncode, "", "fatal: nope")) as run:
             try:
                 tmp, path = cli._fetch(target)
-            except SystemExit as e:
+            except cli.FetchError as e:
                 return run.call_args[0][0], e
         self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
         return run.call_args[0][0], path
@@ -124,8 +124,8 @@ class RemoteSkills(unittest.TestCase):
 
     def test_failed_clone_is_a_clear_error(self):
         _, err = self._fetch("owner/repo", returncode=128)
-        self.assertIsInstance(err, SystemExit)
-        self.assertIn("owner/repo", str(err.code))
+        self.assertIsInstance(err, cli.FetchError)
+        self.assertEqual((err.key, err.detail), ("git", "fatal: nope"))
 
 
 class Reports(unittest.TestCase):

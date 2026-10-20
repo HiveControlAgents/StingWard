@@ -59,8 +59,20 @@ def _is_remote(target):
     return not os.path.exists(target) and _OWNER_REPO.fullmatch(target) is not None
 
 
+CLONE_TIMEOUT = 180
+
+
+class FetchError(Exception):
+    """Não deu para baixar a skill. key escolhe a mensagem em MSG; detail é o que o git disse."""
+
+    def __init__(self, key, detail=""):
+        super().__init__(key, detail)
+        self.key, self.detail = key, detail
+
+
 def _fetch(target):
-    """Clona a skill numa pasta temporária. Aceita URL do GitHub com /tree/<branch>/<subpasta>."""
+    """Clona a skill numa pasta temporária. Aceita URL do GitHub com /tree/<branch>/<subpasta>.
+    Em qualquer falha (ou Ctrl+C) a pasta temporária é apagada antes de sair."""
     sub = ""
     url = target
     m = re.match(r"^https?://github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?(?:/tree/([^/]+)(?:/(.*))?)?/?$", target)
@@ -71,13 +83,21 @@ def _fetch(target):
     elif _OWNER_REPO.fullmatch(target):
         url = f"https://github.com/{target}.git"
     tmp = tempfile.mkdtemp(prefix="stingward-")
-    cmd = ["git", "clone", "--depth", "1", "--quiet"] + (["--branch", branch] if branch else []) + ["--", url, os.path.join(tmp, "repo")]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
-                       env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_LFS_SKIP_SMUDGE": "1"})
-    if r.returncode != 0:
+    try:
+        cmd = ["git", "clone", "--depth", "1", "--quiet"] + (["--branch", branch] if branch else []) + ["--", url, os.path.join(tmp, "repo")]
+        try:
+            r = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=CLONE_TIMEOUT,
+                               env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_LFS_SKIP_SMUDGE": "1"})
+        except subprocess.TimeoutExpired:
+            raise FetchError("timeout") from None
+        except OSError as e:
+            raise FetchError("nogit", str(e)) from None
+        if r.returncode != 0:
+            raise FetchError("git", (r.stderr or "").strip())
+        return tmp, os.path.join(tmp, "repo", sub)
+    except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
-        raise SystemExit(f"stingward: não consegui baixar {target}: {r.stderr.strip()}")
-    return tmp, os.path.join(tmp, "repo", sub)
+        raise
 
 
 def agent_files(home):
@@ -119,6 +139,9 @@ MSG = {
     "pt": {"unknown": "stingward: comando desconhecido: {cmd}",
            "only": "stingward: --only aceita {checks}",
            "nodir": "stingward: pasta não encontrada: {path}",
+           "git": "stingward: não consegui baixar {target}: {detail}",
+           "timeout": f"stingward: não consegui baixar {{target}}: o git clone passou de {CLONE_TIMEOUT} s",
+           "nogit": "stingward: não consegui baixar {target}: o git não está instalado ou não abriu ({detail})",
            "stale": "stingward: {n} item(ns) de {path} não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu).",
            "todo": "stingward: {n} achado(s) ainda sem status em {path}; eles contam como achados.",
            "masked": "stingward: mascarei algo que parece segredo num comentário ou no parecer. Confira o relatório antes de entregar.",
@@ -126,6 +149,9 @@ MSG = {
     "en": {"unknown": "stingward: unknown command: {cmd}",
            "only": "stingward: --only takes {checks}",
            "nodir": "stingward: folder not found: {path}",
+           "git": "stingward: could not download {target}: {detail}",
+           "timeout": f"stingward: could not download {{target}}: git clone took more than {CLONE_TIMEOUT} s",
+           "nogit": "stingward: could not download {target}: git is not installed or did not start ({detail})",
            "stale": "stingward: {n} item(s) in {path} match no finding of this scan (the code changed or the finding is gone).",
            "todo": "stingward: {n} finding(s) still have no status in {path}; they count as found.",
            "masked": "stingward: masked something that looks like a secret in a comment or the notes. Check the report before you deliver it.",
@@ -198,7 +224,11 @@ def main(argv=None):
         elif args.command == "skill":
             path = args.target
             if _is_remote(path):
-                tmp, path = _fetch(path)
+                try:
+                    tmp, path = _fetch(path)
+                except FetchError as e:
+                    _say(lang, e.key, target=path, detail=e.detail)
+                    return 2
             if not os.path.isdir(path):
                 _say(lang, "nodir", path=path)
                 return 2
