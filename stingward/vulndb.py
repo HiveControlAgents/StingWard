@@ -43,6 +43,37 @@ def _osv_batch_ok(n):
     return ok
 
 
+def _texts(x):
+    return x is None or (isinstance(x, list) and all(isinstance(i, str) for i in x))
+
+
+def _objs(x):
+    return x is None or (isinstance(x, list) and all(isinstance(i, dict) for i in x))
+
+
+def _osv_record_ok(d):
+    """Registro do OSV com os campos que a verificação de dependências usa na forma do esquema. Fora dela (alias que
+    não é texto, affected que não é lista...), conta como detalhe que não baixou em vez de derrubar a verificação."""
+    if not isinstance(d, dict) or not isinstance(d.get("id", ""), str) or not _texts(d.get("aliases")):
+        return False
+    if not all(isinstance(d.get(k) or "", str) for k in ("summary", "details")):
+        return False
+    if not isinstance(d.get("database_specific") or {}, dict) or not _objs(d.get("severity")) or not _objs(d.get("affected")):
+        return False
+    for a in d.get("affected") or []:
+        pkg = a.get("package") or {}
+        if not isinstance(pkg, dict) or not all(isinstance(pkg.get(k, ""), str) for k in ("ecosystem", "name")):
+            return False
+        if not all(isinstance(a.get(k) or {}, dict) for k in ("database_specific", "ecosystem_specific")):
+            return False
+        if not _objs(a.get("ranges")):
+            return False
+        for r in a.get("ranges") or []:
+            if not _objs(r.get("events")) or not all(isinstance(v, str) for ev in r.get("events") or [] for v in ev.values()):
+                return False
+    return True
+
+
 def osv_query(pkgs):
     """pkgs: lista de (ecossistema, nome, versão). Devolve lista de listas de IDs, na mesma ordem."""
     out = []
@@ -64,8 +95,7 @@ def osv_query(pkgs):
 def osv_vulns(ids):
     ids = sorted(set(ids))
     with ThreadPoolExecutor(8) as ex:
-        docs = list(ex.map(lambda i: _safe(fetch_json, OSV_VULN.format(i), ttl=24 * HOUR,
-                                           valid=lambda d: isinstance(d, dict)), ids))
+        docs = list(ex.map(lambda i: _safe(fetch_json, OSV_VULN.format(i), ttl=24 * HOUR, valid=_osv_record_ok), ids))
     return {i: d for i, d in zip(ids, docs) if d}
 
 
@@ -86,9 +116,12 @@ def epss(cves):
                   valid=lambda d: _list_of(d, "data") is not None)
         for row in (d or {}).get("data", []):
             try:
-                out[row["cve"]] = (float(row["epss"]), float(row["percentile"]))
+                pair = (float(row["epss"]), float(row["percentile"]))
             except (KeyError, TypeError, ValueError):
                 continue
+            # Probabilidade e percentil ficam entre 0 e 1: "NaN", "inf" ou 1.5 não são nota de ninguém.
+            if all(0.0 <= x <= 1.0 for x in pair):
+                out[row["cve"]] = pair
     return out
 
 

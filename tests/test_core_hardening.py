@@ -463,6 +463,66 @@ class OddAnswersFromTheDatabases(unittest.TestCase):
 
 
 
+class OddRecordsFromOsv(unittest.TestCase):
+    """Registro do OSV fora do esquema (alias que não é texto, affected que não é lista...) conta como detalhe que não
+    baixou: o pacote continua no relatório e a CLI sai com 3, em vez de derrubar a verificação de dependências."""
+
+    BAD = [{"id": "GHSA-1", "aliases": [5]}, {"id": "GHSA-1", "affected": "x"}, {"id": "GHSA-1", "affected": [None]},
+           {"id": "GHSA-1", "affected": [{"package": "lodash"}]}, {"id": "GHSA-1", "summary": 5},
+           {"id": "GHSA-1", "database_specific": "high"}, {"id": "GHSA-1", "severity": "CVSS:3.1/AV:N"},
+           {"id": "GHSA-1", "affected": [{"package": {"ecosystem": "npm", "name": "lodash"},
+                                          "ranges": [{"type": "SEMVER", "events": [{"fixed": 5}]}]}]},
+           {"id": "GHSA-1", "affected": [{"package": {"ecosystem": "npm", "name": "lodash"}, "ranges": [None]}]},
+           {"id": 7}]
+
+    def setUp(self):
+        self.cache = tempfile.TemporaryDirectory()
+        self.addCleanup(self.cache.cleanup)
+        for patcher in (mock.patch.dict(os.environ, {"STINGWARD_CACHE": self.cache.name}), mock.patch("time.sleep")):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_record_out_of_the_schema_is_left_out(self):
+        for bad in self.BAD:
+            for name in os.listdir(self.cache.name):  # um registro aceito por engano não pode valer para o próximo
+                os.remove(os.path.join(self.cache.name, name))
+            with self.subTest(record=bad):
+                with mock.patch("urllib.request.urlopen", return_value=_resp(bad)):
+                    self.assertEqual(vulndb.osv_vulns(["GHSA-1"]), {})
+        good = {"id": "GHSA-1", "aliases": ["CVE-2026-1"], "summary": "x", "database_specific": {"severity": "HIGH"},
+                "affected": [{"package": {"ecosystem": "npm", "name": "lodash"},
+                              "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "4.17.21"}]}]}]}
+        with mock.patch("urllib.request.urlopen", return_value=_resp(good)):
+            self.assertEqual(vulndb.osv_vulns(["GHSA-1"]), {"GHSA-1": good})
+
+    def test_deps_check_survives_and_fails_the_gate(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with open(os.path.join(tmp.name, "package-lock.json"), "w") as fh:
+            json.dump({"lockfileVersion": 3, "packages": {"": {}, "node_modules/lodash": {"version": "4.17.15"}}}, fh)
+
+        def answer(req, timeout):
+            if req.full_url.endswith("/querybatch"):
+                return _resp({"results": [{"vulns": [{"id": "GHSA-1"}]}]})
+            return _resp({"id": "GHSA-1", "aliases": [5], "affected": [None]})
+        for argv in ([], ["--fail-on", "never"]):
+            out, err = io.StringIO(), io.StringIO()
+            with mock.patch("urllib.request.urlopen", side_effect=answer), \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = cli.main([tmp.name, "--lang", "en", "--format", "json", *argv])
+            self.assertEqual(code, 0 if argv else 3, err.getvalue())
+            doc = json.loads(out.getvalue())
+            self.assertIn("osv_error", doc["sources"])
+            self.assertEqual([f["rule"] for f in doc["findings"]], ["DEP001"])
+
+    def test_epss_values_that_are_not_probabilities_are_skipped(self):
+        rows = [{"cve": f"CVE-2026-{i}", "epss": e, "percentile": "0.5"} for i, e in enumerate(["n/a", "NaN", "1.5", "-0.1", "inf"])]
+        rows.append({"cve": "CVE-2026-9", "epss": "0.25", "percentile": "nan"})
+        rows.append({"cve": "CVE-2026-8", "epss": "0.25", "percentile": "0.75"})
+        with mock.patch("urllib.request.urlopen", return_value=_resp({"data": rows})):
+            self.assertEqual(vulndb.epss([r["cve"] for r in rows]), {"CVE-2026-8": (0.25, 0.75)})
+
+
 class SourceFailuresAreAlwaysSaid(unittest.TestCase):
     """Base que falhou aparece no stderr em qualquer formato, mesmo quando o código de saída já é 1 ou --fail-on never."""
 
