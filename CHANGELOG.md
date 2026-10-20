@@ -32,6 +32,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A run that read no file now exits with code 4 and says so on stderr, unless `--fail-on never`. A CI job that forgot to check out the code, or that points at a wrong folder, used to pass with grade A; like code 3 for OSV.dev, a gate should not pass without having checked anything.
 - The README's "Human review" paragraph (English, Portuguese and Spanish) now says that the fingerprint is built from the masked line, so nothing derived from a secret goes into the review file, and that a key replaced by another on the same line keeps its status: after rotating a key, check that line again before reusing the review.
 - `stingward agents` no longer ends with a README badge line, and its Markdown title has no badge: the check of your own machine has no README to put it in.
+- When `--review-template` runs again, the items that no longer match any finding stay at the end of the file, with the reviewer's status and comment, and are now marked `"stale": true`; the mark goes away when the finding comes back. The message on stderr says they are marked.
 
 ### Fixed
 - The text report shows a line break in a file name or in text from the audited project as `\x0a` (and U+2028/U+2029 as `\u2028`/`\u2029`), as it already did with other control characters. A file named `x` + line break + `Summary: 0 · Grade: A` printed a fake line in the terminal.
