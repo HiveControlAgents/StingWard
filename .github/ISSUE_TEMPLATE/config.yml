@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability in Stingward
+    url: https://github.com/HiveControlAgents/StingWard/security/advisories/new
+    about: Please report security problems in Stingward itself privately.

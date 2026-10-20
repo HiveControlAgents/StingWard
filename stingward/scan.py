@@ -4,53 +4,67 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
-import subprocess
 
+from . import gitsafe
 from .checks import agents, app, deps, secrets
 from .model import SEV_RANK, Context
 
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "env", "__pycache__", ".next", ".nuxt", ".svelte-kit", ".turbo",
              "dist", "build", "out", "coverage", ".cache", "target", "vendor", ".pytest_cache", ".mypy_cache", ".tox",
              ".idea", ".gradle", "Pods", ".terraform", ".vercel", ".netlify", ".expo", ".parcel-cache"}
+# Numa skill ou servidor MCP, o que roda costuma ser o build: dist/, build/, out/, vendor/.
+SKILL_SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".tox"}
 MAX_BYTES = 2_000_000
+SKILL_MAX_BYTES = 10_000_000
+LOCK_MAX_BYTES = 64_000_000
+_LOCKFILE = re.compile(r"(^|/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lock|"
+                       r"poetry\.lock|uv\.lock|pdm\.lock|Pipfile\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock)$")
+_CODE_EXT = re.compile(r"\.(js|mjs|cjs|ts|py|sh|bash|ps1|rb|php|go|rs|json|md|toml|ya?ml)$", re.I)
 
 _TESTISH = re.compile(r"(?i)(^|/)(tests?|__tests__|spec|fixtures?|examples?|mocks?)(/|$)|[._-](test|spec)\.")
+
+# Numa skill, payload em tests/ costuma ser exemplo, mas o autor escolhe o nome da pasta: baixa só até médio.
+_TEST_DOWNGRADE = {"project": ("APP", "SKL001"), "skill": ("SKL002", "SKL004", "SKL005", "SKL007", "SKL008"), "agents": ()}
+_TEST_FLOOR = {"project": "low", "skill": "medium", "agents": "low"}
 
 CHECKS = {"deps": deps.check, "secrets": secrets.check, "app": app.check, "agents": agents.check}
 
 
-def list_files(root: str, max_files: int = 50_000):
+def list_files(root: str, max_files: int = 50_000, mode: str = "project"):
     out = []
+    skip = SKILL_SKIP_DIRS if mode == "skill" else SKIP_DIRS
+    limit = SKILL_MAX_BYTES if mode == "skill" else MAX_BYTES
     for d, dirs, files in os.walk(root):
-        dirs[:] = sorted(x for x in dirs if x not in SKIP_DIRS and not (x.startswith(".") and x in (".DS_Store",)))
+        dirs[:] = sorted(x for x in dirs if x not in skip)
         for f in sorted(files):
             p = os.path.join(d, f)
+            rel = os.path.relpath(p, root).replace(os.sep, "/")
             try:
                 st = os.lstat(p)
             except OSError:
                 continue
-            if not os.path.isfile(p) or os.path.islink(p) or st.st_size > MAX_BYTES:
+            if not os.path.isfile(p) or os.path.islink(p):
                 continue
-            try:
-                with open(p, "rb") as fh:
-                    if b"\0" in fh.read(4096):
-                        continue
-            except OSError:
+            if st.st_size > (LOCK_MAX_BYTES if _LOCKFILE.search(rel) else limit):
                 continue
-            out.append(os.path.relpath(p, root).replace(os.sep, "/"))
+            # Byte nulo indica binário, mas não basta para pular código: um "/*\0*/" no topo esconderia o arquivo.
+            if not _CODE_EXT.search(rel):
+                try:
+                    with open(p, "rb") as fh:
+                        if b"\0" in fh.read(4096):
+                            continue
+                except OSError:
+                    continue
+            out.append(rel)
             if len(out) >= max_files:
                 return out
     return out
 
 
 def git_tracked(root: str):
-    if not os.path.isdir(os.path.join(root, ".git")):
-        return None
-    try:
-        r = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True, timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if r.returncode != 0:
+    """Arquivos versionados, relativos a root. Funciona numa subpasta do repositório, worktree ou submódulo."""
+    r = gitsafe.run(root, "ls-files", "-z")
+    if r is None or r.returncode != 0:
         return None
     return {p for p in r.stdout.decode("utf-8", "replace").split("\0") if p}
 
@@ -83,7 +97,7 @@ def _ignored(f, rules):
 
 def run(root: str, mode: str = "project", offline: bool = False, only=None, files=None):
     root = os.path.abspath(root)
-    ctx = Context(root=root, files=files if files is not None else list_files(root), offline=offline, mode=mode)
+    ctx = Context(root=root, files=files if files is not None else list_files(root, mode=mode), offline=offline, mode=mode)
     ctx.git_tracked = git_tracked(root) if mode != "agents" else None
     findings = []
     for name, fn in CHECKS.items():
@@ -92,15 +106,16 @@ def run(root: str, mode: str = "project", offline: bool = False, only=None, file
         findings.extend(fn(ctx))
     for f in findings:
         # Código de teste e exemplos costuma ter problema de propósito: continua no relatório, mas baixo.
-        if mode == "project" and f.rule.startswith(("APP", "SKL001")) and _TESTISH.search(f.file):
-            f.severity = "low"
+        if _TESTISH.search(f.file) and f.rule.startswith(_TEST_DOWNGRADE[mode]) and SEV_RANK[f.severity] > SEV_RANK[_TEST_FLOOR[mode]]:
+            f.severity = _TEST_FLOOR[mode]
     rules = load_ignore(root) if mode == "project" else []
     uniq, seen = [], set()
-    agt004_files = {f.file for f in findings if f.rule == "AGT004"}
+    # O mesmo token no config do MCP vira AGT004, que explica melhor; os outros segredos do arquivo continuam.
+    agt004 = {(f.file, f.line) for f in findings if f.rule == "AGT004"}
     for f in findings:
         if f.key() in seen or _ignored(f, rules):
             continue
-        if f.rule == "SEC001" and f.file in agt004_files:
+        if f.rule == "SEC001" and (f.file, f.line) in agt004:
             continue
         seen.add(f.key())
         uniq.append(f)

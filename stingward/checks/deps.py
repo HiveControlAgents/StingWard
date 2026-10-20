@@ -79,7 +79,7 @@ def check(ctx):
 
     for (eco, name, version, rel, line), ids in zip(pkgs, ids_per_pkg):
         seen_alias = set()
-        vulns = []
+        vulns, malware = [], []
         # Malicioso primeiro, depois GHSA (texto melhor), depois o resto.
         order = sorted(ids, key=lambda i: (not i.startswith("MAL-"), not i.startswith("GHSA-"), i))
         for vid in order:
@@ -90,9 +90,9 @@ def check(ctx):
             if aliases & seen_alias:
                 continue
             seen_alias |= aliases
-            if vid.startswith("MAL-"):
-                out.append(Finding("DEP002", "critical", rel, line, {"pkg": name, "version": version, "vuln_id": vid},
-                                   [f"https://osv.dev/vulnerability/{vid}"], ["malicious"]))
+            # Avisos de malware do GitHub (CWE-506) nem sempre citam o MAL- como alias: todos vão para um DEP002 só.
+            if vid.startswith("MAL-") or vulndb.is_malicious(v):
+                malware.append(vid)
                 continue
             vcves = sorted(a for a in aliases if a.startswith("CVE-"))
             sev, score = vulndb.severity_of(v)
@@ -112,6 +112,10 @@ def check(ctx):
             vulns.append({"id": vcves[0] if vcves else vid, "osv": vid, "severity": sev, "cvss": score,
                           "summary": _summary(v), "kev": in_kev[0] if in_kev else None,
                           "epss": best[0] if best else None, "fixed": vulndb.fixed_version(v, eco, name, version)})
+        if malware:
+            out.append(Finding("DEP002", "critical", rel, line,
+                               {"pkg": name, "version": version, "vuln_id": malware[0], "advisories": malware},
+                               [f"https://osv.dev/vulnerability/{malware[0]}"], ["malicious"]))
         if vulns:
             out.append(_package_finding(eco, name, version, rel, line, vulns, kev))
     return out

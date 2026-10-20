@@ -100,7 +100,7 @@ class App(unittest.TestCase):
                "create policy \"leitura\" on todos for select using (true);\n")
         f = Project({"supabase/migrations/1.sql": sql}).run()
         self.assertEqual(sorted((x.rule, x.params.get("table", ""), x.severity) for x in f),
-                         [("APP004", "profiles", "high"), ("APP005", "", "medium")])
+                         [("APP004", "profiles", "high"), ("APP005", "", "low")])
 
     def test_sql_without_supabase_is_skipped(self):
         self.assertEqual(Project({"db/schema.sql": "create table users (id int);\n"}).rules(), [])

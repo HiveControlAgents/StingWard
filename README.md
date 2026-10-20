@@ -52,7 +52,7 @@ stingward agents                  # audit ~/.claude, Claude Desktop, Cursor, Cod
 
 Options: `--lang pt|en`, `--format text|json|markdown|sarif`, `--sarif FILE`, `--markdown FILE`, `--json FILE`, `--fail-on critical|high|medium|low|never` (default `high`), `--only deps,secrets,app,agents`, `--offline`. Set `NVD_API_KEY` for a higher NVD rate limit.
 
-Exit code is `1` when something at or above `--fail-on` is found, so it works as a CI step.
+Exit codes, so it works as a CI step: `0` clean, `1` something at or above `--fail-on` was found, `2` usage error, `3` OSV.dev did not respond so dependencies were not checked (a gate should not pass silently; use `--offline` to skip them on purpose).
 
 ### GitHub Action
 
@@ -77,7 +77,7 @@ Every report ends with a grade from A to F and a badge for your README:
 
 [![stingward: A](https://img.shields.io/badge/stingward-A-brightgreen)](https://github.com/HiveControlAgents/StingWard)
 
-A: no critical/high, at most 2 medium · B: no critical/high · C: 1 or 2 high · D: 3+ high · F: any critical.
+A: only low or nothing · B: medium, no high · C: 1 or 2 high · D: 3+ high · F: any critical.
 
 ## Standards
 

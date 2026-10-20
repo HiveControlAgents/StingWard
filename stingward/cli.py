@@ -14,10 +14,11 @@ import subprocess
 import sys
 import tempfile
 
-from . import __version__, report, scan
+from . import __version__, gitsafe, report, scan
 from .model import SEV_RANK
 
 COMMANDS = {"scan", "skill", "agents"}
+_OWNER_REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*/[\w.-]+")
 
 
 def _default_lang():
@@ -49,7 +50,8 @@ def _parser():
 def _is_remote(target):
     if re.match(r"^(https?://|git@)", target):
         return True
-    return not os.path.exists(target) and re.fullmatch(r"[\w.-]+/[\w.-]+", target) is not None
+    # Dono no GitHub é letra, número ou hífen: "./minha-skill" que não existe é pasta errada, não repositório.
+    return not os.path.exists(target) and _OWNER_REPO.fullmatch(target) is not None
 
 
 def _fetch(target):
@@ -61,10 +63,10 @@ def _fetch(target):
     if m:
         url = f"https://github.com/{m.group(1)}/{m.group(2)}.git"
         branch, sub = m.group(3), m.group(4) or ""
-    elif re.fullmatch(r"[\w.-]+/[\w.-]+", target):
+    elif _OWNER_REPO.fullmatch(target):
         url = f"https://github.com/{target}.git"
     tmp = tempfile.mkdtemp(prefix="stingward-")
-    cmd = ["git", "clone", "--depth", "1", "--quiet"] + (["--branch", branch] if branch else []) + [url, os.path.join(tmp, "repo")]
+    cmd = ["git", "clone", "--depth", "1", "--quiet"] + (["--branch", branch] if branch else []) + ["--", url, os.path.join(tmp, "repo")]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
                        env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_LFS_SKIP_SMUDGE": "1"})
     if r.returncode != 0:
@@ -91,16 +93,40 @@ def agent_files(home):
     return files
 
 
+def _utf8_output():
+    """No Windows, saída redirecionada usa cp1252 e quebraria nos emojis do relatório."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            "🔴".encode(stream.encoding or "ascii")
+        except (UnicodeEncodeError, LookupError):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError):
+                pass
+
+
+def _git_prefix(path):
+    """Pasta auditada relativa à raiz do repositório git (vazio se não for repositório). Sem rodar git na pasta auditada."""
+    return gitsafe.prefix(path)
+
+
 def main(argv=None):
+    _utf8_output()
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and not argv[0].startswith("-") and argv[0] not in COMMANDS:
         argv.insert(0, "scan")
     args = _parser().parse_args(argv)
     if args.command not in COMMANDS:
-        print(f"stingward: comando desconhecido: {args.command}", file=sys.stderr)
-        return 2
+        # `stingward --offline minha-pasta`: o primeiro posicional é a pasta, não um comando.
+        if args.target != ".":
+            print(f"stingward: comando desconhecido: {args.command}", file=sys.stderr)
+            return 2
+        args.command, args.target = "scan", args.command
     lang = args.lang or _default_lang()
-    only = set(args.only.split(",")) if args.only else None
+    only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
+    if only is not None and (not only or only - set(scan.CHECKS)):
+        print(f"stingward: --only aceita {','.join(scan.CHECKS)}", file=sys.stderr)
+        return 2
 
     tmp = None
     try:
@@ -132,7 +158,7 @@ def main(argv=None):
         "text": lambda: report.text(ctx, findings, lang, color=not args.no_color and sys.stdout.isatty(), target=label, show_verdict=verdict),
         "json": lambda: report.as_json(ctx, findings, lang),
         "markdown": lambda: report.markdown(ctx, findings, lang, target=label, show_verdict=verdict),
-        "sarif": lambda: report.sarif(ctx, findings, lang),
+        "sarif": lambda: report.sarif(ctx, findings, lang, prefix=_git_prefix(ctx.root) if args.command != "agents" else ""),
     }
     sys.stdout.write(outputs[args.format]())
     for fmt, path in (("sarif", args.sarif), ("markdown", args.markdown), ("json", args.json)):
@@ -141,4 +167,12 @@ def main(argv=None):
                 fh.write(outputs[fmt]())
     if args.fail_on == "never":
         return 0
-    return 1 if any(SEV_RANK[f.severity] >= SEV_RANK[args.fail_on] for f in findings) else 0
+    if any(SEV_RANK[f.severity] >= SEV_RANK[args.fail_on] for f in findings):
+        return 1
+    # Portão de CI não pode passar só porque a base não respondeu.
+    if ctx.sources.get("osv_error"):
+        msg = {"pt": "stingward: o OSV.dev não respondeu e as dependências não foram checadas (use --offline para pular de propósito).",
+               "en": "stingward: OSV.dev did not respond, so dependencies were not checked (use --offline to skip them on purpose)."}
+        print(msg[lang], file=sys.stderr)
+        return 3
+    return 0

@@ -6,15 +6,19 @@ import re
 import shlex
 
 from .. import _ceovul as cv
-from ..model import Finding
-from . import is_text_source, line_of
+from ..model import SEV_RANK, Finding
+from . import is_text_source, line_of, secrets
 
 # --------------------------------------------------------------------------- quais arquivos são de agente
 
 INSTRUCTION_NAMES = {"SKILL.md", "CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "GEMINI.md", ".cursorrules",
                      ".windsurfrules", "copilot-instructions.md"}
 _AGENT_DIR = re.compile(r"(^|/)(\.claude|\.claude-plugin|skills|commands|agents|prompts|\.cursor|\.codex|\.gemini|\.windsurf|\.roo)/")
+_NOT_INSTRUCTION = re.compile(r"(^|/)(docs?|tests?|examples?|plans)/")
 _SCRIPT_EXT = (".sh", ".bash", ".zsh", ".py", ".js", ".mjs", ".cjs", ".ts", ".ps1", ".rb")
+_SHELL_EXT = (".sh", ".bash", ".zsh", ".ps1")
+_CI = re.compile(r"(^|/)(\.github/workflows/[^/]+|\.gitlab-ci|azure-pipelines|bitbucket-pipelines|\.circleci/config)\.ya?ml$")
+_TESTISH = re.compile(r"(?i)(^|/)(tests?|__tests__|spec|fixtures?|examples?|mocks?)(/|$)|[._-](test|spec)\.")
 MCP_FILES = {".mcp.json", "mcp.json", "mcp_config.json", "claude_desktop_config.json", ".claude.json",
              "cline_mcp_settings.json", "mcp_settings.json"}
 
@@ -36,26 +40,48 @@ def is_instruction(rel, ctx, dirs):
         return True
     if not rel.endswith(".md") or name.lower() in ("readme.md", "changelog.md", "license.md", "contributing.md"):
         return False
-    if _AGENT_DIR.search(rel):
-        return True
-    return _in_dirs(rel, dirs) and not re.search(r"(^|/)(docs?|tests?|examples?|plans)/", rel)
+    # docs/ e tests/ dentro de skills/ ou .claude/ também são material de apoio, não instrução para o agente.
+    if _NOT_INSTRUCTION.search(rel):
+        return False
+    return bool(_AGENT_DIR.search(rel)) or _in_dirs(rel, dirs)
 
 
 def is_agent_script(rel, ctx, dirs):
     return rel.endswith(_SCRIPT_EXT) and (ctx.mode in ("skill", "agents") or bool(_AGENT_DIR.search(rel)) or _in_dirs(rel, dirs))
 
 
+def _launches_agent(rel, name, instruction, script):
+    """Arquivos que rodam ou mandam rodar um agente: scripts, CI, package.json, hooks e instruções."""
+    return instruction or script or rel.endswith(_SHELL_EXT) or bool(_CI.search(rel)) or \
+        name in ("package.json", "Makefile", "hooks.json", "plugin.json") or ("/.claude/" in "/" + rel and name.endswith(".json"))
+
+
 # --------------------------------------------------------------------------- padrões de conteúdo
 
 _TAGS = re.compile("[\U000E0000-\U000E007F]+")
+# Bandeira de subdivisão (Inglaterra, Escócia): U+1F3F4 + letras de tag + U+E007F. É emoji, não texto escondido.
+_FLAG = re.compile("\U0001F3F4[\U000E0030-\U000E0039\U000E0061-\U000E007A]{2,7}\U000E007F")
 _BIDI = re.compile("[\u202A-\u202E\u2066-\u2069]")
-_ZERO_WIDTH = re.compile("[\u200B\u200C\u2060-\u2064\u180E]|(?<!^)\uFEFF")
+_BIDI_OVERRIDE = "\u202D\u202E"
+_RTL = re.compile("[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC]")
+_LOCALE = re.compile(r"(?i)(^|/)(locales?|i18n|l10n|lang|langs|languages|translations?)(/|$)|\.(po|pot|arb|strings|xliff|xlf|resx)$")
+# U+200D entre letras ASCII separa palavra; entre emojis é a sequência normal (família, profissão).
+_ZERO_WIDTH = re.compile("[\u200B\u200C\u2060-\u2064\u180E]|(?<!^)\uFEFF|(?<=[A-Za-z])\u200D(?=[A-Za-z])")
 
+_FETCH = r"(?:curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)"
+_SUDO = r"(?:sudo\s+(?:-\S+\s+)*)?"
 _PIPE_SHELL = re.compile(
-    r"(?:curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^\n|;]*\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b|"
-    r"(?:curl|wget)\b[^\n|;]*\|\s*(?:sudo\s+)?(?:python3?|node|perl|ruby)\b|"
-    r"(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^\n|;]*\|\s*iex\b|"
-    r"\b(?:ba)?sh\s+<\(\s*(?:curl|wget)|\beval\s+\"?\$\(\s*(?:curl|wget)", re.I)
+    _FETCH + r"\b[^\n|;]*\|\s*" + _SUDO + r"(?:ba|z|da|k)?sh\b|"
+    r"(?:curl|wget)\b[^\n|;]*\|\s*" + _SUDO + r"(?:python3?|node|perl|ruby|php)\b|" +
+    _FETCH + r"\b[^\n|;]*\|\s*(?:iex|Invoke-Expression)\b|"
+    r"(?:\b(?:ba|z|da|k)?sh|\bsource|(?<![\w.])\.)\s+<\(\s*(?:curl|wget)\b|"
+    r"\b(?:eval|(?:ba|z|da|k)?sh\s+-c)\s+[\"']?\$\(\s*(?:curl|wget)\b|"
+    r"\b(?:iex|Invoke-Expression)\s*\$?\(?\s*\(?\s*"
+    r"(?:irm|iwr|Invoke-WebRequest|Invoke-RestMethod|New-Object\s+(?:System\.)?Net\.WebClient)\b", re.I)
+# Em .py/.js, "curl ... | sh" numa mensagem de erro é dica de instalação; só roda se estiver numa chamada de shell.
+_EXEC_CALL = re.compile(r"subprocess|os\.system|os\.popen|\bPopen|check_(?:call|output)|\bexec(?:Sync|File|FileSync)?\s*\(|"
+                        r"\bspawn(?:Sync)?\s*\(|child_process|shell\s*=\s*True|\bsystem\s*\(|Deno\.(?:run|Command)|"
+                        r"Bun\.(?:spawn|\$)|\bexeca\b|\$`|%x[({]")
 
 _OVERRIDE = re.compile(
     r"ignore\s+(?:all\s+|any\s+)?(?:the\s+)?(?:previous|prior|above|earlier|preceding)\s+(?:instructions|rules|prompts|directions)|"
@@ -88,19 +114,28 @@ _CREDS = [
     (re.compile(r"\.netrc\b"), ".netrc", ".netrc"),
     (re.compile(r"\.docker/config\.json"), "login do Docker", "Docker login"),
     (re.compile(r"\.kube/config"), "Kubernetes", "Kubernetes"),
-    (re.compile(r"Login Data|Local State|Cookies\.binarycookies"), "dados do navegador", "browser data"),
+    # "Local State" sozinho é termo de React; o que importa é o arquivo dentro do perfil do navegador.
+    (re.compile(r"[/\\](?:Login Data|Local State)\b|[\"'](?:Login Data|Local State)[\"']|Cookies\.binarycookies|\bkey4\.db\b"),
+     "dados do navegador", "browser data"),
     (re.compile(r"security\s+find-(?:generic|internet)-password\b[^\n]*-w|security\s+dump-keychain"), "chaveiro do sistema", "system keychain"),
     (re.compile(r"\bprintenv\s*(?:$|[|>;&)])|JSON\.stringify\(\s*process\.env\s*\)|dict\(\s*os\.environ\s*\)|^\s*env\s*\|", re.M),
      "todas as variáveis de ambiente", "all environment variables"),
-    (re.compile(r"\.claude/\.credentials|\.claude\.json\b"), "credenciais do Claude", "Claude credentials"),
-    (re.compile(r"wallet\.dat|\.solana/id\.json|\bmetamask\b|\bseed\s+phrase\b", re.I), "carteira de cripto", "crypto wallet"),
-    (re.compile(r"\b(?:cat|type|readFile\w*|open)\b\W{1,4}[^\n]{0,40}\.env\b"), "arquivo .env", ".env file"),
+    # .claude.json é a config de MCP, não credencial.
+    (re.compile(r"\.claude/\.credentials"), "credenciais do Claude", "Claude credentials"),
+    (re.compile(r"wallet\.dat|\.solana/id\.json|nkbihfbeogaeaoehlefnkodbefgpgknn|Local Extension Settings|\.ethereum/keystore|"
+                r"exodus\.wallet|\.electrum/wallets"), "carteira de cripto", "crypto wallet"),
+    # (?<![\w$]): process.env e secrets.env não são o arquivo .env.
+    (re.compile(r"\b(?:cat|type|readFile\w*|open)\b\W{1,4}[^\n]{0,40}(?<![\w$])\.env\b"), "arquivo .env", ".env file"),
 ]
 _NET = re.compile(r"\bcurl\b|\bwget\b|\bfetch\(|requests\.(?:post|get|put)|\baxios\b|urllib|http\.request|https?\.request|"
                   r"\bnc\s+-|Invoke-WebRequest|Invoke-RestMethod|XMLHttpRequest|sendBeacon|WebFetch")
 
+_BLOB = re.compile(r"[A-Za-z0-9+/]{240,}={0,2}")
+# Começo do base64 de PNG, JPEG, GIF, WebP, WOFF/WOFF2, PDF, wasm, SVG/XML, ICO, TTF e OTF: arquivo embutido, não código.
+_MEDIA_B64 = ("iVBORw0KGgo", "/9j/", "R0lGOD", "UklGR", "d09GR", "d09GMg", "JVBERi0", "AGFzbQ", "PHN2Zy", "PD94bWwg",
+              "AAABAA", "AAEAAA", "T1RUTw")
 _OBFUSCATION = [
-    (re.compile(r"[A-Za-z0-9+/]{240,}={0,2}"), "bloco base64 grande", "large base64 blob", "medium"),
+    (_BLOB, "bloco base64 grande", "large base64 blob", "medium"),
     (re.compile(r"\beval\s*\(\s*(?:atob|Buffer\.from|unescape|String\.fromCharCode|decodeURIComponent)"), "eval de texto decodificado", "eval of decoded text", "high"),
     (re.compile(r"\bexec\s*\(\s*(?:base64\.b64decode|bytes\.fromhex|codecs\.decode|zlib\.decompress|marshal\.loads)"), "exec de texto decodificado", "exec of decoded text", "high"),
     (re.compile(r"base64\s+(?:-d|--decode)\b[^\n|]*\|\s*(?:sudo\s+)?(?:ba|z)?sh\b"), "base64 decodificado direto no shell", "base64 decoded into a shell", "high"),
@@ -116,25 +151,97 @@ _NO_CHECKIN = re.compile(
     r"without\s+(?:stopping|pausing|asking\s+(?:for\s+)?(?:permission|confirmation)|confirmation|human\s+review)|"
     r"n[aã]o\s+(?:pare|pause|espere)\s+para\s+(?:perguntar|confirmar|consultar)|sem\s+(?:parar|pedir\s+confirma[cç][aã]o)", re.I)
 _LIFECYCLE_DANGER = re.compile(r"\bcurl\b|\bwget\b|node\s+-e|python3?\s+-c|\bsh\s+-c|powershell|\beval\b|base64|https?://")
+_UNRESTRICTED_BASH = re.compile(r"(?<![\w(])Bash(?![\w(])|Bash\(\s*(?::?\*|\*\*)\s*\)")
+_SKIP_PERMS = re.compile(r"--dangerously-skip-permissions\b|--dangerously-bypass-approvals-and-sandbox\b|"
+                         r"--permission-mode[= ]+[\"']?bypassPermissions\b|\b(?:gemini|codex|qwen)\b[^\n]{0,200}?\s--yolo\b")
+_ALLOWED_FLAG = re.compile(r"--allowed-?tools[= ]+(?:\"([^\"\n]*)\"|'([^'\n]*)'|(\S+))", re.I)
+_COMMENT = re.compile(r"[ \t]*(?://|#(?!!)|/\*|\*|<!--|--\s)")
+_CAP = 5  # achados por regra por arquivo
+
+
+# --------------------------------------------------------------------------- filtros
+
+_NEGATION = re.compile(
+    r"(?i)\b(?:never|don'?t|do\s+not|does\s+not|must\s+not|should\s+not|shouldn'?t|cannot|can'?t|won'?t|avoid|refuse|reject|"
+    r"watch\s+(?:out\s+)?for|beware|be\s+wary|attackers?|adversar\w*|malicious|detects?|detecting|"
+    r"nunca|n[aã]o|evite|cuidado|atacantes?|detecte|detectar)\b")
+_WARNING = re.compile(r"(?i)inject\w*|untrusted|suspicious|attack\w*|instruction-like|n[aã]o\s+confi")
+_AS_DATA = re.compile(r"(?i)as\s+data|not\s+(?:as\s+)?instructions|(?:do\s+not|don'?t|never)\s+(?:follow|obey|comply)|"
+                      r"como\s+dado|n[aã]o\s+(?:siga|obede)")
+_SENTENCE = re.compile(r"(?<!e\.g)(?<!i\.e)(?<!etc)(?<!vs)[.!?](?=\s|$)|\n[ \t]*\n|\n[ \t]*(?:[-*+>]|\d+[.)])[ \t]|\||"
+                       r"^[ \t]*#{1,6}[ \t][^\n]*\n", re.M)
+_QUOTES = ('"', "'", "`", "\u201C", "\u2018")
+
+
+def _sentence(text, m):
+    a = max(0, m.start() - 300)
+    starts = [x.end() for x in _SENTENCE.finditer(text, a, m.start())]
+    end = _SENTENCE.search(text, m.end(), m.end() + 300)
+    return (starts[-1] if starts else a), (end.start() if end else min(len(text), m.end() + 300))
+
+
+def _defensive(text, m):
+    """A frase aparece negada ou citada (skill que se defende do ataque), não como ordem. Só vale dentro da mesma
+    frase: "nunca/detecte ... X", "X ... as data", ou X entre aspas/crases numa frase de alerta."""
+    start, end = _sentence(text, m)
+    before, after = text[start:m.start()], text[m.end():end]
+    if _NEGATION.search(re.split(r"[,;]", before)[-1]) or _AS_DATA.search(after):
+        return True
+    quoted = before[-1:] in _QUOTES or before.count("`") % 2 == 1
+    rest = before + " " + after
+    return quoted and bool(_NEGATION.search(rest) or _WARNING.search(rest))
+
+
+def _comment_line(text, pos):
+    return bool(_COMMENT.match(text, text.rfind("\n", 0, pos) + 1))
+
+
+def _runs_shell(text, rel, m):
+    """Num .py/.js, curl | sh só conta perto de subprocess/exec/spawn; em .sh, hooks e instruções conta sempre."""
+    if rel.endswith(_SHELL_EXT) or not rel.endswith(_SCRIPT_EXT) or "hooks/" in rel:
+        return True
+    a, b = m.start(), m.end()
+    for _ in range(4):
+        a = max(text.rfind("\n", 0, a), 0)
+        j = text.find("\n", b + 1)
+        b = len(text) if j < 0 else j
+    return bool(_EXEC_CALL.search(text, a, b))
+
+
+def _matches(rx, text, keep=None, cap=_CAP):
+    """Até cap matches (um por linha) que passam no filtro: um falso no topo não esconde o ataque mais abaixo."""
+    out, seen, last, ln = [], set(), 0, 1
+    for i, m in enumerate(rx.finditer(text)):
+        if i >= 200 or len(out) >= cap:
+            break
+        if keep and not keep(m):
+            continue
+        ln, last = ln + text.count("\n", last, m.start()), m.start()
+        if ln not in seen:
+            seen.add(ln)
+            out.append((m, ln))
+    return out
+
+
+def _snippet(s: str) -> str:
+    # Mascara antes de cortar: um token cortado ao meio deixa de ser reconhecido e vazaria no relatório.
+    s = " ".join(secrets.mask(s).split())
+    return s if len(s) <= 70 else s[:67] + "..."
 
 
 # --------------------------------------------------------------------------- conteúdo
 
 def _invisible(text, rel, instruction):
     out = []
-    m = _TAGS.search(text)
+    m = _TAGS.search(text) and _TAGS.search(_FLAG.sub(lambda f: "\uFFFD" * len(f.group(0)), text))
     if m:
         hidden = "".join(chr(ord(c) - 0xE0000) for c in m.group(0) if 0x20 <= ord(c) - 0xE0000 < 0x7F)[:80]
+        hidden = secrets.mask(hidden)
         out.append(Finding("SKL001", "critical", rel, line_of(text, m.start()), {
             "kind_pt": "caracteres de tag Unicode", "kind_en": "Unicode tag characters",
             "why_pt": f"Texto invisível para você, mas a IA lê. Mensagem escondida: \"{hidden}\"",
             "why_en": f"Invisible to you, readable by the AI. Hidden message: \"{hidden}\""}))
-    m = _BIDI.search(text)
-    if m:
-        out.append(Finding("SKL001", "high", rel, line_of(text, m.start()), {
-            "kind_pt": "inversão de direção (Trojan Source)", "kind_en": "bidirectional override (Trojan Source)",
-            "why_pt": "O texto que aparece na tela é diferente do que o computador e a IA leem.",
-            "why_en": "What you see on screen differs from what the computer and the AI read."}))
+    out += _bidi(text, rel)
     if instruction:
         m = _ZERO_WIDTH.search(text)
         if m:
@@ -145,19 +252,34 @@ def _invisible(text, rel, instruction):
     return out
 
 
-_DEFENSIVE = re.compile(r"(?i)inject|as\s+data|never\s+instructions|not\s+instructions|do\s+not\s+follow|don'?t\s+follow|never\s+follow|"
-                        r"untrusted|instruction-like|como\s+dado|n[aã]o\s+siga|detect|e\.g\.|for\s+example|por\s+exemplo|such\s+as")
+def _bidi_sev(text, rel, m):
+    """Override (U+202D/E) é sempre alto. Marca de embedding/isolamento em tradução ou linha com árabe/hebraico é normal."""
+    if m.group(0) in _BIDI_OVERRIDE:
+        return "high"
+    a, b = text.rfind("\n", 0, m.start()) + 1, text.find("\n", m.end())
+    return "low" if _LOCALE.search(rel) or _RTL.search(text, a, b if b >= 0 else len(text)) else "high"
 
 
-def _defensive(text, m):
-    """A frase aparece citada como exemplo de ataque (skill que se defende), não como ordem."""
-    window = text[max(0, m.start() - 160):m.end() + 160]
-    return bool(_DEFENSIVE.search(window)) or text[max(0, m.start() - 1):m.start()] in ('"', "'", "`", "\u201c")
-
-
-def _snippet(s: str) -> str:
-    s = " ".join(s.split())
-    return s if len(s) <= 70 else s[:67] + "..."
+def _bidi(text, rel):
+    best = None
+    for i, m in enumerate(_BIDI.finditer(text)):
+        sev = _bidi_sev(text, rel, m)
+        if best is None or sev == "high":
+            best = (m, sev)
+        if sev == "high" or i >= 500:
+            break
+    if not best:
+        return []
+    m, sev = best
+    if sev == "low":
+        params = {"kind_pt": "marcas de direção em texto da direita para a esquerda", "kind_en": "direction marks in right-to-left text",
+                  "why_pt": "Comum em traduções para árabe e hebraico. Confira só se não há código no meio do texto.",
+                  "why_en": "Common in Arabic and Hebrew translations. Just check that no code sits inside the text."}
+    else:
+        params = {"kind_pt": "inversão de direção (Trojan Source)", "kind_en": "bidirectional override (Trojan Source)",
+                  "why_pt": "O texto que aparece na tela é diferente do que o computador e a IA leem.",
+                  "why_en": "What you see on screen differs from what the computer and the AI read."}
+    return [Finding("SKL001", sev, rel, line_of(text, m.start()), params)]
 
 
 def _frontmatter_tools(text):
@@ -165,59 +287,126 @@ def _frontmatter_tools(text):
         return None
     end = text.find("\n---", 3)
     fm = text[3:end] if end > 0 else ""
-    m = re.search(r"(?m)^allowed-tools:\s*(.*)$", fm)
+    # [ \t]* e não \s*: \s atravessaria a quebra de linha e a lista YAML viraria só "- Read".
+    m = re.search(r"(?m)^allowed-tools:[ \t]*(.*)$", fm)
     if not m:
         return None
     val = m.group(1).strip()
-    if not val:  # lista YAML nas linhas seguintes
-        rest = fm[m.end():]
-        items = re.findall(r"(?m)^\s+-\s*(.+)$", rest.split("\n\n")[0])
-        val = ", ".join(i.strip().strip("'\"") for i in items)
-    return val
+    if val:
+        return val
+    lines = []
+    for line in fm[m.end():].split("\n")[1:]:
+        if not line.strip() or not (line[0] in " \t" or line.startswith("-")):
+            break
+        lines.append(line.strip())
+    items = [re.sub(r"^-\s*", "", x).strip("'\"") for x in lines if x.startswith("-")]
+    return ", ".join(items) if items else " ".join(lines)
 
 
-def _content(text, rel, instruction, script):
-    out = []
-    lang_send = ("", "")
-    if instruction or script:
-        m = _PIPE_SHELL.search(text)
-        if m:
-            out.append(Finding("SKL002", "high", rel, line_of(text, m.start()), {"snippet": _snippet(m.group(0))}))
-        send = bool(_NET.search(text))
-        hits = [(rx.search(text), pt, en) for rx, pt, en in _CREDS]
+def _hits(rx, text, keep, strict, cap=_CAP):
+    """(match, linha, suavizado). Numa skill de terceiros (strict) o filtro de contexto não apaga o achado, só baixa
+    para médio: quem escreveu a skill escolhe as palavras ao redor, e um "não esqueça de" bastaria para esconder o ataque."""
+    if not strict:
+        return [(m, ln, False) for m, ln in _matches(rx, text, keep, cap)]
+    return [(m, ln, not keep(m)) for m, ln in _matches(rx, text, None, cap)]
+
+
+def _soft(sev, softened):
+    return "medium" if softened and SEV_RANK[sev] > SEV_RANK["medium"] else sev
+
+
+def _pipe_shell(text, rel, instruction, strict=False):
+    low = text.lower()
+    if not any(w in low for w in ("curl", "wget", "iwr", "irm", "invoke-", "webclient")):
+        return []  # atalho: o regex completo é o mais caro do arquivo
+
+    def keep(m):
+        if instruction:
+            return not _defensive(text, m)
+        return not _comment_line(text, m.start()) and _runs_shell(text, rel, m)
+    # Só o comando casado vai para o trecho: o resto da linha pode ter um token (--token="...").
+    return [Finding("SKL002", _soft("high", soft), rel, ln, {"snippet": _snippet(m.group(0))})
+            for m, ln, soft in _hits(_PIPE_SHELL, text, keep, strict)]
+
+
+def _cred_reads(text, rel, instruction, strict=False):
+    def keep(m):
+        return not (_defensive(text, m) if instruction else _comment_line(text, m.start()))
+    send = bool(_NET.search(text))
+    hits = []
+    for rx, pt, en in _CREDS:
+        found = _hits(rx, text, keep, strict, 1)
         # Copiar o ambiente para um subprocesso é normal; só preocupa se o arquivo também fala com a internet.
-        hits = [(m, pt, en) for m, pt, en in hits if m and (send or not pt.startswith("todas as vari"))]
-        if hits:
-            m, _, _ = hits[0]
-            lang_send = (" e chama a internet", " and calls the internet") if send else ("", "")
-            out.append(Finding("SKL004", "critical" if send else "medium", rel, line_of(text, m.start()), {
-                "what_pt": ", ".join(pt for _, pt, _ in hits), "what_en": ", ".join(en for _, _, en in hits),
-                "send_pt": lang_send[0], "send_en": lang_send[1],
-                "why_pt": ("Ler credenciais e chamar a internet no mesmo arquivo é o padrão de roubo de chaves."
-                           if send else "Esses arquivos dão acesso às suas contas."),
-                "why_en": ("Reading credentials and calling the internet in the same file is the key-theft pattern."
-                           if send else "These files give access to your accounts.")}))
-        for rx, pt, en, sev in _OBFUSCATION:
-            m = rx.search(text)
-            if m and not (pt.startswith("bloco") and "data:" in text[max(0, m.start() - 60):m.start()]):
-                out.append(Finding("SKL007", sev, rel, line_of(text, m.start()), {"what_pt": pt, "what_en": en}))
-                break
-        m = _EXFIL.search(text)
-        if m:
-            out.append(Finding("SKL008", "high", rel, line_of(text, m.start()), {"host": m.group(1).lower()}))
+        if found and (send or not pt.startswith("todas as vari")):
+            hits.append((found[0][1], pt, en, found[0][2]))
+    if not hits:
+        return []
+    sev = _soft("critical" if send else "medium", all(soft for *_, soft in hits))
+    return [Finding("SKL004", sev, rel, hits[0][0], {
+        "what_pt": ", ".join(h[1] for h in hits), "what_en": ", ".join(h[2] for h in hits),
+        "send_pt": " e chama a internet" if send else "", "send_en": " and calls the internet" if send else "",
+        "why_pt": ("Ler credenciais e chamar a internet no mesmo arquivo é o padrão de roubo de chaves."
+                   if send else "Esses arquivos dão acesso às suas contas."),
+        "why_en": ("Reading credentials and calling the internet in the same file is the key-theft pattern."
+                   if send else "These files give access to your accounts.")})]
+
+
+def _media_blob(text, m):
+    return m.re is _BLOB and ("data:" in text[max(0, m.start() - 60):m.start()] or m.group(0).startswith(_MEDIA_B64))
+
+
+def _obfuscation(text, rel):
+    """Todos os padrões rodam e fica o mais grave: eval(atob("<base64 longo>")) é eval, não só bloco base64."""
+    best = None
+    for rx, pt, en, sev in _OBFUSCATION:
+        found = _matches(rx, text, lambda m: not _media_blob(text, m), 1)
+        if found and (best is None or SEV_RANK[sev] > SEV_RANK[best[3]]):
+            best = (found[0][1], pt, en, sev)
+    if not best:
+        return []
+    ln, pt, en, sev = best
+    return [Finding("SKL007", sev, rel, ln, {"what_pt": pt, "what_en": en})]
+
+
+def _phrases(rule, sev, rx, text, rel, strict=False):
+    return [Finding(rule, _soft(sev, soft), rel, ln, {"snippet": _snippet(m.group(0))})
+            for m, ln, soft in _hits(rx, text, lambda m: not _defensive(text, m), strict)]
+
+
+def _overrides(text, rel, strict=False):
+    return _phrases("SKL003", "high", _OVERRIDE, text, rel, strict)
+
+
+def _content(text, rel, instruction, script, strict=False):
+    out = []
+    if instruction or script:
+        out += _pipe_shell(text, rel, instruction, strict)
+        out += _cred_reads(text, rel, instruction, strict)
+        out += _obfuscation(text, rel)
+        out += [Finding("SKL008", "high", rel, ln, {"host": m.group(1).lower()}) for m, ln in _matches(_EXFIL, text)]
     if instruction:
-        m = next((m for m in _OVERRIDE.finditer(text) if not _defensive(text, m)), None)
-        if m:
-            out.append(Finding("SKL003", "high", rel, line_of(text, m.start()), {"snippet": _snippet(m.group(0))}))
-        m = _EXEC_CONTENT.search(text)
-        if m:
-            out.append(Finding("SKL005", "medium", rel, line_of(text, m.start()), {"snippet": _snippet(m.group(0))}))
-        m = _NO_CHECKIN.search(text)
-        if m:
-            out.append(Finding("SKL010", "medium", rel, line_of(text, m.start()), {"snippet": _snippet(m.group(0))}))
+        out += _overrides(text, rel, strict)
+        out += _phrases("SKL005", "medium", _EXEC_CONTENT, text, rel)
+        out += _phrases("SKL010", "medium", _NO_CHECKIN, text, rel)
         tools = _frontmatter_tools(text)
-        if tools and re.search(r"(?<![\w(])Bash(?!\()|Bash\(\s*\*\s*\)", tools):
+        if tools and _UNRESTRICTED_BASH.search(tools):
             out.append(Finding("SKL006", "medium", rel, line_of(text, text.find("allowed-tools")), {"tools": _snippet(tools)}))
+    return out
+
+
+def _permission_flags(text, rel, instruction, strict=False):
+    """AGT001 para agente rodado sem pedir permissão: --dangerously-skip-permissions, bypassPermissions, --allowedTools Bash."""
+    def keep(m):
+        return not (_defensive(text, m) if instruction else _comment_line(text, m.start()))
+    low = bool(_TESTISH.search(rel))  # script de teste do próprio projeto não roda na máquina de quem instala
+    out = []
+    for m, ln, soft in _hits(_SKIP_PERMS, text, keep, strict):
+        what = "--yolo" if m.group(0).endswith("--yolo") else " ".join(m.group(0).replace("=", " ").replace('"', "").split())
+        out.append(Finding("AGT001", "low" if low else _soft("high", soft), rel, ln, {"what": what}))
+    for m, ln, _ in _hits(_ALLOWED_FLAG, text, keep, strict):
+        tools = next(g for g in m.groups() if g is not None)
+        if _UNRESTRICTED_BASH.search(tools):
+            out.append(Finding("AGT001", "low" if low else "medium", rel, ln, {"what": "--allowedTools " + _snippet(tools)}))
     return out
 
 
@@ -228,17 +417,37 @@ def _line(text, needle):
     return line_of(text, i) if i >= 0 else None
 
 
+def _vline(text, value):
+    """Linha de um valor de string lido do JSON: procura a forma escapada (aspas viram \\") e depois a crua."""
+    esc = json.dumps(value, ensure_ascii=False)
+    for needle in (esc, esc[1:-1][:60], value[:40]):
+        ln = _line(text, needle) if needle else None
+        if ln:
+            return ln
+    return None
+
+
 def _load_json(text):
     try:
         return json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         # JSONC (VS Code): tira comentários de linha e vírgulas sobrando.
         t = re.sub(r"(?m)^\s*//.*$", "", text)
         t = re.sub(r",(\s*[}\]])", r"\1", t)
         try:
             return json.loads(t)
-        except ValueError:
+        except (ValueError, RecursionError):
             return None
+
+
+def _dict(o, key):
+    v = o.get(key) if isinstance(o, dict) else None
+    return v if isinstance(v, dict) else {}
+
+
+def _list(o, key):
+    v = o.get(key) if isinstance(o, dict) else None
+    return v if isinstance(v, list) else []
 
 
 _BROAD_BASH = re.compile(r"^Bash(?:\(\s*(?:\*|:\*|\*\*)\s*\))?$")
@@ -247,17 +456,17 @@ _RISKY_BASH = re.compile(r"^Bash\(\s*(?:sudo|curl|wget|rm|sh|bash|zsh|python3?|n
 
 def _claude_settings(d, text, rel):
     out = []
-    perm = d.get("permissions") or {}
+    perm = _dict(d, "permissions")
     if perm.get("defaultMode") == "bypassPermissions":
         out.append(Finding("AGT001", "high", rel, _line(text, "bypassPermissions"), {"what": "defaultMode: bypassPermissions"}))
-    for entry in perm.get("allow") or []:
+    for entry in _list(perm, "allow"):
         if not isinstance(entry, str):
             continue
         e = entry.strip()
-        if _BROAD_BASH.match(e):
-            out.append(Finding("AGT001", "high", rel, _line(text, f'"{entry}"'), {"what": e}))
-        elif _RISKY_BASH.match(e):
-            out.append(Finding("AGT001", "medium", rel, _line(text, f'"{entry}"'), {"what": e}))
+        sev = "high" if _BROAD_BASH.match(e) else "medium" if _RISKY_BASH.match(e) else None
+        if sev:
+            # A entrada pode levar token (Bash(curl -H 'Authorization: ...')): mascara antes de ir para o relatório.
+            out.append(Finding("AGT001", sev, rel, _vline(text, entry), {"what": secrets.mask(e)}))
     if d.get("skipDangerousModePermissionPrompt"):
         out.append(Finding("AGT001", "high", rel, _line(text, "skipDangerousModePermissionPrompt"), {"what": "skipDangerousModePermissionPrompt"}))
     if d.get("enableAllProjectMcpServers"):
@@ -268,49 +477,53 @@ def _claude_settings(d, text, rel):
 def _hooks(d, text, rel):
     out = []
 
-    def walk(o):
+    def walk(o, depth):
+        if depth > 40:
+            return
         if isinstance(o, dict):
             for k, v in o.items():
                 if k == "command" and isinstance(v, str) and _PIPE_SHELL.search(v):
-                    out.append(Finding("AGT002", "high", rel, _line(text, v[:40])))
+                    out.append(Finding("AGT002", "high", rel, _vline(text, v)))
                 else:
-                    walk(v)
+                    walk(v, depth + 1)
         elif isinstance(o, list):
             for v in o:
-                walk(v)
-    walk(d.get("hooks"))
+                walk(v, depth + 1)
+    walk(d.get("hooks"), 0)
     return out
 
 
-def _servers(d):
+def _servers(d, depth=0):
     """Todos os dicionários de servidor MCP dentro de uma config, com o nome."""
     found = []
-    if not isinstance(d, dict):
+    if not isinstance(d, dict) or depth > 5:
         return found
     for key in ("mcpServers", "servers", "context_servers"):
-        block = d.get(key)
-        if isinstance(block, dict):
-            found += [(n, s) for n, s in block.items() if isinstance(s, dict)]
-    mcp = d.get("mcp")
-    if isinstance(mcp, dict):
-        found += _servers(mcp)
-    for proj in (d.get("projects") or {}).values() if isinstance(d.get("projects"), dict) else []:
-        found += _servers(proj)
+        found += [(n, s) for n, s in _dict(d, key).items() if isinstance(s, dict)]
+    found += _servers(d.get("mcp"), depth + 1)
+    for proj in _dict(d, "projects").values():
+        found += _servers(proj, depth + 1)
     return found
 
 
 _NPM_RUNNERS = {"npx", "bunx"}
 _FLAG_WITH_VALUE = {"-p", "--package", "--from", "--with", "--python", "-e", "--env", "-v", "--volume", "--env-file",
                     "--network", "--name", "--mount", "-w", "--workdir", "-u", "--user", "--entrypoint", "--platform", "--index-url"}
+_SCALAR = (str, int, float)
 
 
 def _tokens(server):
-    cmd = server.get("command") or ""
-    try:
-        toks = shlex.split(cmd) if isinstance(cmd, str) else list(cmd)
-    except ValueError:
-        toks = cmd.split()
-    return toks + [str(a) for a in server.get("args") or [] if isinstance(a, (str, int, float))]
+    cmd = server.get("command")
+    if isinstance(cmd, list):
+        toks = [str(c) for c in cmd if isinstance(c, _SCALAR)]
+    elif isinstance(cmd, str):
+        try:
+            toks = shlex.split(cmd)
+        except ValueError:
+            toks = cmd.split()
+    else:
+        toks = []
+    return toks + [str(a) for a in _list(server, "args") if isinstance(a, _SCALAR)]
 
 
 def _first_positional(toks, start):
@@ -380,6 +593,38 @@ def _pinned(eco, ver):
 
 
 _LOCAL = re.compile(r"^https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|host\.docker\.internal)(?::|/|$)")
+# TOKEN_PATH, CREDENTIALS_FILE, SECRETS_DIR: o nome fala de segredo, mas o valor é um caminho.
+_NOT_SECRET_KEY = re.compile(r"(?i)(?:^|[_.-])(?:path|file|filename|dir|directory|folder|home|root|location|host|hostname|"
+                             r"port|region|scopes?|user|username|email|level|format)$")
+
+
+def _looks_secret(v):
+    """Valor solto com cara de credencial: sem espaço, não é caminho, URL, número nem palavra comum."""
+    if len(v) < 8 or re.search(r"\s", v) or re.match(r"(?:~|\.{0,2}/|[A-Za-z]:[\\/]|[a-z][\w+.-]*://)", v):
+        return False
+    if re.fullmatch(r"[a-z]+(?:[-_.][a-z]+)*|[\d.]+|true|false|null", v):
+        return False
+    return cv._entropy(v) >= 3.0
+
+
+def _credential(srv, text, rel, name):
+    values = []
+    for key in ("env", "headers"):
+        values += [(k, v) for k, v in _dict(srv, key).items() if isinstance(v, str)]
+    values += [("arg", a) for a in _list(srv, "args") if isinstance(a, str)]
+    url = srv.get("url") or srv.get("serverUrl") or srv.get("httpUrl")
+    if isinstance(url, str):
+        values.append(("url", url))
+    for k, v in values:
+        if not v or "${" in v or v.startswith(("$", "%")) or re.search(r"(?i)your|<|xxx|placeholder|changeme", v):
+            continue
+        kinds = secrets.known_kinds(v)
+        literal = k not in ("arg", "url") and cv.is_sensitive_key(k) and not _NOT_SECRET_KEY.search(k) and _looks_secret(v)
+        if kinds or literal:
+            strong = any(x in secrets.CRITICAL or x == "stripe_key" for x in kinds)
+            ln = _vline(text, k) if k not in ("arg", "url") else _vline(text, v)
+            return [Finding("AGT004", "critical" if strong else "high", rel, ln, {"server": name})]
+    return []
 
 
 def mcp_findings(d, text, rel, pinned_out):
@@ -390,32 +635,15 @@ def mcp_findings(d, text, rel, pinned_out):
             eco, pname, ver, spec = pkg
             if _pinned(eco, ver):
                 if eco in ("npm", "PyPI"):
-                    pinned_out.append((eco, pname, ver.lstrip("v"), rel, _line(text, spec)))
+                    pinned_out.append((eco, pname, ver.lstrip("v"), rel, _vline(text, spec)))
             else:
                 hint = {"npm": f"{pname}@1.2.3", "PyPI": f"{pname}==1.2.3", "docker": f"{pname}:1.2.3"}[eco]
-                out.append(Finding("AGT003", "medium", rel, _line(text, spec), {"server": name, "spec": spec, "fixed_hint": hint}))
-        values = []
-        for key in ("env", "headers"):
-            block = srv.get(key)
-            if isinstance(block, dict):
-                values += [(k, v) for k, v in block.items() if isinstance(v, str)]
-        values += [("arg", a) for a in srv.get("args") or [] if isinstance(a, str)]
+                out.append(Finding("AGT003", "medium", rel, _vline(text, spec),
+                                   {"server": name, "spec": secrets.mask(spec), "fixed_hint": secrets.mask(hint)}))
         url = srv.get("url") or srv.get("serverUrl") or srv.get("httpUrl")
-        if isinstance(url, str):
-            values.append(("url", url))
-            if url.startswith("http://") and not _LOCAL.match(url):
-                out.append(Finding("AGT005", "medium", rel, _line(text, url), {"server": name}))
-        for k, v in values:
-            if not v or "${" in v or v.startswith(("$", "%")) or re.search(r"(?i)your|<|xxx|placeholder|changeme", v):
-                continue
-            found = []
-            cv.sanitize_text(v, found)
-            known = [f for f in found if f not in ("sanitizer_error",)]
-            sensitive_literal = k not in ("arg", "url") and cv.is_sensitive_key(k) and len(v) >= 8
-            if known or sensitive_literal:
-                strong = any(f in ("github_token", "openai_key", "anthropic_key", "aws_access_key", "slack_token", "stripe_key", "npm_token") for f in known)
-                out.append(Finding("AGT004", "critical" if strong else "high", rel, _line(text, k if k not in ("arg", "url") else v[:20]), {"server": name}))
-                break
+        if isinstance(url, str) and url.startswith("http://") and not _LOCAL.match(url):
+            out.append(Finding("AGT005", "medium", rel, _vline(text, url), {"server": name}))
+        out += _credential(srv, text, rel, name)
     return out
 
 
@@ -431,10 +659,35 @@ def _codex(text, rel):
 
 def _lifecycle(d, text, rel):
     out = []
+    scripts = _dict(d, "scripts")
     for script in ("preinstall", "install", "postinstall", "prepare"):
-        cmd = (d.get("scripts") or {}).get(script) if isinstance(d.get("scripts"), dict) else None
+        cmd = scripts.get(script)
         if isinstance(cmd, str) and _LIFECYCLE_DANGER.search(cmd):
             out.append(Finding("SKL009", "medium", rel, _line(text, f'"{script}"'), {"script": script}))
+    return out
+
+
+def _configs(text, rel, name):
+    if name == "config.toml" and "/.codex/" in "/" + rel:
+        return _codex(text, rel)
+    if not name.endswith(".json"):
+        return []
+    in_claude = "/.claude/" in "/" + rel
+    settings = in_claude and name.startswith("settings")
+    if not (settings or name in ("hooks.json", "plugin.json", "package.json") or _is_mcp_config(rel)):
+        return []
+    d = _load_json(text)
+    if not isinstance(d, dict):
+        return []
+    out = []
+    if settings:
+        out += _claude_settings(d, text, rel)
+    if settings or name in ("hooks.json", "plugin.json"):
+        out += _hooks(d, text, rel)
+    if _is_mcp_config(rel):
+        out += mcp_findings(d, text, rel, [])
+    if name == "package.json":
+        out += _lifecycle(d, text, rel)
     return out
 
 
@@ -461,7 +714,7 @@ def check(ctx):
     dirs = skill_dirs(ctx)
     for rel in ctx.files:
         name = rel.rsplit("/", 1)[-1]
-        if not is_text_source(rel):
+        if not is_text_source(rel, ctx.mode):
             continue
         text = ctx.read(rel)
         if not text:
@@ -470,28 +723,11 @@ def check(ctx):
         script = is_agent_script(rel, ctx, dirs)
         if ctx.mode != "agents" or instruction or script:
             out += _invisible(text, rel, instruction)
-        out += _content(text, rel, instruction, script)
-        if ctx.mode == "skill" and not instruction and rel.endswith((".py", ".js", ".mjs", ".ts", ".json")):
+        out += _content(text, rel, instruction, script, strict=ctx.mode == "skill")
+        if ctx.mode == "skill" and not instruction and rel.endswith((".py", ".js", ".mjs", ".cjs", ".ts", ".json")):
             # Servidor MCP: a descrição das ferramentas vai direto para o modelo (tool poisoning).
-            m = next((m for m in _OVERRIDE.finditer(text) if not _defensive(text, m)), None)
-            if m:
-                out.append(Finding("SKL003", "high", rel, line_of(text, m.start()), {"snippet": _snippet(m.group(0))}))
-
-        if name.endswith(".json"):
-            d = None
-            in_claude = "/.claude/" in "/" + rel
-            if (in_claude and name.startswith("settings")) or name in ("hooks.json", "plugin.json") or _is_mcp_config(rel) or name == "package.json":
-                d = _load_json(text)
-            if not isinstance(d, dict):
-                continue
-            if in_claude and name.startswith("settings"):
-                out += _claude_settings(d, text, rel)
-            if (in_claude and name.startswith("settings")) or name in ("hooks.json", "plugin.json"):
-                out += _hooks(d, text, rel)
-            if _is_mcp_config(rel):
-                out += mcp_findings(d, text, rel, [])
-            if name == "package.json":
-                out += _lifecycle(d, text, rel)
-        elif name == "config.toml" and "/.codex/" in "/" + rel:
-            out += _codex(text, rel)
-    return out
+            out += _overrides(text, rel)
+        if _launches_agent(rel, name, instruction, script):
+            out += _permission_flags(text, rel, instruction, strict=ctx.mode == "skill")
+        out += _configs(text, rel, name)
+    return secrets.drop_inline_ignored(ctx, out)
