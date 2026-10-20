@@ -172,6 +172,26 @@ class CodeRules(Checks):
                    [("COD001", "app.py", 8, "high"), ("COD001", "app.py", 10, "high"), ("COD001", "main.py", 11, "high"),
                     ("APP014", "server.py", 7, "high"), ("COD001", "server.js", 6, "high")])
 
+    def test_cod001_names_that_only_end_like_placeholders(self):
+        """marks, qmarks, question_marks e questionMarks são placeholders; remarks e bookmarks são o dado do formulário."""
+        py = FLASK + ("import sqlite3\nconn = sqlite3.connect('d.db')\n"
+                      "@app.post('/n')\ndef n():\n"
+                      "    ids = request.json['ids']\n"
+                      "    qmarks = ','.join('?' * len(ids))\n"
+                      "    question_marks = ','.join(['?'] * len(ids))\n"
+                      "    conn.execute(f'SELECT * FROM t WHERE id IN ({qmarks}) OR id IN ({question_marks})', ids + ids)\n"
+                      "    remarks = request.form['remarks']\n"
+                      "    conn.execute(f\"INSERT INTO notes (remarks) VALUES ('{remarks}')\")\n"
+                      "    return 'ok'\n")
+        js = EXPRESS + ("const db = require('./db')\n"
+                        "app.post('/n', async (req, res) => {\n"
+                        "  const questionMarks = req.body.ids.map(() => '?').join(',')\n"
+                        "  await db.query(`SELECT * FROM t WHERE id IN (${questionMarks})`, req.body.ids)\n"
+                        "  const bookmarks = req.body.bookmarks\n"
+                        "  await db.query(`INSERT INTO t (b) VALUES ('${bookmarks}')`)\n"
+                        "  res.json({})\n})\n")
+        self.check({"app.py": py, "server.js": js}, [("COD001", "app.py", 12, "high"), ("COD001", "server.js", 8, "high")])
+
     def test_cod001_js_placeholder_lists_stay_silent(self):
         """ids.map(() => '?').join(','): a lista de placeholders herda a origem de ids, mas o texto dela é fixo. O
         JavaScript conhece os mesmos nomes de placeholder que o Python (marks, ph, qs) e olha o valor declarado."""
