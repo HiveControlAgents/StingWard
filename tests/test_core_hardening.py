@@ -468,6 +468,9 @@ class SourceFailuresAreAlwaysSaid(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        # Um arquivo lido: pasta vazia sai com 4 (nada lido) antes de olhar as bases.
+        with open(os.path.join(self.tmp.name, "app.py"), "w", encoding="utf-8") as fh:
+            fh.write("x = 1\n")
 
     def _run(self, sources, findings=(), argv=()):
         def fake_deps(ctx):
