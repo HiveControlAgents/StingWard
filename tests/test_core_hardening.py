@@ -10,7 +10,8 @@ import time
 import unittest
 from unittest import mock
 
-from stingward import _redact as redact, cli, net, vulndb
+from stingward import _redact as redact, cli, net, scan, vulndb
+from stingward.model import Finding
 
 LANG_VARS = ("STINGWARD_LANG", "LC_ALL", "LC_MESSAGES", "LANG")
 
@@ -335,6 +336,41 @@ class OddAnswersFromTheDatabases(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", side_effect=lambda req, timeout: _resp(
                 {"id": "GHSA-1"} if req.full_url.endswith("GHSA-1") else ["junk"])):
             self.assertEqual(vulndb.osv_vulns(["GHSA-1", "GHSA-2"]), {"GHSA-1": {"id": "GHSA-1"}})
+
+
+
+class SourceFailuresAreAlwaysSaid(unittest.TestCase):
+    """Base que falhou aparece no stderr em qualquer formato, mesmo quando o código de saída já é 1 ou --fail-on never."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _run(self, sources, findings=(), argv=()):
+        def fake_deps(ctx):
+            ctx.sources.update(sources)
+            return list(findings)
+        with mock.patch.dict(scan.CHECKS, {"deps": fake_deps}):
+            return run_main([self.tmp.name, "--lang", "en", "--format", "json", *argv])
+
+    def test_osv_failure_is_said_even_when_findings_fail_the_gate(self):
+        high = Finding("DEP001", "high", "package-lock.json", 1, {"pkg": "x", "version": "1"})
+        code, _, err = self._run({"osv_error": "down"}, [high])
+        self.assertEqual(code, 1)
+        self.assertIn("OSV.dev did not respond", err)
+        code, _, err = self._run({"osv_error": "down"}, argv=["--fail-on", "never"])
+        self.assertEqual(code, 0)
+        self.assertIn("OSV.dev did not respond", err)
+        code, _, err = self._run({"osv_error": "down"})
+        self.assertEqual(code, 3)
+        self.assertEqual(err.count("OSV.dev did not respond"), 1)
+
+    def test_kev_failure_is_said(self):
+        code, _, err = self._run({"osv": True, "kev_error": "down"})
+        self.assertEqual(code, 0)
+        self.assertIn("CISA KEV list did not respond", err)
+        code, _, err = self._run({"osv": True, "kev": "2026.10.16"})
+        self.assertEqual(err, "")
 
 
 if __name__ == "__main__":

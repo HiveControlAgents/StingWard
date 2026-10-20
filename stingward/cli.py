@@ -161,6 +161,9 @@ MSG = {
            "timeout": f"stingward: não consegui baixar {{target}}: o git clone passou de {CLONE_TIMEOUT} s",
            "nogit": "stingward: não consegui baixar {target}: o git não está instalado ou não abriu ({detail})",
            "outside": "stingward: não vou auditar {target}: a subpasta {detail} fica fora do repositório baixado",
+           "osv_down": "stingward: o OSV.dev não respondeu e as dependências não foram checadas (use --offline para pular de propósito).",
+           "kev_down": "stingward: a lista CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com "
+                       "severidade abaixo da real.",
            "stale": "stingward: {n} item(ns) de {path} não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu).",
            "todo": "stingward: {n} achado(s) ainda sem status em {path}; eles contam como achados.",
            "masked": "stingward: mascarei algo que parece segredo num comentário ou no parecer. Confira o relatório antes de entregar.",
@@ -172,6 +175,9 @@ MSG = {
            "timeout": f"stingward: could not download {{target}}: git clone took more than {CLONE_TIMEOUT} s",
            "nogit": "stingward: could not download {target}: git is not installed or did not start ({detail})",
            "outside": "stingward: will not audit {target}: the subfolder {detail} is outside the downloaded repository",
+           "osv_down": "stingward: OSV.dev did not respond, so dependencies were not checked (use --offline to skip them on purpose).",
+           "kev_down": "stingward: the CISA KEV list did not respond: a vulnerability attackers already exploit may show a lower "
+                       "severity than it should.",
            "stale": "stingward: {n} item(s) in {path} match no finding of this scan (the code changed or the finding is gone).",
            "todo": "stingward: {n} finding(s) still have no status in {path}; they count as found.",
            "masked": "stingward: masked something that looks like a secret in a comment or the notes. Check the report before you deliver it.",
@@ -283,6 +289,11 @@ def main(argv=None):
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    # A base que falhou é dita sempre, em qualquer formato: com --format json ou sarif o stderr é o único aviso legível.
+    if ctx.sources.get("osv_error"):
+        _say(lang, "osv_down")
+    elif ctx.sources.get("kev_error"):
+        _say(lang, "kev_down")
     if args.fail_on == "never":
         return 0
     # Com revisão, alarme falso e o que foi corrigido não reprovam: valem os mesmos achados da nota.
@@ -290,8 +301,5 @@ def main(argv=None):
         return 1
     # Portão de CI não pode passar só porque a base não respondeu.
     if ctx.sources.get("osv_error"):
-        msg = {"pt": "stingward: o OSV.dev não respondeu e as dependências não foram checadas (use --offline para pular de propósito).",
-               "en": "stingward: OSV.dev did not respond, so dependencies were not checked (use --offline to skip them on purpose)."}
-        print(msg[lang], file=sys.stderr)
         return 3
     return 0
