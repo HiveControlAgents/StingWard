@@ -34,6 +34,8 @@ T = {
         "offline": "modo offline: dependências não foram checadas",
         "pkgs": "{n} pacote(s) verificado(s)", "osv_fail": "OSV.dev não respondeu: dependências não foram checadas",
         "kev_fail": "CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com severidade abaixo da real",
+        "too_big": "Fora da auditoria: {n} arquivo(s) acima de {mb} MB não foram lidos: {files}",
+        "truncated": "Fora da auditoria: a pasta tem mais de {n} arquivos; a leitura parou aí e o resto não foi lido.",
         "badge": "Selo para o README",
         "verdict_bad": "🔴 Não instale ainda: há problemas graves.",
         "verdict_mid": "🟡 Instale só depois de ler os itens abaixo.",
@@ -67,6 +69,8 @@ T = {
         "offline": "offline mode: dependencies were not checked",
         "pkgs": "{n} package(s) checked", "osv_fail": "OSV.dev did not respond: dependencies were not checked",
         "kev_fail": "CISA KEV did not respond: a vulnerability attackers already exploit may show a lower severity than it should",
+        "too_big": "Not covered: {n} file(s) over {mb} MB were not read: {files}",
+        "truncated": "Not covered: the folder has more than {n} files; reading stopped there and the rest was not read.",
         "badge": "README badge",
         "verdict_bad": "🔴 Do not install yet: serious problems found.",
         "verdict_mid": "🟡 Install only after reading the items below.",
@@ -192,6 +196,26 @@ def _sources_line(ctx, lang):
     if ctx.sources.get("nvd"):
         parts.append("NVD")
     return " · ".join(parts)
+
+
+def size_cap(mode):
+    """O limite de tamanho de arquivo da varredura neste modo, em bytes (scan.list_files)."""
+    from . import scan
+    return scan.SKILL_MAX_BYTES if mode == "skill" else scan.MAX_BYTES
+
+
+def not_read_lines(ctx, lang, limit=5):
+    """O que a varredura deixou sem ler, em frases curtas: código e texto acima do limite de tamanho e o resto da pasta
+    depois do limite de arquivos. Os nomes vêm do projeto auditado e saem crus: cada formato limpa ou escapa a frase."""
+    from . import scan
+    t, out = T[lang], []
+    if ctx.too_big:
+        extra = len(ctx.too_big) - limit
+        files = ", ".join(ctx.too_big[:limit]) + (" " + t["and_more"].format(n=extra) if extra > 0 else "")
+        out.append(t["too_big"].format(n=len(ctx.too_big), mb=size_cap(ctx.mode) // 1_000_000, files=files))
+    if ctx.truncated:
+        out.append(t["truncated"].format(n=scan.MAX_FILES))
+    return out
 
 
 def source_failed(ctx):
@@ -472,6 +496,7 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
     empty = nothing_read(ctx, findings)
     out = [f"stingward {__version__} · {t['title']}: {_clean(shown_target(target or ctx.root))}",
            f"{t['sources']}: {_sources_line(ctx, lang)}"]
+    out += [_clean(x) for x in not_read_lines(ctx, lang)]
     out += [f"{_clean(k)}: {_clean(v)}" for k, v in _review_head(audit, findings, lang)]
     out.append("")
     if audit and audit.notes:
@@ -597,20 +622,23 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
         out += [f"**{_esc(t['notes'])}**", ""] + _md_blocks(audit.notes)
     if show_verdict and not empty:
         out += [verdict(valid, lang), ""]
+    unread = [f"⚠️ {_esc(x)}" for x in not_read_lines(ctx, lang)]  # perto da linha das bases, em todo caso
     if empty:
-        out += ["⚠️ " + nothing_read_text(ctx, lang), ""]
+        out += ["⚠️ " + nothing_read_text(ctx, lang), ""] + ([*unread, ""] if unread else [])
     elif not shown:
         out += [t["none"], ""]
         if source_failed(ctx):  # "nada encontrado" com o OSV fora do ar não é um comentário limpo
             out += [f"**{t['sources']}:** {_esc(_sources_line(ctx, lang))}", ""]
+        out += [*unread, ""] if unread else []
     else:
         first = _fix_first(shown)
         if first:
             out += [f"**{t['first']}**", ""]
             out += [f"{i}. {ICON[e.severity]} {_esc(e.title)} · <sub>{_esc(_first_place(e))}</sub>" for i, e in enumerate(first, 1)]
             out.append("")
-        out += [f"**{t['summary']}:** {counts_line(valid, lang) or '0'} · {t['sources']}: {_esc(_sources_line(ctx, lang))}", "",
-                "| | | |", "|---|---|---|"]
+        out += [f"**{t['summary']}:** {counts_line(valid, lang) or '0'} · {t['sources']}: {_esc(_sources_line(ctx, lang))}", ""]
+        out += [*unread, ""] if unread else []
+        out += ["| | | |", "|---|---|---|"]
         for e in shown[:50]:
             note = f"<br><sub>{_md_comment(audit, e, lang)}</sub>" if rv is not None else ""
             out.append(f"| {ICON[e.severity]} {LABEL[lang][e.severity]} | {_esc(e.title)}<br><sub>{_esc(places(e, lang, limit=5))}</sub>{note} "
@@ -668,7 +696,8 @@ def as_json(ctx, findings, lang="pt", audit=None):
     doc = {"tool": "stingward", "version": __version__, "grade": None if empty else grade(counted(findings, rv))}
     if empty:
         doc["warning"] = "nothing_read"  # nenhum arquivo lido: não há nota
-    doc.update(sources=ctx.sources, findings=items)
+    # Sempre presente, mesmo vazio: quem lê o JSON não precisa testar se a chave existe.
+    doc.update(sources=ctx.sources, not_read={"too_big": list(ctx.too_big), "truncated": bool(ctx.truncated)}, findings=items)
     if rv is not None:
         doc["review"] = {"reviewer": audit.reviewer or None, "counts": {k or "unreviewed": v for k, v in counts(findings, rv).items()}}
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
