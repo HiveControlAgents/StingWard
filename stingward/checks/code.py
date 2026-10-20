@@ -3980,10 +3980,11 @@ def _import_names(spec, sep):
     return out
 
 
-def scan_js(rel, text, project=None, ext=None, xcalls=None):
+def scan_js(rel, text, project=None, ext=None, xcalls=None, skill=False):
     """ext e xcalls como em scan_python: {"f:nome": índices} vindos de outro arquivo, e a lista que recebe
-    ((caminho do import, nome), índices) das chamadas deste arquivo a funções importadas com argumento de ferramenta."""
-    if _minified(text):
+    ((caminho do import, nome), índices) das chamadas deste arquivo a funções importadas com argumento de ferramenta.
+    skill: o bundle minificado também é lido (numa skill, é o código que roda; o teto por arquivo continua valendo)."""
+    if not skill and _minified(text):
         return []
     js = _Js(rel, text, project or {}, ext)
     found = js.run()
@@ -4071,7 +4072,11 @@ def _js_target(rel, spec, files):
     return None
 
 
-def _skip(rel):
+def _skip(rel, mode="project"):
+    """Arquivo que a análise de código não lê. Numa skill, só a declaração de tipos (.d.ts, que não roda): o .min.js,
+    o bundle e a pasta vendor/ são o que vai rodar na máquina de quem instala, e uma linha longa esconderia o código."""
+    if mode == "skill":
+        return rel.endswith(".d.ts")
     return rel.endswith((".d.ts", ".min.js", ".bundle.js")) or "/vendor/" in "/" + rel or "/static/vendor/" in rel
 
 
@@ -4081,8 +4086,9 @@ def analyze(ctx):
         return ctx._cache[_CACHE_KEY]
     out = []
     if ctx.mode != "agents":
-        py = [r for r in ctx.files if r.endswith(".py") and is_text_source(r, ctx.mode) and not _skip(r)]
-        js = [r for r in ctx.files if r.endswith(_JS_EXT) and is_text_source(r, ctx.mode) and not _skip(r)]
+        skill = ctx.mode == "skill"
+        py = [r for r in ctx.files if r.endswith(".py") and is_text_source(r, ctx.mode) and not _skip(r, ctx.mode)]
+        js = [r for r in ctx.files if r.endswith(_JS_EXT) and is_text_source(r, ctx.mode) and not _skip(r, ctx.mode)]
         project = _project(ctx, py, js)
         py_deps = any(_PY_ROUTER_DEPS.search(ctx.read(r)) for r in py if "include_router" in ctx.read(r) or "add_middleware" in ctx.read(r))
         found, xcalls = {}, []
@@ -4096,7 +4102,7 @@ def analyze(ctx):
             text = ctx.read(rel)
             if text and len(text) <= _JS_MAX:
                 calls = []
-                found[rel] = scan_js(rel, text, project, xcalls=calls)
+                found[rel] = scan_js(rel, text, project, xcalls=calls, skill=skill)
                 xcalls += [(rel, c) for c in calls]
         # O handler da ferramenta chama uma função de outro arquivo do projeto (tools/kubectl.ts, db.py) com o argumento
         # do modelo: aquele arquivo é lido de novo com esses parâmetros vindo do modelo. Duas rodadas (helper de helper).
@@ -4119,7 +4125,7 @@ def analyze(ctx):
                     found[dest] = scan_python(dest, text, [(n, h) for n, hs in funcs.items() for h in hs], calls)
                 else:
                     seeds = {k: set().union(*hs) for k, hs in funcs.items()}
-                    found[dest] = scan_js(dest, text, project, seeds, calls)
+                    found[dest] = scan_js(dest, text, project, seeds, calls, skill)
                 xcalls += [(dest, c) for c in calls]
             if not xcalls:
                 break

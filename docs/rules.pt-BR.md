@@ -256,7 +256,7 @@ O CWE e o item do OWASP Top 10 for Agentic Applications dependem do sink: CWE-78
 
 ## Código
 
-Arquivos Python são lidos com `ast` e JavaScript/TypeScript (também o `<script>` de `.vue`, `.svelte` e `.astro`) com padrões justos, seguindo de onde veio cada valor dentro da função: a requisição (Flask, FastAPI, Django, Express, Next.js, Hono...), um argumento da função ou outro servidor. A chamada a um helper seu (`get_file_by_id(id)`) não é seguida, porque devolve outra coisa, nem um parâmetro que o framework já converteu em número, booleano ou UUID (`item_id: int`, `<int:id>`). Bundles minificados ficam de fora, e testes, exemplos e fixtures caem para baixa.
+Arquivos Python são lidos com `ast` e JavaScript/TypeScript (também o `<script>` de `.vue`, `.svelte` e `.astro`) com padrões justos, seguindo de onde veio cada valor dentro da função: a requisição (Flask, FastAPI, Django, Express, Next.js, Hono...), um argumento da função ou outro servidor. A chamada a um helper seu (`get_file_by_id(id)`) não é seguida, porque devolve outra coisa, nem um parâmetro que o framework já converteu em número, booleano ou UUID (`item_id: int`, `<int:id>`). Bundles minificados ficam de fora num projeto, mas são lidos no `stingward skill`, onde são o código que roda; testes, exemplos e fixtures caem para baixa.
 
 <a id="cod001"></a>
 ### COD001 · Consulta SQL montada com dado de fora
