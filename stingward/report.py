@@ -37,6 +37,7 @@ T = {
         "verdict_mid": "🟡 Instale só depois de ler os itens abaixo.",
         "verdict_ok": "🟢 Nada grave encontrado. Leia o código mesmo assim: nenhuma ferramenta pega tudo.",
         "more": "e mais {n} item(ns) de severidade baixa",
+        "more_md": "e mais {n} item(ns): {counts}",
         "first": "Corrija primeiro", "and_more": "e mais {n}",
         "client": "Preparado para", "notes": "Parecer do analista", "review": "revisão",
         "reviewed_by": "Revisado por {name}", "reviewed": "Revisado por uma pessoa",
@@ -61,6 +62,7 @@ T = {
         "verdict_mid": "🟡 Install only after reading the items below.",
         "verdict_ok": "🟢 Nothing serious found. Still read the code: no tool catches everything.",
         "more": "and {n} more low-severity item(s)",
+        "more_md": "and {n} more item(s): {counts}",
         "first": "Fix these first", "and_more": "and {n} more",
         "client": "Prepared for", "notes": "Analyst summary", "review": "review",
         "reviewed_by": "Reviewed by {name}", "reviewed": "Reviewed by a person",
@@ -530,8 +532,9 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
             note = f"<br><sub>{_md_comment(audit, e, lang)}</sub>" if rv is not None else ""
             out.append(f"| {ICON[e.severity]} {LABEL[lang][e.severity]} | {_esc(e.title)}<br><sub>{_esc(places(e, lang, limit=5))}</sub>{note} "
                        f"| {_esc(e.fix)} |")
-        if len(shown) > 50:
-            out.append(f"| | {t['more'].format(n=len(shown) - 50)} | |")
+        if len(shown) > 50:  # os que sobram podem ser de qualquer severidade: a linha diz quais são
+            rest = shown[50:]
+            out.append(f"| | {t['more_md'].format(n=len(rest), counts=counts_line(rest, lang))} | |")
         out.append("")
     if discarded:
         out += [f"**{_esc(t['discarded'].format(n=sum(len(e.findings) for e in discarded)))}**", ""]
