@@ -158,6 +158,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A committed `.env.me` with a dotenv-vault login token (`DOTENV_ME=me_...`) is SEC002 high, not low: the token pulls every environment of the vault.
 - Dependency files saved in UTF-16 with a byte order mark, such as a `requirements.txt` written by `pip freeze >` in Windows PowerShell, are audited. They were read as UTF-8, so DEP001, DEP003 and DEP004 found no package in them and said nothing.
 - The bounds of a version range (DEP004) and the fix picked when several advisories have one (DEP001, DEP004) follow the ecosystem's version order too, PEP 440 for PyPI and semver for npm, instead of the generic one. In PyPI `1.0-1` is the post-release `1.0.post1`: `foo>=0.9,<1.0.post1` no longer takes it as inside the range, and advisories fixed in `1.0` and `1.0-1` now suggest `1.0-1`.
+- COD001, APP009 and APP014 now report a column or table name chosen by request data, model output or a tool argument, such as `ORDER BY {order}`, `FROM {table}` or `LIMIT {limit}` (medium). Variables with these names were always skipped, because in the code's own helpers they hold a name the code wrote. A function argument of unknown origin with such a name is still skipped, and so is a name checked against a fixed list (`x if x in ALLOWED else 'id'`) or taken from a dict in the code (`SORTS[req.query.sort]`, which the JavaScript check used to report as high). A whole piece of SQL from outside, such as `WHERE {where}`, is high.
 
 ## [0.1.5] - 2026-10-20
 

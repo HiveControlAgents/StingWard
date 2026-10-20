@@ -261,9 +261,9 @@ Arquivos Python são lidos com `ast` e JavaScript/TypeScript (também o `<script
 <a id="cod001"></a>
 ### COD001 · Consulta SQL montada com dado de fora
 
-f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `read_sql`, `pool.query`, `knex.raw`, `$queryRawUnsafe` e parecidos. Alto com dado da requisição, médio com argumento de função no lugar de um valor (`= '{nome}'`, `LIKE`, `IN (...)`). Nome de tabela vindo de constante, parâmetros `?`/`%s`/`$1`, construtores de ORM e templates com tag (`` sql`...` ``, `` $queryRaw`...` ``) não entram.
+f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `read_sql`, `pool.query`, `knex.raw`, `$queryRawUnsafe` e parecidos. Alto com dado da requisição, médio com argumento de função no lugar de um valor (`= '{nome}'`, `LIKE`, `IN (...)`). Médio quando o dado da requisição, a resposta do modelo ou o argumento de uma ferramenta escolhe o nome de uma coluna ou tabela (`ORDER BY {ordem}`, `FROM {tabela}`, `LIMIT {limite}`); nome conferido numa lista fixa ou tirado de um dicionário do código não entra. Nome de tabela vindo de constante, parâmetros `?`/`%s`/`$1`, construtores de ORM e templates com tag (`` sql`...` ``, `` $queryRaw`...` ``) não entram.
 
-**Como corrigir:** passe os valores como parâmetros: `cursor.execute("... WHERE id = %s", (id,))`, `$1` no Postgres, `?` no SQLite, `` sql`...` `` ou `` $queryRaw`...` `` no Prisma.
+**Como corrigir:** passe os valores como parâmetros: `cursor.execute("... WHERE id = %s", (id,))`, `$1` no Postgres, `?` no SQLite, `` sql`...` `` ou `` $queryRaw`...` `` no Prisma. Nome de coluna ou tabela não pode ser parâmetro: escolha numa lista fixa (`ORDENS[chave]`, `if ordem not in PERMITIDAS: abort(400)`).
 **Padrões:** `CWE-89`
 
 <a id="cod002"></a>
