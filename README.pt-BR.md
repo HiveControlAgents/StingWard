@@ -67,7 +67,7 @@ As 33 regras, com severidade, exemplos e correção: [docs/rules.pt-BR.md](docs/
 1. **Lista os arquivos**, pulando pastas de dependências e de build como `node_modules` e `dist`. Na auditoria de uma skill de terceiros ele lê o build, porque é isso que de fato roda.
 2. **Lê os lockfiles** e pergunta ao [OSV.dev](https://osv.dev) sobre todos os pacotes e versões de uma vez. CVEs do [KEV da CISA](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) viram críticas; o [EPSS](https://www.first.org/epss/) e o [NVD](https://nvd.nist.gov) completam a chance de exploração e as notas que faltam.
 3. **Roda as verificações** de segredos, erros de app, configuração de agentes e conteúdo de skills, levando em conta o contexto: pastas de teste, documentação e exemplos pesam menos, e numa skill de terceiros um texto tranquilizador pode baixar o achado para médio, mas nunca escondê-lo.
-4. **Escreve o relatório** em português ou inglês: veredito, achados do pior para o melhor com onde, por quê e como corrigir, nota de A a F e um selo.
+4. **Escreve o relatório** em português ou inglês: veredito, o que corrigir primeiro, achados do pior para o melhor com onde, por quê e como corrigir (o mesmo problema em vários arquivos aparece uma vez, com todos os lugares), nota de A a F e um selo. `--html ARQ` grava também um relatório num arquivo só, para entregar ou imprimir em PDF: resumo, plano de correção com o esforço estimado, achados com o trecho de código (segredos mascarados) e escopo e método.
 
 Só nome e versão dos pacotes saem da sua máquina (para `api.osv.dev`, `www.cisa.gov`, `api.first.org` e `services.nvd.nist.gov`). O código nunca sai. As respostas ficam em cache por algumas horas em `~/.cache/stingward`.
 
@@ -107,8 +107,8 @@ Ela comenta o relatório no PR (e atualiza o mesmo comentário a cada execução
 | Opção | |
 |---|---|
 | `--lang en\|pt` | Idioma do relatório (padrão: `STINGWARD_LANG`, depois o idioma do sistema) |
-| `--format text\|json\|markdown\|sarif` | O que vai para a saída padrão |
-| `--json ARQ`, `--markdown ARQ`, `--sarif ARQ` | Grava também esses arquivos, na mesma execução |
+| `--format text\|json\|markdown\|sarif\|html` | O que vai para a saída padrão |
+| `--json ARQ`, `--markdown ARQ`, `--sarif ARQ`, `--html ARQ` | Grava também esses arquivos, na mesma execução |
 | `--fail-on critical\|high\|medium\|low\|never` | Código de saída 1 nesta severidade ou acima (padrão `high`) |
 | `--only deps,secrets,app,agents` | Roda só algumas verificações |
 | `--offline` | Não consulta as bases online (as dependências não são verificadas) |
