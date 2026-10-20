@@ -224,5 +224,32 @@ class TokenFormats(Case):
                 self.assertEqual(brief(scan_files({"src/keys.py": line + "\n"}), "SEC001"), [])
 
 
+# =========================================================================== atribuição a campo sensível
+
+class GenericAssignments(Case):
+    def test_values_that_are_not_secrets(self):
+        lines = [
+            '"password_complexity_requirement": "数字、大文字、1文字以上",',
+            '"Tokens": "توکن\\u200cها",',
+            'placeholder={`{"X-api-key": "1234567890"}`}',
+            "'AUTOMATIC1111_API_AUTH': 'image_generation.automatic1111.api_auth',",
+            "export const DUCKLAKE_S3_SECRET_ENV_VAR = 'DUCKLAKE_S3_SECRET'",
+            'access_token: "MOCK_ACCESS_TOKEN_OAUTH2",',
+            "api_key: 'sb_publishable_ltaNA7nnVozoSCOcZIjg',",
+            'const stripe = { apiKey: "pk_live_51H8xYz2eZvKYlo2C0aBcDeFg" }',
+        ]
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertEqual(brief(scan_files({"src/app.ts": line + "\n"}), "SEC001"), [])
+
+    def test_hard_coded_secrets_still_fire(self):
+        lines = ['ORACLE_DB_PASSWORD = "Welcome123456"', 'password: "ADMINadmin2022!",', 'const password = "Tr0ub4dor-77-xK"',
+                 "JWT_SECRET = 'super-secret-jwt-token-with-at-least-32-characters-long'",
+                 'api_token = "0cc0e6c35519bba620c9360cfe3e68d0"', 'secret = "A1B2C3D4E5F6G7H8"']
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertEqual(brief(scan_files({"src/app.py": line + "\n"}), "SEC001"), [("SEC001", "src/app.py", 1, "high")])
+
+
 if __name__ == "__main__":
     unittest.main()
