@@ -68,7 +68,7 @@ def _skill_commands(skill_dir=INSTALLED, target="owner/repo"):
     _, body = _skill()
     commands = re.findall(r"`(python3 [^`]+)`", body.split("## Run it", 1)[1].split("\n## ", 1)[0])
     commands = [c.replace("${CLAUDE_SKILL_DIR}", skill_dir).replace("<skill-dir>", skill_dir) for c in commands]
-    return [re.sub(r"<[^>]+>", target, c) for c in commands]
+    return [re.sub(r"<[^>]+>", lambda _: target, c) for c in commands]  # um caminho do Windows tem \\ que re.sub leria
 
 
 class SkillPermissions(unittest.TestCase):
