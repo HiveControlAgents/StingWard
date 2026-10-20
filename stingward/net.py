@@ -31,6 +31,12 @@ class NetError(Exception):
     pass
 
 
+# Quanto a data da cópia no cache pode estar à frente do relógio e ainda valer. A cópia recém-gravada pode ler uma
+# fração no futuro: no Windows com Python 3.12, time.time() e st_mtime saem do mesmo tique do relógio por contas
+# diferentes, e st_mtime às vezes dá o último dígito a mais. Disco de rede usa o relógio do servidor.
+_CLOCK_SKEW = 60  # segundos
+
+
 def fetch_json(url: str, body=None, ttl: int = 0, timeout: int = 30, headers=None, valid=None):
     """GET (ou POST com body) que devolve JSON. ttl > 0 usa cache em disco.
 
@@ -42,8 +48,8 @@ def fetch_json(url: str, body=None, ttl: int = 0, timeout: int = 30, headers=Non
         key = hashlib.sha256((url + json.dumps(body, sort_keys=True)).encode()).hexdigest()[:32]
         path = cache / f"{key}.json"
         try:
-            # Data no futuro (cache vindo de outra máquina, relógio errado) não vale: senão o cache nunca venceria.
-            if 0 <= time.time() - path.stat().st_mtime < ttl:
+            # Mais de _CLOCK_SKEW no futuro (cache de outra máquina, relógio errado) não vale: senão nunca venceria.
+            if -_CLOCK_SKEW <= time.time() - path.stat().st_mtime < ttl:
                 cached = json.loads(path.read_text("utf-8"))
                 if valid is None or valid(cached):
                     return cached

@@ -38,6 +38,23 @@ class NetCacheAndRetries(unittest.TestCase):
         self.assertEqual(op.call_count, 1)
         self.assertEqual(len(os.listdir(self.tmp.name)), 1)
 
+    def test_entry_dated_a_moment_ahead_is_still_served(self):
+        # Windows, Python 3.12: time.time() and st_mtime come from the same 100 ns clock tick through different float
+        # sums, and st_mtime can come out a fraction later. The entry just written then looked like it came from the
+        # future and was fetched again: test_second_call_is_served_from_the_cache saw 2 calls once. A network drive's
+        # clock can also be a little ahead. Far ahead (another machine, a wrong clock) still does not count.
+        with mock.patch("urllib.request.urlopen", return_value=_resp({"n": 1})):
+            net.fetch_json("https://example.com/a", ttl=3600)
+        (name,) = os.listdir(self.tmp.name)
+        mtime = os.stat(os.path.join(self.tmp.name, name)).st_mtime
+        for ahead, calls in ((1e-6, 0), (1.0, 0), (30.0, 0), (600.0, 1)):
+            with self.subTest(ahead=ahead):
+                with mock.patch("time.time", return_value=mtime - ahead), \
+                        mock.patch("urllib.request.urlopen", return_value=_resp({"n": 1})) as op:
+                    self.assertEqual(net.fetch_json("https://example.com/a", ttl=3600), {"n": 1})
+                self.assertEqual(op.call_count, calls)
+                os.utime(os.path.join(self.tmp.name, name), (mtime, mtime))  # the refetch wrote the entry again
+
     def test_body_is_part_of_the_cache_key(self):
         with mock.patch("urllib.request.urlopen", side_effect=[_resp({"n": 1}), _resp({"n": 2})]) as op:
             net.fetch_json("https://example.com/a", body={"q": 1}, ttl=60)
