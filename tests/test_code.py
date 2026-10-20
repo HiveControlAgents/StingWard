@@ -495,6 +495,20 @@ class CodeRules(Checks):
                                   ("COD008", "app/api/proxy/route.ts", 5, "high")])
         self.assertEqual([x.params["kind"] for x in f if x.rule == "APP014"], ["url"])
 
+    def test_cod008_search_params_held_in_a_variable(self):
+        """const sp = new URL(req.url).searchParams; sp.get('url'): a busca da requisição com outro nome. A busca de um
+        endereço escrito no código não é da requisição."""
+        js = ("export async function GET(req) {\n"
+              "  const sp = new URL(req.url).searchParams\n"
+              "  const params = req.nextUrl.searchParams\n"
+              "  const a = await fetch(sp.get('url'))\n"
+              "  const b = await fetch(params.get('next') ?? '/')\n"
+              "  const own = new URL('https://api.example.com/x?a=1').searchParams\n"
+              "  const c = await fetch(own.get('a'))\n"
+              "  return new Response((await a.text()) + (await b.text()) + (await c.text()))\n}\n")
+        self.check({"app/api/proxy/route.ts": js},
+                   [("COD008", "app/api/proxy/route.ts", 4, "high"), ("COD008", "app/api/proxy/route.ts", 5, "high")])
+
     # ------------------------------------------------------------------ COD009 redirect
 
     def test_cod009_redirect_to_request_address(self):
