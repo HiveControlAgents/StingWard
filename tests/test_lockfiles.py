@@ -52,8 +52,9 @@ class Dispatch(LockfileCase):
         yes = ["package-lock.json", "npm-shrinkwrap.json", "web/yarn.lock", "pnpm-lock.yaml", "bun.lock",
                "package.json", "requirements.txt", "requirements-dev.txt", "requirements_test.txt",
                "requirements.prod.txt", "poetry.lock", "uv.lock", "pdm.lock", "Pipfile.lock", "svc/go.mod",
-               "Cargo.lock", "Gemfile.lock", "composer.lock", "src/App/packages.lock.json"]
-        no = ["requirements.in", "dev-requirements.txt", "package.json.bak", "Cargo.toml", "pyproject.toml",
+               "Cargo.lock", "Gemfile.lock", "composer.lock", "src/App/packages.lock.json", "dev-requirements.txt",
+               "ci/test-requirements.txt", "docs_requirements.txt"]
+        no = ["requirements.in", "dev-requirements.in", "nonrequirements.txt", "dev-requirements.txt.bak", "package.json.bak", "Cargo.toml", "pyproject.toml",
               "Pipfile", "Gemfile", "go.sum", "bun.lockb", "yarn.lock.orig", "README.md"]
         for rel in yes:
             self.assertTrue(lockfiles.is_dependency_file(rel), rel)
@@ -1323,6 +1324,11 @@ class OpenRanges(LockfileCase):
         self.assertEqual(self.ranges("requirements.txt", req), 4)  # requests, flask, numpy, black
         self.assertEqual(self.ranges("requirements-dev.txt", "pytest\n"), 1)
 
+    def test_lines_that_are_not_requirements_are_not_open_versions(self):
+        prose = "The system shall export reports.\nUsers can log in with SSO (single sign-on).\nflask\n"
+        self.assertEqual(self.ranges("docs/functional-requirements.txt", prose), 1)
+        self.assertEqual(self.ranges("requirements.txt", "requests [socks] >= 2\nnumpy; python_version<'3.8'\nDjango\n"), 3)
+
     def test_requirements_marker_with_equals_is_still_open(self):
         self.assertEqual(self.ranges("requirements.txt", 'requests>=2; python_version=="3.8"\n'), 1)
         self.assertEqual(self.ranges("requirements.txt", 'requests==2.31.0; python_version=="3.8"\n'), 0)
@@ -1702,13 +1708,21 @@ class Collect(LockfileCase):
                                              "functions/package.json": self.MEMBER})
         self.assertEqual(open_manifests, [("functions/package.json", 2)])
 
+    def test_unreferenced_dash_requirements_files_are_read(self):
+        pkgs, open_manifests, ranges = self.collect({"dev-requirements.txt": "pytest==7.0.0\nruff>=0.4\n",
+                                                     "ci/test-requirements.txt": "coverage==7.4.0\n"})
+        self.assertEqual(sorted((n, v, f) for _, n, v, f, _ in pkgs), [
+            ("coverage", "7.4.0", "ci/test-requirements.txt"), ("pytest", "7.0.0", "dev-requirements.txt")])
+        self.assertEqual([(r.name, r.floor) for r in ranges], [("ruff", "0.4")])
+        self.assertEqual(open_manifests, [("dev-requirements.txt", 1)])
+
     def test_requirements_folder_and_included_files_are_read(self):
         pkgs, open_manifests, ranges = self.collect({
             "requirements.txt": "-r requirements/production.txt\n-c constraints.txt\n-r ../outside.txt\n",
             "requirements/base.txt": "django==4.2.0\ncelery>=5.3\n",
             "requirements/production.txt": "-r base.txt\ngunicorn==21.2.0\n",
             "constraints.txt": "urllib3==1.26.0\n",
-            "dev-requirements.txt": "pytest==7.0.0\n",
+            "lint.txt": "ruff==0.4.0\n",
         })
         self.assertEqual(sorted((n, v, f) for _, n, v, f, _ in pkgs), [
             ("django", "4.2.0", "requirements/base.txt"), ("gunicorn", "21.2.0", "requirements/production.txt"),
