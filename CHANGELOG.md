@@ -29,6 +29,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ### Fixed
 - The agents and skills check no longer hangs on a hostile file with one very long line. A single giant line (a `curl ... | sh`, a permission entry or an MCP package spec of many kilobytes) was masked in full before being cut to the 70 characters a report shows, and masking is super-linear, so a scan could take minutes. The text is now capped before masking, which keeps the same output for real files.
+- Tool-poisoning in `stingward skill`: a prompt-injection phrase in an MCP server's tool description (`server.tool`, `@mcp.tool()`) wrapped in defensive-looking words such as "detects" was dropped (SKL003 silent). Whoever writes a third-party server chooses the words around the phrase, so the wording no longer clears the finding; it is reported as medium instead. The same phrase in your own project stays silent.
 
 ## [0.1.5] - 2026-10-20
 
