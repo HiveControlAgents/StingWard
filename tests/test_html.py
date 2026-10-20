@@ -722,6 +722,33 @@ class Priority(unittest.TestCase):
                          ["package-lock.json", "config.py:9", ".claude/settings.json:3"])
 
 
+class AreaOrder(unittest.TestCase):
+    """Em "Achados em detalhe" vem primeiro a área do achado mais grave; no empate, a que tem mais itens; depois a ordem fixa."""
+
+    def areas(self, findings, audit=None):
+        root = tree({"a.py": "x = 1\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        page = report_html.render(ctx_for(root, files=["a.py"]), findings, "en", audit=audit)
+        return re.findall(r'<h3 class="area">([^<]+) <span class="area-n">', page)
+
+    def findings(self):
+        return [Finding("SEC001", "critical", "config.py", 1, {"kind_en": "GitHub token"}, fingerprint="sec"),
+                Finding("APP003", "high", "api.js", 2, {}, fingerprint="app"),
+                Finding("AGT003", "high", ".mcp.json", 3, {"server": "fs", "spec": "x"}, fingerprint="agt"),
+                Finding("COD001", "high", "a.py", 4, {"source_en": "request input"}, fingerprint="cod1"),
+                Finding("COD002", "high", "b.py", 5, {"source_en": "request input"}, fingerprint="cod2"),
+                Finding("DEP003", "low", "requirements.txt", None, {"manifest": "requirements.txt", "count": 2}, fingerprint="dep")]
+
+    def test_worst_severity_then_count_then_the_fixed_order(self):
+        self.assertEqual(self.areas(self.findings()), ["Secrets", "Code", "Application", "Agents and MCP", "Dependencies"])
+
+    def test_what_was_fixed_during_the_audit_does_not_lead(self):
+        from stingward import review
+        f = self.findings()
+        audit = review.Audit(Context(root=".", files=[]), f, review.Review({"sec": ("fixed", "")}))
+        self.assertEqual(self.areas(f, audit), ["Code", "Application", "Agents and MCP", "Dependencies", "Secrets"])
+
+
 class Layout(unittest.TestCase):
     """O CSS do relatório: o que só um navegador mostraria, conferido no texto do CSS."""
 
