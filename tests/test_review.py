@@ -295,11 +295,76 @@ class ReviewFile(Case):
     def test_warnings_for_stale_and_unreviewed_entries(self):
         doc = self.template()
         doc["findings"][0]["status"] = "confirmed"
-        doc["findings"].append({"fingerprint": "0123456789abcdef", "status": "fixed"})
+        doc["findings"].append({"fingerprint": "0123456789abcdef", "status": "confirmed"})
+        doc["findings"].append({"fingerprint": "0123456789abcdee", "status": "fixed"})  # corrigido e sumido: esperado
         self.save_review(doc)
         _, _, err = run([self.root, "--offline", "--review", self.path("r.json")])
         self.assertIn("1 item(s) in", err)
-        self.assertIn(f"{len(doc['findings']) - 2} finding(s) still have no status", err)
+        self.assertIn(f"{len(doc['findings']) - 3} finding(s) still have no status", err)
+
+
+# =========================================================================== corrigido durante a auditoria
+
+class FixedAndGone(Case):
+    """Um achado "fixed" some na nova varredura. O relatório o lista como corrigido durante a auditoria, com o bloco
+    "finding" que o arquivo de revisão guardou."""
+
+    def fix_cors(self):
+        path = self.decide({"APP003": ("fixed", "Origin list set to the shop domain.")})
+        write(os.path.join(self.root, "api.js"), 'res.setHeader("Access-Control-Allow-Origin", "https://shop.example");\n')
+        return path
+
+    def test_listed_in_every_format(self):
+        path = self.fix_cors()
+        out = {fmt: run([self.root, "--offline", "--lang", "en", "--format", fmt, "--review", path])
+               for fmt in ("text", "markdown", "html", "json")}
+        for fmt, (_, _, err) in out.items():
+            self.assertNotIn("match no finding", err, fmt)  # o que foi corrigido e sumiu é o esperado: sem aviso
+        text = out["text"][1]
+        self.assertIn("Fixed during the audit, no longer in this scan (1):\n - 🟡 CORS open to any website · api.js:1  [APP003]\n"
+                      "     Origin list set to the shop domain.\n", text)
+        self.assertIn("1 fixed during the audit", text)
+        md = out["markdown"][1]
+        self.assertIn("**Fixed during the audit, no longer in this scan (1)**\n\n- 🟡 CORS open to any website · <sub>api.js:1</sub>"
+                      "<br><sub><b>Fixed</b> · Origin list set to the shop domain.</sub>", md)
+        plan = out["html"][1].split('<section id="plan">', 1)[1].split("</section>", 1)[0]
+        done = plan.split('class="band band-done"', 1)[1]
+        self.assertIn("CORS open to any website", done)
+        self.assertIn('<span class="rv rv-fixed">Fixed</span>', done)
+        self.assertIn("1 fixed during the audit", out["html"][1])
+        doc = json.loads(out["json"][1])
+        self.assertEqual(doc["review"]["counts"]["fixed"], 1)
+        self.assertNotIn("APP003", [f["rule"] for f in doc["findings"]])  # JSON segue com um registro por achado atual
+
+    def test_only_fixed_items_are_listed(self):
+        path = self.decide({"APP003": ("confirmed", "Seen.")})
+        write(os.path.join(self.root, "api.js"), "res.send(1);\n")
+        code, out, err = run([self.root, "--offline", "--lang", "en", "--review", path])
+        self.assertNotIn("Fixed during the audit, no longer in this scan", out)
+        self.assertIn("1 item(s) in", err)  # o aviso de sempre
+
+    def test_the_stored_block_is_untrusted_text(self):
+        doc = self.template()
+        doc["findings"].append({"fingerprint": "0123456789abcdef", "status": "fixed", "comment": f"token {GH}",
+                                "finding": {"rule": "XYZ999", "severity": "urgent", "where": "a.js:1\x1b[2J @octocat #12",
+                                            "title": f"<img src=x onerror=alert(1)> {GH} [x](https://evil.example)"}})
+        doc["findings"].append({"fingerprint": "0123456789abcdee", "status": "fixed", "finding": ["not", "a", "block"]})
+        path = self.save_review(doc)
+        outs = {fmt: run([self.root, "--offline", "--lang", "en", "--format", fmt, "--review", path])[1]
+                for fmt in ("text", "markdown", "html", "json")}
+        for fmt, out in outs.items():
+            self.assertNoSecret(out, fmt)
+            self.assertNotIn("\x1b", out, fmt)
+        for fmt in ("markdown", "html"):
+            self.assertNotIn("<img", outs[fmt], fmt)
+        self.assertIn("Fixed during the audit, no longer in this scan (2):", outs["text"])
+        self.assertIn(" - ⚪ ", outs["text"])  # severidade desconhecida vira info
+        self.assertNotIn("[XYZ999]", outs["text"])  # regra que não existe não aparece
+        self.assertIn(" - ⚪ 0123456789abcdee", outs["text"])  # sem bloco: a fingerprint no lugar do título
+        for bad in ("](https://evil.example)", "@octocat", "#12"):
+            self.assertNotIn(bad, outs["markdown"])
+        self.assertIn("&lt;img src=x", outs["html"])
+        self.assertEqual(json.loads(outs["json"])["review"]["counts"]["fixed"], 2)
 
 
 # =========================================================================== nota e código de saída

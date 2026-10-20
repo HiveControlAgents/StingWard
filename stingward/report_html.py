@@ -629,8 +629,9 @@ def _summary(valid, shown, numbers, lang, t, audit, findings, today, nothing="")
 </section>"""
 
 
-def _plan(shown, numbers, t):
-    if not shown:
+def _plan(shown, numbers, t, gone=()):
+    """gone: o que foi corrigido durante a auditoria e sumiu da varredura (review.Gone), no grupo sem ação prevista."""
+    if not shown and not gone:
         body = f'<p class="calm">{_html.escape(t["plan_empty"])}</p>'
     else:
         rows = []
@@ -643,11 +644,15 @@ def _plan(shown, numbers, t):
                 eff = report.effort(e.rule, e.params)
                 rows.append(f'<tr class="sev-line-{e.severity}"><td class="num">{n}</td><td class="problem"><a href="#f{n}">{_h(e.title)}</a></td>'
                             f'<td class="where">{_where_short(e, t)}</td><td class="effort effort-{eff}">{_html.escape(t["effort"][eff])}</td></tr>')
-        if done:
+        if done or gone:
             rows.append(f'<tr class="band band-done"><th colspan="4" scope="colgroup">{_html.escape(t["band_done"])}</th></tr>')
             for e in done:
                 n = numbers[id(e)]
                 rows.append(f'<tr class="sev-line-{e.severity}"><td class="num">{n}</td><td class="problem"><a href="#f{n}">{_h(e.title)}</a> '
+                            f'{_badge(e.severity, t)}</td><td class="where">{_where_short(e, t)}</td>'
+                            f'<td class="effort">{_status_chip(e.status, t)}</td></tr>')
+            for e in gone:  # sem ficha em "achados em detalhe": não estão mais no código
+                rows.append(f'<tr class="sev-line-{e.severity}"><td class="num"></td><td class="problem">{_h(e.title)} '
                             f'{_badge(e.severity, t)}</td><td class="where">{_where_short(e, t)}</td>'
                             f'<td class="effort">{_status_chip(e.status, t)}</td></tr>')
         body = (f'<p class="legend">{_html.escape(t["effort_legend"])}</p><table class="plan"><thead><tr><th class="num" scope="col">{t["col_n"]}</th>'
@@ -876,7 +881,7 @@ def render(ctx, findings, lang="pt", target=None, checks=None, today=None, audit
         _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc, audit, findings),
         _summary(valid, shown, numbers, lang, t, audit, findings, today,
                  report.nothing_read_text(ctx, lang) if report.nothing_read(ctx, findings) else ""),
-        _plan(shown, numbers, t),
+        _plan(shown, numbers, t, audit.gone if audit is not None else ()),
         _findings(ctx, shown, numbers, t, audit),
         _scope(ctx, lang, t, checks, audit, findings),
     ]

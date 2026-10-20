@@ -6,7 +6,9 @@ O arquivo de revisão é JSON e quem revisa edita à mão. `--review-template AR
       {"fingerprint": "3f9c0a1b2c3d4e5f", "status": "confirmed", "comment": "Conferido no painel do Supabase.",
        "finding": {"rule": "APP004", "severity": "high", "where": "supabase/x.sql:1", "title": "..."}}]}
 
-O bloco "finding" só diz a quem revisa de qual achado se trata: o Stingward lê fingerprint, status e comment.
+O bloco "finding" diz a quem revisa de qual achado se trata: o Stingward lê fingerprint, status e comment. Só de um
+item "fixed" que sumiu da varredura ele lê também o bloco, para listar o problema como corrigido durante a auditoria;
+como o arquivo é editado à mão, esse texto é conferido, escapado e mascarado como um comentário.
 
 A impressão digital não usa o número da linha: é a regra, o arquivo, alguns dados do achado (pacote, variável,
 tabela) e o texto da linha marcada, já mascarado e sem diferença de espaços. Mexer em outras partes do arquivo não
@@ -295,9 +297,29 @@ class Review:
         return self.get(f)[0]
 
     def stale(self, findings):
-        """Itens do arquivo que não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu)."""
+        """Itens do arquivo que não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu) e pedem
+        atenção. Um "fixed" que sumiu é o esperado: vai para o relatório como corrigido (gone_fixed), sem aviso."""
         current = {f.fingerprint for f in findings}
-        return [fp for fp in self.entries if fp not in current]
+        return [fp for fp, (status, _) in self.entries.items() if fp not in current and status != "fixed"]
+
+    def gone_fixed(self, findings):
+        """Itens "fixed" que não batem com nenhum achado: o problema foi corrigido e sumiu da nova varredura. Vêm com o
+        bloco "finding" que o arquivo guardou, escrito à mão: é texto não confiável, conferido aqui e mascarado no Audit.
+        [(fingerprint, regra ou "", severidade, onde, título, comentário)]"""
+        from .model import SEVERITIES
+        from .rules import RULES
+        current = {f.fingerprint for f in findings}
+        out = []
+        for item in self.raw:
+            fp = str(item.get("fingerprint") or "").strip().lower()
+            if fp in current or self.entries.get(fp, ("", ""))[0] != "fixed":
+                continue
+            block = item.get("finding") if isinstance(item.get("finding"), dict) else {}
+            rule = one_line(block.get("rule")).upper()
+            severity = one_line(block.get("severity")).lower()
+            out.append((fp, rule if rule in RULES else "", severity if severity in SEVERITIES else "info",
+                        one_line(block.get("where")), one_line(block.get("title")) or fp, self.entries[fp][1]))
+        return out
 
 
 def _status(value, where):
@@ -361,13 +383,14 @@ def load_notes(path):
 HELP = {
     "pt": ("status: confirmed (confirmado), false_positive (alarme falso), accepted_risk (risco aceito) ou fixed "
            "(corrigido durante a auditoria); vazio = ainda não revisado. comment: texto livre que vai para o relatório, "
-           "com **negrito** e `código`. Não cole segredos: eles saem mascarados. O bloco finding é só para você se "
-           "localizar; o Stingward lê fingerprint, status e comment. \"stale\": true marca um item que não bate mais "
+           "com **negrito** e `código`. Não cole segredos: eles saem mascarados. O bloco finding ajuda você a se "
+           "localizar; o Stingward lê fingerprint, status e comment (e o bloco finding de um item fixed que sumiu, para "
+           "listá-lo como corrigido). \"stale\": true marca um item que não bate mais "
            "com nenhum achado: ele fica no fim, com o seu comentário, e a marca sai se o achado voltar."),
     "en": ("status: confirmed, false_positive, accepted_risk or fixed (fixed during the audit); empty = not reviewed "
            "yet. comment: free text that goes into the report, with **bold** and `code`. Do not paste secrets: they "
-           "come out masked. The finding block only helps you find your way; Stingward reads fingerprint, status and "
-           "comment. \"stale\": true marks an item that no longer matches any finding: it stays at the end, with your "
+           "come out masked. The finding block helps you find your way; Stingward reads fingerprint, status and "
+           "comment (and the finding block of a fixed item that is gone, to list it as fixed). \"stale\": true marks an item that no longer matches any finding: it stays at the end, with your "
            "comment, and the mark goes away if the finding comes back."),
 }
 
@@ -394,16 +417,30 @@ def template(findings, lang, old=None, target=""):
 
 
 def counts(findings, review):
-    """Achados por status, para a capa, o resumo e o escopo."""
+    """Achados por status, para a capa, o resumo e o escopo. O que foi corrigido e sumiu da varredura conta como fixed."""
     c = dict.fromkeys(("confirmed", "false_positive", "accepted_risk", "fixed", ""), 0)
     for f in findings:
         c[review.status(f)] += 1
+    c["fixed"] += len(review.gone_fixed(findings))
     return c
 
 
 def one_line(value):
     """Nome do cliente ou de quem revisou: uma linha só, até MAX_NAME caracteres."""
     return " ".join(str(value or "").split())[:MAX_NAME]
+
+
+class Gone:
+    """Um problema corrigido durante a auditoria que não aparece mais na varredura, com os campos que o relatório usa
+    de um item (Entry): regra, severidade, título, lugares, status e comentário."""
+    status = "fixed"
+
+    def __init__(self, rule, severity, where, title, comment):
+        self.rule, self.severity, self.where, self.title, self.comment = rule, severity, where, title, comment
+
+    @property
+    def places(self):
+        return [self.where] if self.where else []
 
 
 class Audit:
@@ -418,6 +455,9 @@ class Audit:
         self.reviewer = self.mask(review.reviewer) if review is not None and review.reviewer else ""
         self.notes = parse(notes, self.mask) if notes and str(notes).strip() else []
         self._comments = {}
+        # O bloco "finding" de um item do arquivo vai para o cliente como o comentário: mascarado do mesmo jeito.
+        self.gone = [Gone(rule, sev, self.mask(where), self.mask(title), comment)
+                     for _, rule, sev, where, title, comment in (review.gone_fixed(findings) if review is not None else [])]
 
     def comment(self, text):
         """O comentário de um item em blocos, já mascarado."""

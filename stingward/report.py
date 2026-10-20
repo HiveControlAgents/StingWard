@@ -50,6 +50,7 @@ T = {
                      "fixed": ("{n} corrigido durante a auditoria", "{n} corrigidos durante a auditoria"),
                      "": ("{n} ainda não revisado", "{n} ainda não revisados")},
         "discarded": "Descartados como alarme falso ({n})",
+        "gone": "Corrigidos durante a auditoria, já fora desta varredura ({n})",
         "grade_rule": "A nota não conta alarmes falsos nem o que foi corrigido durante a auditoria.",
         "sarif_help": "A correção depende do caso: cada alerta diz o que mudar. Mais sobre esta regra: {url}",
         "nothing_read": "Nenhum arquivo foi lido (0 arquivos), então não há o que avaliar e não há nota. Confira o caminho: a pasta "
@@ -81,6 +82,7 @@ T = {
                      "fixed": ("{n} fixed during the audit", "{n} fixed during the audit"),
                      "": ("{n} not reviewed yet", "{n} not reviewed yet")},
         "discarded": "Discarded as false positives ({n})",
+        "gone": "Fixed during the audit, no longer in this scan ({n})",
         "grade_rule": "The grade leaves out false positives and what was fixed during the audit.",
         "sarif_help": "The fix depends on the case: each alert says what to change. More about this rule: {url}",
         "nothing_read": "No file was read (0 files), so there is nothing to grade. Check the path: the folder is empty, or "
@@ -502,6 +504,16 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
         out.append("")
     if hidden:
         out += [t["more"].format(n=hidden), ""]
+    gone = audit.gone if audit else []
+    if gone:  # do arquivo de revisão: o problema foi corrigido e sumiu da varredura
+        if not shown:
+            out.append("")  # depois de "Nada encontrado."
+        out.append(t["gone"].format(n=len(gone)) + ":")
+        for e in gone:
+            out.append(f" - {ICON[e.severity]} {_clean(e.title)}" + (f" · {_clean(e.where)}" if e.where else "")
+                       + (f"  [{e.rule}]" if e.rule else ""))
+            out += _comment_lines(audit, e, lang, label=False)
+        out.append("")
     if discarded:
         out.append(t["discarded"].format(n=sum(len(e.findings) for e in discarded)) + ":")
         for e in discarded:
@@ -595,6 +607,12 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
         if len(shown) > 50:  # os que sobram podem ser de qualquer severidade: a linha diz quais são
             rest = shown[50:]
             out.append(f"| | {t['more_md'].format(n=len(rest), counts=counts_line(rest, lang))} | |")
+        out.append("")
+    gone = audit.gone if audit else []
+    if gone:
+        out += [f"**{_esc(t['gone'].format(n=len(gone)))}**", ""]
+        out += [f"- {ICON[e.severity]} {_esc(e.title)}" + (f" · <sub>{_esc(e.where)}</sub>" if e.where else "")
+                + f"<br><sub>{_md_comment(audit, e, lang)}</sub>" for e in gone[:50]]
         out.append("")
     if discarded:
         out += [f"**{_esc(t['discarded'].format(n=sum(len(e.findings) for e in discarded)))}**", ""]
