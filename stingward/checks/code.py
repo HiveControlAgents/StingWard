@@ -4074,10 +4074,31 @@ def _js_target(rel, spec, files):
 
 def _skip(rel, mode="project"):
     """Arquivo que a análise de código não lê. Numa skill, só a declaração de tipos (.d.ts, que não roda): o .min.js,
-    o bundle e a pasta vendor/ são o que vai rodar na máquina de quem instala, e uma linha longa esconderia o código."""
+    o bundle e a pasta vendor/ são o que vai rodar na máquina de quem instala, e uma linha longa esconderia o código.
+    Num projeto, também as bibliotecas de terceiros copiadas para pastas como vendor/, third_party/ e static/js/lib/."""
     if mode == "skill":
         return rel.endswith(".d.ts")
-    return rel.endswith((".d.ts", ".min.js", ".bundle.js")) or "/vendor/" in "/" + rel or "/static/vendor/" in rel
+    return rel.endswith((".d.ts", ".min.js", ".bundle.js")) or any(d in "/" + rel for d in _VENDOR_DIRS)
+
+
+# Pastas onde os projetos guardam bibliotecas de terceiros copiadas (não é código do projeto).
+_VENDOR_DIRS = ("/vendor/", "/third_party/", "/static/js/lib/")
+# Cabeçalho de biblioteca no começo do arquivo: /*! jQuery v3.2.1, /*!\n * Materialize v0.100.1. Só com /*! ou //!
+# (que o minificador preserva) e com nome e versão: o /*! Copyright (c) ... do próprio projeto não é biblioteca.
+_LIB_BANNER = re.compile(r"(?:/\*!|//!)[\s*!/]*(?:@preserve\s+)?[A-Za-z][\w.$@/-]{0,60}(?:[ \t]+[A-Za-z][\w.$@/-]{0,60}){0,3}"
+                         r"[ \t]+v?\d+\.\d+")
+
+
+def _library(text):
+    """Arquivo de uma biblioteca de terceiros: começa com /*! nome vX.Y ou com um comentário que traz @license
+    (/** @license React v16.13.1, /*! @license DOMPurify 3.0.6)."""
+    head = text[:2000].lstrip("\ufeff \t\r\n")
+    if _LIB_BANNER.match(head):
+        return True
+    if not head.startswith("/*"):
+        return False
+    end = head.find("*/")
+    return "@license" in (head[:end] if end > 0 else head)
 
 
 def analyze(ctx):
@@ -4100,7 +4121,7 @@ def analyze(ctx):
                 xcalls += [(rel, c) for c in calls]
         for rel in js:
             text = ctx.read(rel)
-            if text and len(text) <= _JS_MAX:
+            if text and len(text) <= _JS_MAX and (skill or not _library(text)):
                 calls = []
                 found[rel] = scan_js(rel, text, project, xcalls=calls, skill=skill)
                 xcalls += [(rel, c) for c in calls]
