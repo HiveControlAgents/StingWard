@@ -631,6 +631,35 @@ class Requirements(LockfileCase):
                 self.assertEqual(self.pkgs(rel, "pytest==7.4.0\n"), [("PyPI", "pytest", "7.4.0")])
         self.assertEqual(self.pkgs("requirements.in", "pytest==7.4.0\n"), [])
 
+    def test_files_in_a_requirements_folder_use_requirements_parser(self):
+        for rel in ("requirements/base.txt", "app/requirements/production.txt"):
+            with self.subTest(rel=rel):
+                self.assertTrue(lockfiles.is_dependency_file(rel))
+                self.assertEqual(self.pkgs(rel, "-r base.txt\ndjango==4.2.0\n"), [("PyPI", "django", "4.2.0")])
+        for rel in ("requirements/README.md", "docs/notes.txt", "requirements.txt/x.txt"):
+            with self.subTest(rel=rel):
+                self.assertFalse(lockfiles.is_dependency_file(rel))
+
+    def test_includes_with_r_and_c_resolve_against_the_file_folder(self):
+        self.write("app/requirements.txt", D('''\
+            -r requirements/prod.txt
+            --requirement=dev-requirements.txt
+            -c ../constraints.txt  # shared pins
+            --constraint  pins.txt
+            -rcompact.txt
+            -r https://example.com/remote.txt
+            -e .
+            django==4.2.0
+            '''))
+        self.assertEqual(lockfiles.requirement_includes(self.root, "app/requirements.txt"), [
+            "app/requirements/prod.txt", "app/dev-requirements.txt", "constraints.txt", "app/pins.txt", "app/compact.txt"])
+
+    def test_include_scan_is_linear(self):
+        self.write("requirements.txt", "-r" + " " * 50000 + "\n")
+        t = time.perf_counter()
+        self.assertEqual(lockfiles.requirement_includes(self.root, "requirements.txt"), [])
+        self.assertLess(time.perf_counter() - t, 0.5)
+
     def test_wildcard_pin_is_not_an_exact_version(self):
         self.assertEqual(self.pkgs("requirements.txt", "django==3.2.*\n"), [])
 
@@ -1633,6 +1662,20 @@ class Collect(LockfileCase):
         _, open_manifests, _ = self.collect({"package.json": {"name": "root"}, "package-lock.json": self.LOCK,
                                              "functions/package.json": self.MEMBER})
         self.assertEqual(open_manifests, [("functions/package.json", 2)])
+
+    def test_requirements_folder_and_included_files_are_read(self):
+        pkgs, open_manifests, ranges = self.collect({
+            "requirements.txt": "-r requirements/production.txt\n-c constraints.txt\n-r ../outside.txt\n",
+            "requirements/base.txt": "django==4.2.0\ncelery>=5.3\n",
+            "requirements/production.txt": "-r base.txt\ngunicorn==21.2.0\n",
+            "constraints.txt": "urllib3==1.26.0\n",
+            "dev-requirements.txt": "pytest==7.0.0\n",
+        })
+        self.assertEqual(sorted((n, v, f) for _, n, v, f, _ in pkgs), [
+            ("django", "4.2.0", "requirements/base.txt"), ("gunicorn", "21.2.0", "requirements/production.txt"),
+            ("urllib3", "1.26.0", "constraints.txt")])
+        self.assertEqual([(r.name, r.floor, r.file) for r in ranges], [("celery", "5.3", "requirements/base.txt")])
+        self.assertEqual(open_manifests, [("requirements/base.txt", 1)])
 
 
 if __name__ == "__main__":

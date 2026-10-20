@@ -42,6 +42,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A Slack or Discord webhook is no longer missed when something else on its line looks like an example, such as `{ text: "your build finished" }` or `process.env.SLACK_WEBHOOK || "https://hooks.slack.com/..."`: only the webhook's own token is checked for placeholders.
 - DEP003 no longer reports the `package.json` of each workspace member in a monorepo whose lockfile sits at the root (npm, Yarn and Bun `workspaces`, `pnpm-workspace.yaml`, including `**` and `!` globs); a folder that is not a member still gets it.
 - Packages installed from a git repository or a local folder or tarball are no longer looked up in the public registry's advisories: `package-lock.json` v2/v3 (`resolved` git or `file:`), `yarn.lock` (git, GitHub, `owner/repo` and URL entries), `poetry.lock` (`[package.source]` git, directory or file), `uv.lock` (git), `pdm.lock` (git or path) and `Cargo.lock` (`git+`). npm v1 lockfiles and `Gemfile.lock` already did this. A private package that shares its name with a public one no longer inherits that package's advisories.
+- The `.txt` files of a `requirements/` folder (`requirements/base.txt`, `requirements/production.txt`) and the files a requirements file includes with `-r` or `-c` (`constraints.txt`, `dev-requirements.txt`) are now read for DEP001, DEP003 and DEP004. Before, a project with that layout had none of its pins audited.
 
 ## [0.1.5] - 2026-10-20
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import bisect
 import json
+import posixpath
 import re
 from collections import namedtuple
 from pathlib import Path
@@ -25,17 +26,39 @@ _YARN_REMOTE = ("git", "github:", "gitlab:", "bitbucket:", "gist:", "http:", "ht
 
 def is_dependency_file(rel: str) -> bool:
     name = rel.rsplit("/", 1)[-1]
-    return name in LOCKFILES or name == "package.json" or re.fullmatch(r"requirements[\w.-]*\.txt", name) is not None
+    return name in LOCKFILES or name == "package.json" or is_requirements(rel)
 
 
-def parse(root: Path, rel: str):
+def is_requirements(rel: str) -> bool:
+    """requirements*.txt, ou um .txt numa pasta requirements/ (base.txt, production.txt...)."""
+    parts = rel.split("/")
+    return re.fullmatch(r"requirements[\w.-]*\.txt", parts[-1]) is not None or \
+        (len(parts) > 1 and parts[-2] == "requirements" and parts[-1].endswith(".txt"))
+
+
+# -r/--requirement e -c/--constraint: o espaço depois de \s* não pode ser pego de novo pelo que vem depois
+_REQ_INCLUDE = re.compile(r"(?:-r|-c|--requirement|--constraint)\s*(?:=\s*)?(\S+)")
+
+
+def requirement_includes(root: Path, rel: str):
+    """Arquivos que um requirements inclui com -r ou -c, relativos à raiz (o caminho é relativo ao arquivo).
+    Quem chama confere se o arquivo existe no projeto; URL fica de fora."""
+    base = posixpath.dirname(rel)
+    out = []
+    for line in _lines(_read(root, rel) or ""):
+        m = _REQ_INCLUDE.match(line.split("#", 1)[0].strip())
+        if m and "://" not in m.group(1):
+            out.append(posixpath.normpath(posixpath.join(base, m.group(1))))
+    return out
+
+
+def parse(root: Path, rel: str, requirements=False):
+    """requirements=True lê o arquivo como requirements qualquer que seja o nome (incluído por -r ou -c)."""
     name = rel.rsplit("/", 1)[-1]
     text = _read(root, rel)
     if text is None:
         return []
-    fn = _PARSERS.get(name)
-    if fn is None and re.fullmatch(r"requirements[\w.-]*\.txt", name):
-        fn = _requirements
+    fn = _requirements if requirements or is_requirements(rel) else _PARSERS.get(name)
     if fn is None:
         return []
     try:
@@ -288,7 +311,7 @@ _PARSERS = {
 }
 
 
-def open_ranges(root: Path, rel: str):
+def open_ranges(root: Path, rel: str, requirements=False):
     """Manifesto sem lockfile ao lado: quantas dependências têm versão aberta."""
     name = rel.rsplit("/", 1)[-1]
     text = _read(root, rel)
@@ -305,7 +328,7 @@ def open_ranges(root: Path, rel: str):
                    for spec in d[sec].values()
                    if isinstance(spec, str) and not _EXACT.fullmatch(spec)
                    and not spec.startswith(("file:", "link:", "workspace:")))
-    if name.startswith("requirements"):
+    if requirements or is_requirements(rel):
         n = 0
         for line in _lines(text):
             line = line.split("#", 1)[0].strip()
@@ -328,7 +351,7 @@ class Range(namedtuple("Range", "eco name spec req floor upper inclusive prefix 
         return self.inclusive and self.upper is not None and _vkey(self.upper) == _vkey(self.floor)
 
 
-def ranges(root: Path, rel: str):
+def ranges(root: Path, rel: str, requirements=False):
     """Faixas com piso de requirements*.txt, package.json ou pyproject.toml. Quem chama decide se há lockfile."""
     name = rel.rsplit("/", 1)[-1]
     text = _read(root, rel)
@@ -339,7 +362,7 @@ def ranges(root: Path, rel: str):
             return list(_npm_ranges(text, rel))
         if name == "pyproject.toml":
             items = pyproject_requirements(text)
-        elif re.fullmatch(r"requirements[\w.-]*\.txt", name):
+        elif requirements or is_requirements(rel):
             items = _requirement_lines(text)
         else:
             return []
