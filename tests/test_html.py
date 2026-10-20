@@ -586,5 +586,23 @@ class LowestVersion(unittest.TestCase):
         self.assertIn(">CVE-2023-4863<", out)
         self.assertIn("Pillow 10", report.impact(report.merge([f], "en")[0], "en"))
 
+
+class Labels(unittest.TestCase):
+    def test_every_check_and_area_has_a_name_in_both_languages(self):
+        from stingward import scan
+        self.assertEqual(set(report_html.CHECK_ORDER), set(scan.CHECKS))
+        for lang in ("pt", "en"):
+            for check in scan.CHECKS:
+                self.assertIn(check, report_html.H[lang]["check_name"])
+            for rule in RULES.values():
+                self.assertIn(rule["group"], report_html.H[lang]["group"])
+                self.assertIn(rule["group"], report_html.GROUPS)
+
+    def test_only_code_names_the_check(self):
+        root = tree({"a.py": "x = 1\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        out = report_html.render(ctx_for(root, files=["a.py"], packages=0), [], "pt", checks=["code"])
+        self.assertIn("Só parte das verificações rodou: falhas no código", out)
+
 if __name__ == "__main__":
     unittest.main()
