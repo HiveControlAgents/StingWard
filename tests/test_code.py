@@ -148,6 +148,28 @@ class CodeRules(Checks):
                    [("COD001", "app.py", 8, "high"), ("COD001", "app.py", 10, "high"), ("COD001", "main.py", 11, "high"),
                     ("APP014", "server.py", 7, "high"), ("COD001", "server.js", 6, "high")])
 
+    def test_cod001_js_placeholder_lists_stay_silent(self):
+        """ids.map(() => '?').join(','): a lista de placeholders herda a origem de ids, mas o texto dela é fixo. O
+        JavaScript conhece os mesmos nomes de placeholder que o Python (marks, ph, qs) e olha o valor declarado."""
+        src = EXPRESS + ("const db = require('./db')\n"
+                         "app.post('/s', async (req, res) => {\n"
+                         "  const ids = req.body.ids\n"
+                         "  const marks = ids.map(() => '?').join(',')\n"
+                         "  await db.query(`SELECT * FROM t WHERE id IN (${marks})`, ids)\n"
+                         "  const ph = ids.map((_, i) => `$${i + 1}`).join(', ')\n"
+                         "  await db.query(`SELECT * FROM t WHERE id IN (${ph})`, ids)\n"
+                         "  const inList = ids.map(() => '?').join(',')\n"
+                         "  await db.query('SELECT * FROM t WHERE id IN (' + inList + ')', ids)\n"
+                         "  const names = req.body.names.join(\"','\")\n"
+                         "  await db.query(`SELECT * FROM t WHERE name IN ('${names}')`)\n"
+                         "  await db.query(`SELECT * FROM t WHERE name = '${req.body.bookmarks}'`)\n"
+                         "  const quoted = req.body.names.map((n) => `'${n}'`).join(',')\n"
+                         "  await db.query(`SELECT * FROM t WHERE name IN (${quoted})`)\n"
+                         "  await db.query(`SELECT * FROM t WHERE name IN (${req.body.names.map((n) => `'${n}'`).join(',')})`)\n"
+                         "  res.json({})\n})\n")
+        self.check({"server.js": src}, [("COD001", "server.js", 13, "high"), ("COD001", "server.js", 14, "high"),
+                                        ("COD001", "server.js", 16, "high"), ("COD001", "server.js", 17, "high")])
+
     # ------------------------------------------------------------------ COD002 comando
 
     def test_cod002_python_shell_with_request_input(self):

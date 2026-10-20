@@ -267,7 +267,7 @@ _VALUE_POS = re.compile(r"""(?:'|%|(?:[=<>]|\blike|\bilike|\bin\s*\(|\bvalues\s*
 _SQL_DDL = re.compile(r"\s*\(?\s*(?:pragma|create|drop|alter|truncate)\b", re.I)
 # Nome de variável que costuma guardar placeholders (",".join("?" * n)) ou um pedaço de SQL escrito no código (tabela,
 # coluna, ORDER BY, WHERE montado). O pedaço só conta fora da posição de dado: '{query}' é o texto da busca.
-_PY_PLACEHOLDER = re.compile(r"(?i)placeholder|marks|^ph$|^qs$|params?_?(?:str|sql|list)|bind")
+_PLACEHOLDER = re.compile(r"(?i)placeholder|marks|^ph$|^qs$|params?_?(?:str|sql|list)|bind")
 _PY_SQL_PART = re.compile(r"(?i)^(?:table|tables|table_name|tablename|schema|columns?|cols|fields|col|column_name|order|"
                           r"direction|sort_dir|where|where_clause|conditions?|clause|set_clause|joins?|filters?_sql|sql|query|"
                           r"select|limit|offset|n|i|idx|count)$")
@@ -853,7 +853,7 @@ class _Py:
         if isinstance(node, ast.Constant):
             return True
         if isinstance(node, ast.Name):
-            return node.id.isupper() or bool(_PY_PLACEHOLDER.search(node.id)) or \
+            return node.id.isupper() or bool(_PLACEHOLDER.search(node.id)) or \
                 not value and bool(_PY_SQL_PART.search(node.id))
         if isinstance(node, ast.Attribute):
             return not value and bool(re.search(r"(?i)table|schema|column|_meta|model|index|collection|^name$", node.attr)) \
@@ -2087,6 +2087,8 @@ _JS_METHOD = re.compile(r"\n[ \t]*(?:(?:public|private|protected|static|async|ov
                         r"([A-Za-z_$][\w$]*)[ \t]*(?:<[^>()\n]{0,200}>)?[ \t]*(\()")
 _WORDCH = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$")
 _IDENT = re.compile(r"[A-Za-z_$][\w$]*")
+# Texto que é só um placeholder: '?', '%s', '$1', `$${i + 1}`, `:id${i}`, `@p${i}`. `'${n}'` põe o valor entre aspas.
+_JS_PH_LIT = re.compile(r"""(['"`])(?:\?|%s|\$\d*|[$:@]\w*\$\{[^{}`'"]*\}|[:@]\w+)\1""")
 _BRACKETS = re.compile(r"[()\[\]{}]")
 _ARG_STOP = re.compile(r"[()\[\]{},]")
 _EXPR_STOP = re.compile(r"[()\[\]{},;\n]")
@@ -2577,10 +2579,16 @@ class _Js:
             return True
         if re.fullmatch(r"(?:window\.)?location\.(?:origin|host|hostname|protocol)|(?:process|import\.meta)\.env\.\w+", s):
             return True
-        if re.search(r"(?i)placeholder", s) or not value and _JS_SQL_PART.search(s):
+        if re.search(r"(?i)placeholder", s) or _IDENT.fullmatch(s) and _PLACEHOLDER.search(s) or \
+                not value and _JS_SQL_PART.search(s):
             return True
-        if re.search(r"\.join\s*\(", s) and re.search(r"[?$]|%s|:\w", s):
+        if re.search(r"\.join\s*\(", s) and _JS_PH_LIT.search(s):
             return True
+        if s in self.vals and s not in self.strs:
+            # const lista = ids.map(() => '?').join(','): herda a origem de ids, mas o texto é só placeholder.
+            v = self.code[slice(*self.vals[s])]
+            if re.search(r"\.join\s*\(", v) and _JS_PH_LIT.search(v):
+                return True
         return bool(_JS_KILL.match(s)) or s.endswith(".length")
 
     # ------------------------------------------------------------------ contexto do arquivo

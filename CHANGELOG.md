@@ -36,6 +36,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - The code check no longer takes seconds per JavaScript file full of blank lines (looking for `'use server'`) or of `export const GET:` with no `=` (looking for a route handler): each line start read the rest of the file.
 - The code check no longer takes seconds on JavaScript with thousands of `) =>` whose `(` is missing: each arrow walked back up to 2000 characters to find its parameters.
 - The code check no longer takes seconds on JavaScript expressions that hold a very long name next to a call: the search for calls tried to start at every letter of the name.
+- COD001 in JavaScript no longer reports a list of placeholders built from request data, such as `const marks = ids.map(() => '?').join(',')`, as SQL injection; it now knows the same placeholder names as Python (`marks`, `ph`, `qs`) and also reads the declared value. A list that puts each value between quotes (`` names.map((n) => `'${n}'`).join(',') ``) is now reported, also when it is written inside the query, and `req.body.bookmarks` is no longer taken for a placeholder list because its name ends in `marks`.
 
 ## [0.1.5] - 2026-10-20
 
