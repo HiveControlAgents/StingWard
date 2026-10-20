@@ -1,11 +1,12 @@
 {
   "name": "stingward",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Security check for AI-built projects, Claude Code skills and MCP servers: CVEs (OSV, NVD, CISA KEV, EPSS), leaked secrets, Supabase/Firebase/CORS mistakes and risky agent configs.",
   "bin": {"stingward": "bin/stingward.js"},
   "files": [
     "bin",
-    "stingward"
+    "stingward",
+    "NOTICE"
   ],
   "engines": {
     "node": ">=16"
@@ -32,5 +33,5 @@
     "url": "git+https://github.com/HiveControlAgents/StingWard.git"
   },
   "author": "Isaque Moutta",
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

@@ -2,6 +2,14 @@
 
 All notable changes to Stingward. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.5] - 2026-10-20
+
+### Changed
+- Stingward is now under the Apache 2.0 license, which adds an explicit patent grant and states that the license does not cover the Stingward name. Version 0.1.4 and earlier stay under MIT.
+
+### Added
+- A website at https://hivecontrolagents.github.io/StingWard/, in Portuguese and English, built from real Stingward reports and published from this repository.
+
 ## [0.1.4] - 2026-10-20
 
 ### Changed
@@ -42,6 +50,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 First public release: CLI (`pipx`, `uvx`, `npx`), Claude Code plugin and skill, and GitHub Action. Checks dependencies (OSV.dev, CISA KEV, EPSS, NVD), secrets, AI-built app mistakes, agent and MCP setups, and skills, with reports in text, Markdown, JSON and SARIF in English and Portuguese.
 
+[0.1.5]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.1...v0.1.2

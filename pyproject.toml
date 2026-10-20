@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stingward"
-version = "0.1.4"
+version = "0.1.5"
 description = "Security check for AI-built projects, Claude Code skills and MCP servers"
 readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.9"
 authors = [{name = "Isaque Moutta"}]
 keywords = ["security", "vulnerability", "cve", "osv", "sca", "secrets", "mcp", "claude-code", "skills", "prompt-injection", "supabase", "vibe-coding"]

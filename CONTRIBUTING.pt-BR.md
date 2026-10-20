@@ -54,7 +54,7 @@ Para montar o site: `python site/build.py _site` e abra o `_site/index.html`. Co
 
 ## Pull requests
 
-Mantenha o PR focado, inclua testes e confira se o CI passou nos três sistemas. Descreva o antes e o depois em palavras simples. Ao contribuir, você concorda que seu trabalho sai sob a [licença MIT](LICENSE).
+Mantenha o PR focado, inclua testes e confira se o CI passou nos três sistemas. Descreva o antes e o depois em palavras simples. Ao contribuir, você concorda que seu trabalho sai sob a [licença Apache 2.0](LICENSE).
 
 ## Versões (mantenedores)
 

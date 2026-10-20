@@ -84,7 +84,7 @@
     ],
 
     "price_h2": "Aberto e gratuito",
-    "price_p": "A linha de comando, o plugin do Claude Code e a GitHub Action são software livre, com licença MIT. Sem cadastro e sem telemetria.",
+    "price_p": "A linha de comando, o plugin do Claude Code e a GitHub Action são software livre, com licença Apache 2.0. Sem cadastro e sem telemetria.",
     "currency": "R$",
     "price_period": "sem cadastro",
     "price_lines": [
@@ -116,14 +116,14 @@
     "cta_note": "Funciona com uma pasta no seu disco, com dono/repo ou com a URL de uma subpasta no GitHub.",
 
     "footer_cols": [
-      ["Projeto", [["GitHub", "{repo}"], ["Lançamentos", "{repo}/releases"], ["Changelog", "{repo}/blob/main/CHANGELOG.md"], ["Licença MIT", "{repo}/blob/main/LICENSE"]]],
+      ["Projeto", [["GitHub", "{repo}"], ["Lançamentos", "{repo}/releases"], ["Changelog", "{repo}/blob/main/CHANGELOG.md"], ["Licença Apache 2.0", "{repo}/blob/main/LICENSE"]]],
       ["Instalar", [["PyPI", "https://pypi.org/project/stingward/"], ["npm", "https://www.npmjs.com/package/stingward"], ["GitHub Action", "{repo}/blob/main/README.pt-BR.md#github-action"], ["Plugin do Claude Code", "{repo}/blob/main/README.pt-BR.md#começo-rápido"]]],
       ["Documentação", [["As {rules} regras", "{repo}/blob/main/docs/rules.pt-BR.md"], ["Segurança", "{repo}/blob/main/SECURITY.md"], ["Contribuir", "{repo}/blob/main/CONTRIBUTING.pt-BR.md"], ["Relatar alarme falso", "{repo}/issues/new?template=false-positive.yml"]]]
     ],
     "footer_contact_1": "Achou uma falha no próprio Stingward?",
     "footer_contact_link": "Relate em particular",
     "footer_contact_2": "Escrito em Python puro, sem dependências.",
-    "footer_copy": "© 2026 Isaque Moutta. Licença MIT.",
+    "footer_copy": "© 2026 Isaque Moutta. Licença Apache 2.0.",
     "footer_top": "Voltar ao topo",
     "logo_alt": "Escudo do Stingward"
   },
@@ -213,7 +213,7 @@
     ],
 
     "price_h2": "Open and free",
-    "price_p": "The command line, the Claude Code plugin and the GitHub Action are open source under the MIT license. No sign-up and no telemetry.",
+    "price_p": "The command line, the Claude Code plugin and the GitHub Action are open source under the Apache 2.0 license. No sign-up and no telemetry.",
     "currency": "$",
     "price_period": "no sign-up",
     "price_lines": [
@@ -245,14 +245,14 @@
     "cta_note": "It works with a folder on your disk, with owner/repo or with the URL of a subfolder on GitHub.",
 
     "footer_cols": [
-      ["Project", [["GitHub", "{repo}"], ["Releases", "{repo}/releases"], ["Changelog", "{repo}/blob/main/CHANGELOG.md"], ["MIT license", "{repo}/blob/main/LICENSE"]]],
+      ["Project", [["GitHub", "{repo}"], ["Releases", "{repo}/releases"], ["Changelog", "{repo}/blob/main/CHANGELOG.md"], ["Apache 2.0 license", "{repo}/blob/main/LICENSE"]]],
       ["Install", [["PyPI", "https://pypi.org/project/stingward/"], ["npm", "https://www.npmjs.com/package/stingward"], ["GitHub Action", "{repo}#github-action"], ["Claude Code plugin", "{repo}#quick-start"]]],
       ["Docs", [["All {rules} rules", "{repo}/blob/main/docs/rules.md"], ["Security", "{repo}/blob/main/SECURITY.md"], ["Contributing", "{repo}/blob/main/CONTRIBUTING.md"], ["Report a false positive", "{repo}/issues/new?template=false-positive.yml"]]]
     ],
     "footer_contact_1": "Found a flaw in Stingward itself?",
     "footer_contact_link": "Report it privately",
     "footer_contact_2": "Written in pure Python, with no dependencies.",
-    "footer_copy": "© 2026 Isaque Moutta. MIT license.",
+    "footer_copy": "© 2026 Isaque Moutta. Apache 2.0 license.",
     "footer_top": "Back to top",
     "logo_alt": "Stingward shield"
   }

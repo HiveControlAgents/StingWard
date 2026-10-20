@@ -1,6 +1,7 @@
 npm/stingward/
 npm/README.md
 npm/LICENSE
+npm/NOTICE
 dist/
 build/
 *.egg-info/
