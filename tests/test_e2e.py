@@ -407,6 +407,7 @@ class ActionPermissions(unittest.TestCase):
             with self.subTest(doc=doc):
                 self.assertIn("`security-events: write`", row)
                 self.assertIn("`actions: read`", row)
+        self.assertRegex(_read("examples", "stingward.yml"), r"\n  # actions: read +# .*private")
 
 
 # --------------------------------------------------------------------------- o site
