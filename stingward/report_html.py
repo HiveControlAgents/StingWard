@@ -853,6 +853,7 @@ def render(ctx, findings, lang="pt", target=None, checks=None, today=None, audit
     valid = report.counted(findings, rv)
     shown, discarded = report.split(report.merge(findings, lang, rv))
     numbers = {id(e): i for i, e in enumerate(shown + discarded, 1)}
+    target = report.shown_target(target) if target else target  # sem o token de uma URL https://token@...
     name = _name(ctx, target, t)
     commit = gitsafe.head(ctx.root) if ctx.mode != "agents" else None
     toc = [("summary", 1, t["s_summary"]), ("plan", 2, t["s_plan"]), ("findings", 3, t["s_findings"]), ("scope", 4, t["s_scope"])]
