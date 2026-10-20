@@ -204,5 +204,25 @@ class TokenFormats(Case):
             ("SEC001", "src/env.sh", 1, "high"), ("SEC001", "src/fb.py", 1, "high"), ("SEC001", "src/graph.js", 1, "high")])
 
 
+    def test_random_tokens_that_contain_seu_or_sua_are_found(self):
+        # "seu" and "sua" (Portuguese "your") were placeholder words anywhere in the value: about 1 in 100 real
+        # OpenAI project keys has one of them somewhere in its random part, and those keys were silently skipped.
+        cases = [("GitHub token", "ghp_" + R36[:10] + "sua" + R36[13:]),
+                 ("OpenAI API key", "sk-" + "proj-" + R36 + "Seu" + R36),
+                 ("Anthropic API key", "sk-ant-" + "api03-" + R36 + "xSUAx" + R36 + "AA")]
+        for kind, value in cases:
+            with self.subTest(kind=kind):
+                f = scan_files({"src/keys.py": f'KEY = "{value}"\n'})
+                self.assertEqual([(x.rule, x.params["kind_en"], x.severity) for x in f], [("SEC001", kind, "critical")])
+
+    def test_portuguese_placeholders_stay_silent(self):
+        lines = ['OPENAI_API_KEY = "sk-sua-chave-aqui-1234567890abcdef"', 'OPENAI_API_KEY = "sk-SuaChaveAqui1234567890xyz"',
+                 'GITHUB_TOKEN = "ghp_seu_token_aqui_1234567890abcdefghijkl"', 'api_token = "SEU_TOKEN_AQUI_123"',
+                 'api_token = "sua-chave-secreta-42"']
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertEqual(brief(scan_files({"src/keys.py": line + "\n"}), "SEC001"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

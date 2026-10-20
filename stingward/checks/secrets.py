@@ -52,8 +52,10 @@ _TRUNCATED = re.compile(r"\.\.\.|\u2026|\*|<(?!/)|[xX]{4}")
 CRITICAL = {"private_key", "aws_access_key", "github_token", "slack_token", "anthropic_key", "openai_key", "npm_token",
             "gitlab_token", "huggingface_token", "groq_key", "supabase_secret", "supabase_pat", "openrouter_key",
             "xai_key", "sendgrid_key", "pypi_token", "digitalocean_token"}
+# "seu" e "sua" só no começo de uma palavra (SUA_CHAVE, sk-sua-chave): com três letras, apareciam no meio aleatório de
+# cerca de 1 em cada 100 chaves de projeto da OpenAI, que então passavam por exemplo.
 _PLACEHOLDER = re.compile(
-    r"(?i)example|exemplo|xxxx|\.\.\.|your[_-]?|seu[_-]?|sua[_-]?|placeholder|dummy|fake|redacted|changeme|changethis|"
+    r"(?i)example|exemplo|xxxx|\.\.\.|your[_-]?|(?<![a-z0-9])(?:seu|sua)[_-]?|placeholder|dummy|fake|redacted|changeme|changethis|"
     r"replace[_-]?me|\*{3,}|0{8,}|<[^>]*>|\$\{|\{\{|\benv\(|^\$[A-Za-z_]\w*$|process\.env|os\.environ|getenv|import\.meta\.env")
 _ASSIGN = re.compile(r"""(?P<key>[A-Za-z_][\w.-]{1,63})["']?\s*(?::|=|:=|=>)\s*(?P<q>["'`])(?P<val>[^"'`\s]{8,200})(?P=q)""")
 _FENCE = re.compile(r"\s*(```|~~~)")
