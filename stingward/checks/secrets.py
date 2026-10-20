@@ -41,19 +41,29 @@ TOKEN_PATTERNS = [
     ("sendgrid_key", re.compile(r"\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b")),
     ("pypi_token", re.compile(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}")),
     ("digitalocean_token", re.compile(r"\bdo[opr]_v1_[a-f0-9]{64}\b")),
+    # Tamanhos exatos de cada serviço: um prefixo curto como r8_, ntn_ ou re_ também aparece em nome de variável.
+    ("google_oauth_secret", re.compile(r"\bGOCSPX-[A-Za-z0-9_-]{28}(?![A-Za-z0-9_-])")),
+    ("replicate_token", re.compile(r"\br8_[A-Za-z0-9]{37}\b")),
+    ("pinecone_key", re.compile(r"\bpcsk_[A-Za-z0-9]{4,8}_[A-Za-z0-9]{50,80}\b")),
+    ("shopify_token", re.compile(r"\bshp(?:at|ss|ca|pa)_[a-fA-F0-9]{32}\b")),
+    ("notion_token", re.compile(r"\bntn_[0-9]{11}[A-Za-z0-9]{35}\b")),
+    ("linear_key", re.compile(r"\blin_api_[A-Za-z0-9]{40}\b")),
+    ("resend_key", re.compile(r"\bre_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}\b")),
 ]
 # Filtro rápido: linha sem nenhum desses prefixos não tem token de formato conhecido.
 _HINT = re.compile(r"-----BEGIN|eyJ|AKIA|ASIA|ABIA|ACCA|gh[pousr]_|github_pat_|xox|xapp-|sk-|[rs]k_|whsec_|AIza|EAA|SK[0-9a-fA-F]|"
-                   r"npm_|glpat-|hf_|gsk_|sb_secret_|sbp_|xai-|SG\.|pypi-|do[opr]_v1_")
+                   r"npm_|glpat-|hf_|gsk_|sb_secret_|sbp_|xai-|SG\.|pypi-|do[opr]_v1_|GOCSPX-|r8_|pcsk_|shp(?:at|ss|ca|pa)_|"
+                   r"ntn_|lin_api_|\bre_[A-Za-z0-9]{8}_")
 # Token aleatório de verdade tem dígito e maiúscula/minúscula; nome de variável e exemplo de doc, não.
-_MIXED = {"openai_key", "meta_token", "npm_token", "huggingface_token"}
+_MIXED = {"openai_key", "meta_token", "npm_token", "huggingface_token", "replicate_token", "resend_key"}
 # Exemplo de documentação: "sk-ant-oat01-...", "ghp_abc***", "xoxb-<token>", "AKIA1234xxxx".
 _TRUNCATED = re.compile(r"\.\.\.|\u2026|\*|<(?!/)|[xX]{4}")
 
 # Formatos que identificam o serviço com certeza: severidade crítica.
 CRITICAL = {"private_key", "aws_access_key", "github_token", "slack_token", "anthropic_key", "openai_key", "npm_token",
             "gitlab_token", "huggingface_token", "groq_key", "supabase_secret", "supabase_pat", "openrouter_key",
-            "xai_key", "sendgrid_key", "pypi_token", "digitalocean_token"}
+            "xai_key", "sendgrid_key", "pypi_token", "digitalocean_token", "replicate_token", "pinecone_key", "shopify_token",
+            "notion_token", "linear_key", "resend_key"}
 # "seu" e "sua" só no começo de uma palavra (SUA_CHAVE, sk-sua-chave): com três letras, apareciam no meio aleatório de
 # cerca de 1 em cada 100 chaves de projeto da OpenAI, que então passavam por exemplo.
 _PLACEHOLDER = re.compile(
@@ -79,6 +89,11 @@ KIND = {
     "openrouter_key": ("chave da API do OpenRouter", "OpenRouter API key"), "xai_key": ("chave da API da xAI", "xAI API key"),
     "sendgrid_key": ("chave do SendGrid", "SendGrid key"), "pypi_token": ("token do PyPI", "PyPI token"),
     "digitalocean_token": ("token da DigitalOcean", "DigitalOcean token"),
+    "google_oauth_secret": ("segredo de cliente OAuth do Google", "Google OAuth client secret"),
+    "replicate_token": ("token da API do Replicate", "Replicate API token"),
+    "pinecone_key": ("chave da API do Pinecone", "Pinecone API key"), "shopify_token": ("token do Shopify", "Shopify token"),
+    "notion_token": ("token da API do Notion", "Notion API token"), "linear_key": ("chave da API do Linear", "Linear API key"),
+    "resend_key": ("chave da API do Resend", "Resend API key"),
 }
 
 
