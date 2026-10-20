@@ -52,11 +52,12 @@ Sin cuenta, sin telemetría, sin dependencias: Python 3.9+ puro, en Linux, macOS
 |---|---|
 | **Dependencias** | CVEs conocidas y **paquetes maliciosos** en lockfiles de npm, Yarn, pnpm, Bun, pip, Poetry, uv, Pipenv, PDM, Go, Cargo, Bundler y Composer. Priorizados por **CISA KEV** (explotadas ahora mismo) y **EPSS** (probabilidad de explotación), con la única actualización que corrige todo lo conocido. Sin lockfile, también revisa la versión más baja que acepta cada rango (`Pillow>=10`, `^1.6.0`). |
 | **Secretos** | Claves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack...), claves privadas, `service_role` de Supabase, webhooks, contraseñas en URLs, `.env` en git o fuera del `.gitignore`. El valor nunca se imprime. |
-| **Apps hechas con IA** | Secretos detrás de `NEXT_PUBLIC_` / `VITE_` / `EXPO_PUBLIC_`, `dangerouslyAllowBrowser`, CORS abierto, tablas de Supabase sin RLS o con `using (true)`, reglas de Firebase abiertas, modo debug, JWT sin verificar la firma. |
+| **Apps hechas con IA** | Secretos detrás de `NEXT_PUBLIC_` / `VITE_` / `EXPO_PUBLIC_`, `dangerouslyAllowBrowser`, CORS abierto, tablas de Supabase sin RLS o con `using (true)`, reglas de Firebase abiertas, modo debug, JWT sin verificar la firma. En código que llama a un modelo: su respuesta llegando a `eval`, un shell, SQL o HTML, datos de la petición dentro del prompt de sistema, rutas de IA sin login y sin límite de uso, `trust_remote_code` y `torch.load` inseguro, agentes con una herramienta de Python REPL o shell. |
+| **Código** | Inyección de SQL, de comandos y de código, `pickle` y YAML inseguro, XSS (`innerHTML`, `dangerouslySetInnerHTML`, `v-html`), verificación de TLS desactivada, path traversal, SSRF, redirecciones abiertas, `Math.random` para tokens y hashes rápidos para contraseñas. Python se lee con `ast` y JavaScript/TypeScript con patrones ajustados que siguen los datos de la petición dentro de cada función. |
 | **Agentes y MCP** | `bypassPermissions`, `Bash(*)`, hooks con `curl \| sh`, `enableAllProjectMcpServers`, servidores MCP sin versión fija, tokens en `.mcp.json`, MCP remoto sin HTTPS, paquetes MCP vulnerables como `mcp-remote` (CVE-2025-6514). |
 | **Skills y prompts** | Unicode invisible (caracteres de etiqueta, Trojan Source, ancho cero), "ignora las instrucciones anteriores", "no le digas al usuario", lectura de `~/.ssh` o `~/.aws` con llamada a internet, `curl \| bash`, reverse shells, código ofuscado, servicios de captura (webhook.site, ngrok...), scripts de instalación, `allowed-tools: Bash`, instrucciones ocultas en la descripción de herramientas MCP. |
 
-Las 33 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.md](docs/rules.md).
+Las 49 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.md](docs/rules.md).
 
 <p align="center">
   <img alt="stingward ./my-saas: clave de OpenAI expuesta con NEXT_PUBLIC_, next 14.1.0 con CVE-2025-29927 (EPSS de 99%), tabla de Supabase sin RLS, CORS abierto. Nota F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-en.gif" width="820">
@@ -112,7 +113,7 @@ Comenta el informe en el PR (y actualiza el mismo comentario en cada ejecución)
 | `--format text\|json\|markdown\|sarif\|html` | Qué va a la salida estándar |
 | `--json ARCH`, `--markdown ARCH`, `--sarif ARCH`, `--html ARCH` | Escribe también estos archivos, en la misma ejecución |
 | `--fail-on critical\|high\|medium\|low\|never` | Código de salida 1 en esta severidad o mayor (por defecto `high`) |
-| `--only deps,secrets,app,agents` | Ejecuta solo algunas revisiones |
+| `--only deps,secrets,app,code,agents` | Ejecuta solo algunas revisiones |
 | `--offline` | No consulta las bases en línea (las dependencias no se revisan) |
 | `--no-color` | Texto sin colores |
 

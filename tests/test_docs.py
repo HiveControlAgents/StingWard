@@ -175,7 +175,7 @@ class Demos(unittest.TestCase):
         doc = json.loads(out)
         self.assertEqual((code, doc["grade"]), (1, "F"))
         rules = {f["rule"] for f in doc["findings"]}
-        self.assertTrue({"APP001", "APP002", "APP003", "APP004", "APP005", "SEC003"} <= rules, rules)
+        self.assertTrue({"APP001", "APP002", "APP003", "APP004", "APP005", "APP011", "SEC003"} <= rules, rules)
 
     def test_the_fake_key_never_shows(self):
         for fmt in ("text", "json", "markdown", "sarif", "html"):

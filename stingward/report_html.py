@@ -22,8 +22,8 @@ from .model import SEV_RANK, SEVERITIES
 from .rules import RULES, STANDARDS
 
 CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
-GROUPS = ["deps", "secrets", "app", "agents", "skills"]
-CHECK_ORDER = ["deps", "secrets", "app", "agents"]
+GROUPS = ["deps", "secrets", "app", "code", "agents", "skills"]
+CHECK_ORDER = ["deps", "secrets", "app", "code", "agents"]
 MAX_PLACES = 100      # lugares listados por item
 MAX_EVIDENCE = 3      # trechos de código por item
 MAX_VULNS = 8         # falhas listadas por pacote
@@ -76,7 +76,7 @@ H = {
         "band": {"critical": "Crítico: corrija agora", "high": "Alto: nesta semana", "medium": "Médio: neste mês",
                  "low": "Baixo: quando puder", "info": "Informativo"},
         "plan_empty": "Nada a corrigir.",
-        "group": {"deps": "Dependências", "secrets": "Segredos", "app": "Aplicação", "agents": "Agentes e MCP", "skills": "Skills e prompts"},
+        "group": {"deps": "Dependências", "secrets": "Segredos", "app": "Aplicação", "code": "Código", "agents": "Agentes e MCP", "skills": "Skills e prompts"},
         "where": "Onde", "evidence": "Evidência", "why": "Por que importa", "fix": "Como corrigir", "standards": "Padrões",
         "refs": "Referências", "rule": "Regra",
         "line": "linha {n}", "whole_file": "o arquivo inteiro",
@@ -92,7 +92,7 @@ H = {
         "files": ("{n} arquivo lido", "{n} arquivos lidos"),
         "pkgs": ("{n} pacote encontrado em lockfiles e configurações de MCP", "{n} pacotes encontrados em lockfiles e configurações de MCP"),
         "pkgs_skipped": "Dependências não verificadas", "rules": "{n} regras",
-        "check_name": {"deps": "dependências", "secrets": "segredos", "app": "erros comuns de apps feitos com IA", "agents": "agentes, MCP e skills"},
+        "check_name": {"deps": "dependências", "secrets": "segredos", "app": "erros comuns de apps feitos com IA", "code": "falhas no código (injeção, XSS, SSRF e outras)", "agents": "agentes, MCP e skills"},
         "ignore": ("O projeto tem {n} regra no .stingwardignore, que esconde alguns achados de propósito. Confira se ela ainda faz sentido.",
                    "O projeto tem {n} regras no .stingwardignore, que escondem alguns achados de propósito. Confira se elas ainda fazem sentido."),
         "sources_h": "Bases consultadas", "src_col": "Base", "src_role": "Para quê", "src_status": "Situação",
@@ -108,7 +108,7 @@ H = {
         "method_h": "Como foi feito",
         "method": ["Listamos os arquivos do alvo, sem as pastas de dependências e de build, como node_modules e dist. Numa skill de terceiros o build é lido, porque é ele que roda.",
                    "Lemos os lockfiles e perguntamos ao OSV.dev sobre cada pacote e versão. Falhas que estão na lista KEV da CISA viram críticas; EPSS e NVD completam a chance de exploração e as notas que faltam.",
-                   "Rodamos {n} regras para segredos, erros comuns de apps feitos com IA, configurações de agentes e MCP e conteúdo de skills. Pastas de teste, documentação e exemplos pesam menos.",
+                   "Rodamos {n} regras para segredos, erros comuns de apps feitos com IA, falhas no código do próprio projeto, configurações de agentes e MCP e conteúdo de skills. Pastas de teste, documentação e exemplos pesam menos.",
                    "Damos a nota de A a F pelos achados mais graves."],
         "limits_h": "Limites",
         "limits": ["É uma primeira linha de defesa, automática e rápida: lê o código e a configuração atrás de erros e falhas conhecidas. Não é um teste de invasão: ninguém tentou entrar no app rodando.",
@@ -161,7 +161,7 @@ H = {
         "band": {"critical": "Critical: fix now", "high": "High: this week", "medium": "Medium: this month",
                  "low": "Low: when you can", "info": "For your information"},
         "plan_empty": "Nothing to fix.",
-        "group": {"deps": "Dependencies", "secrets": "Secrets", "app": "Application", "agents": "Agents and MCP", "skills": "Skills and prompts"},
+        "group": {"deps": "Dependencies", "secrets": "Secrets", "app": "Application", "code": "Code", "agents": "Agents and MCP", "skills": "Skills and prompts"},
         "where": "Where", "evidence": "Evidence", "why": "Why it matters", "fix": "How to fix", "standards": "Standards",
         "refs": "References", "rule": "Rule",
         "line": "line {n}", "whole_file": "the whole file",
@@ -177,7 +177,7 @@ H = {
         "files": ("{n} file read", "{n} files read"),
         "pkgs": ("{n} package found in lockfiles and MCP configs", "{n} packages found in lockfiles and MCP configs"),
         "pkgs_skipped": "Dependencies not checked", "rules": "{n} rules",
-        "check_name": {"deps": "dependencies", "secrets": "secrets", "app": "common AI-built app mistakes", "agents": "agents, MCP and skills"},
+        "check_name": {"deps": "dependencies", "secrets": "secrets", "app": "common AI-built app mistakes", "code": "code flaws (injection, XSS, SSRF and more)", "agents": "agents, MCP and skills"},
         "ignore": ("The project has {n} rule in .stingwardignore that hides some findings on purpose. Check that it still makes sense.",
                    "The project has {n} rules in .stingwardignore that hide some findings on purpose. Check that they still make sense."),
         "sources_h": "Sources consulted", "src_col": "Source", "src_role": "Used for", "src_status": "Status",
@@ -193,7 +193,7 @@ H = {
         "method_h": "How it was done",
         "method": ["Listed the target's files, skipping dependency and build folders such as node_modules and dist. In a third-party skill the build output is read, since that is what runs.",
                    "Read the lockfiles and asked OSV.dev about every package and version. Vulnerabilities on CISA's KEV list become critical; EPSS and NVD add the likelihood of exploitation and missing scores.",
-                   "Ran {n} rules for secrets, common AI-built app mistakes, agent and MCP settings, and skill content. Test folders, docs and examples count less.",
+                   "Ran {n} rules for secrets, common AI-built app mistakes, flaws in the project's own code, agent and MCP settings, and skill content. Test folders, docs and examples count less.",
                    "Graded the result from A to F by the most serious findings."],
         "limits_h": "Limitations",
         "limits": ["This is a fast, automated first line of defense: it reads the code and configuration looking for known mistakes and known vulnerabilities. It is not a penetration test: nobody tried to break into the running app.",

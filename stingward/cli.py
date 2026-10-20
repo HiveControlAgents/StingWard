@@ -41,7 +41,7 @@ def _parser():
     ap.add_argument("--html", metavar="ARQ", help="grava o relatório em HTML (um arquivo só, para entregar ou imprimir em PDF)")
     ap.add_argument("--fail-on", choices=["critical", "high", "medium", "low", "never"], default="high",
                     help="sai com código 1 se houver achado desta severidade ou acima (padrão: high)")
-    ap.add_argument("--only", default=None, help="só estas verificações: deps,secrets,app,agents")
+    ap.add_argument("--only", default=None, help="só estas verificações: deps,secrets,app,code,agents")
     ap.add_argument("--offline", action="store_true", help="não consulta as bases (pula dependências)")
     ap.add_argument("--no-color", action="store_true")
     ap.add_argument("--version", action="version", version=f"stingward {__version__}")
