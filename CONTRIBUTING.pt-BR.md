@@ -26,7 +26,7 @@ Para montar o site: `python site/build.py _site` e abra o `_site/index.html`. Co
 |---|---|
 | `stingward/cli.py` | Linha de comando, códigos de saída, download de skill do GitHub |
 | `stingward/scan.py` | Lista de arquivos, execução das verificações, `.stingwardignore`, severidade conforme o contexto |
-| `stingward/checks/` | `deps.py`, `secrets.py`, `app.py`, `agents.py` (agentes, MCP e skills) |
+| `stingward/checks/` | `deps.py`, `secrets.py`, `app.py`, `code.py` (falhas no código Python e JavaScript, e no código que chama um modelo), `agents.py` (agentes, MCP e skills) |
 | `stingward/rules.py` | Título, motivo e correção de cada regra, em português e inglês, e os códigos de padrão |
 | `stingward/report.py` | Saída em texto, Markdown, JSON e SARIF, nota e selo |
 | `stingward/lockfiles.py`, `vulndb.py`, `net.py` | Leitura de lockfiles, clientes de OSV/KEV/EPSS/NVD, HTTP com cache e novas tentativas |

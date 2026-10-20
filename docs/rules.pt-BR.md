@@ -30,6 +30,22 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [APP006](#app006) | Regras do Firebase abertas | 🟠 |
 | [APP007](#app007) | Modo debug ligado | 🟡 |
 | [APP008](#app008) | JWT aceito sem verificar a assinatura | 🟠 |
+| [APP009](#app009) | Saída do modelo chega a código, shell, SQL ou HTML | 🔴 |
+| [APP010](#app010) | Dado da requisição entra no prompt de sistema | 🟡 |
+| [APP011](#app011) | Rota de IA sem login e sem limite de uso | 🟡 |
+| [APP012](#app012) | Carregar o modelo pode executar código | 🟠 |
+| [APP013](#app013) | Agente pode executar o que o modelo escrever | 🟠 |
+| [COD001](#cod001) | Consulta SQL montada com dado de fora | 🟠 |
+| [COD002](#cod002) | Comando de shell montado com dado de fora | 🔴 |
+| [COD003](#cod003) | Código montado com dado de fora é executado | 🔴 |
+| [COD004](#cod004) | Dados carregados com pickle ou YAML inseguro | 🟠 |
+| [COD005](#cod005) | HTML inserido sem limpar | 🟡 |
+| [COD006](#cod006) | Verificação do certificado TLS desligada | 🟡 |
+| [COD007](#cod007) | Caminho de arquivo montado com dados da requisição | 🟠 |
+| [COD008](#cod008) | Servidor busca uma URL que veio da requisição | 🟠 |
+| [COD009](#cod009) | Redirecionamento para um endereço que veio da requisição | 🟡 |
+| [COD010](#cod010) | Número aleatório previsível usado num segredo | 🔵 |
+| [COD011](#cod011) | Senha guardada com hash rápido | 🟡 |
 | [AGT001](#agt001) | Permissão de agente ampla demais | 🟠 |
 | [AGT002](#agt002) | Hook que baixa e executa código | 🟠 |
 | [AGT003](#agt003) | Servidor MCP sem versão fixa | 🟡 |
@@ -173,6 +189,138 @@ Regras do Firestore ou Storage com `allow read, write: if true` (ou a data do mo
 
 **Como corrigir:** verifique a assinatura com a chave certa e uma lista fixa de algoritmos.
 **Padrões:** `CWE-347`
+
+<a id="app009"></a>
+### APP009 · Saída do modelo chega a código, shell, SQL ou HTML
+
+A resposta de uma chamada de LLM (OpenAI, Anthropic, Gemini, LangChain, AI SDK...) ou os argumentos de uma ferramenta MCP ou do AI SDK chegam a `eval`/`exec`, um comando de shell, um template, uma consulta SQL, ou `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. Uma injeção de prompt em qualquer coisa que o modelo leu vira código no seu servidor ou script no navegador de quem usa o app. Crítico quando a resposta é executada, alto para argumentos de ferramenta e SQL, médio para HTML. `JSON.parse`, `json.loads` e DOMPurify cortam a cadeia.
+
+**Como corrigir:** trate a saída do modelo como entrada de usuário: peça JSON e valide, mapeie para uma lista fixa de ações, passe os argumentos do shell em lista, rode o SQL com um usuário só de leitura e limpe o HTML com DOMPurify.
+**Padrões:** `CWE-1426` · `LLM05:2026`
+
+<a id="app010"></a>
+### APP010 · Dado da requisição entra no prompt de sistema
+
+Um valor da requisição escrito no meio das instruções: `{"role": "system", "content": f"Você atende {body['empresa']}..."}`, `` system: `... ${body.name}` ``, `SystemMessage(...)`, `system_instruction=`. Quem manda esse valor pode reescrever as suas regras. Texto do usuário numa mensagem de usuário está certo, e repassar inteiro um prompt que o cliente escolheu (um playground) também: só entra o valor misturado com instruções escritas no código.
+
+**Como corrigir:** deixe o prompt de sistema fixo e mande o texto do usuário como mensagem de usuário. Se uma opção precisa mudar o prompt, escolha o trecho numa lista fixa.
+**Padrões:** `CWE-1427` · `LLM01:2026`
+
+<a id="app011"></a>
+### APP011 · Rota de IA sem login e sem limite de uso
+
+Uma rota do servidor que chama um modelo (`app/api/**/route.ts` do Next.js, server action, handler do Express ou Hono, rota do FastAPI ou Flask) sem sinal de login nem limite de pedidos no arquivo, no `middleware.ts`, num `app.use(...)` global ou nas dependências do router. Qualquer pessoa chama em loop na sua conta. Não entra em skills, testes e exemplos.
+
+**Como corrigir:** exija usuário logado, limite pedidos por usuário ou IP (`@upstash/ratelimit`, `express-rate-limit`, `slowapi`), defina `max_tokens` e ponha um limite de gasto no painel do provedor.
+**Padrões:** `CWE-306` · `CWE-770` · `LLM10:2026`
+
+<a id="app012"></a>
+### APP012 · Carregar o modelo pode executar código
+
+`from_pretrained(..., trust_remote_code=True)` roda Python do repositório do modelo; `FAISS.load_local(..., allow_dangerous_deserialization=True)` e `torch.load` sem `weights_only=True` abrem o arquivo com pickle. Alto quando o arquivo vem da requisição, médio quando a opção insegura está escrita, baixo para um `torch.load` simples (seguro por padrão desde o PyTorch 2.6).
+
+**Como corrigir:** fixe `revision=` num commit revisado, passe `weights_only=True` ou use safetensors, e carregue só índices criados por você.
+**Padrões:** `CWE-502` · `CWE-829` · `LLM03:2026`
+
+<a id="app013"></a>
+### APP013 · Agente pode executar o que o modelo escrever
+
+`PythonREPLTool`, `ShellTool` e `load_tools(["python_repl"])` do LangChain, `allow_dangerous_code=True`, `use_docker: False` do AutoGen, `auto_run = True` do Open Interpreter e parecidos: uma instrução escondida num documento, página ou mensagem vira código rodando na sua máquina. Médio para agentes de SQL (`create_sql_agent`, `SQLDatabaseChain`), que rodam no seu banco o SQL do modelo, e para `allow_dangerous_requests=True`. Classes de ferramenta só contam quando vêm da biblioteca de agentes.
+
+**Como corrigir:** tire a ferramenta, ou rode numa sandbox (container sem segredos e sem rede) e confirme cada execução. Dê aos agentes de SQL um usuário de banco só de leitura.
+**Padrões:** `CWE-94` · `LLM06:2026` · `ASI05`
+
+## Código
+
+Arquivos Python são lidos com `ast` e JavaScript/TypeScript (também o `<script>` de `.vue`, `.svelte` e `.astro`) com padrões justos, seguindo de onde veio cada valor dentro da função: a requisição (Flask, FastAPI, Django, Express, Next.js, Hono...), um argumento da função ou outro servidor. A chamada a um helper seu (`get_file_by_id(id)`) não é seguida, porque devolve outra coisa, nem um parâmetro que o framework já converteu em número, booleano ou UUID (`item_id: int`, `<int:id>`). Bundles minificados ficam de fora, e testes, exemplos e fixtures caem para baixa.
+
+<a id="cod001"></a>
+### COD001 · Consulta SQL montada com dado de fora
+
+f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `read_sql`, `pool.query`, `knex.raw`, `$queryRawUnsafe` e parecidos. Alto com dado da requisição, médio com argumento de função no lugar de um valor (`= '{nome}'`, `LIKE`, `IN (...)`). Nome de tabela vindo de constante, parâmetros `?`/`%s`/`$1`, construtores de ORM e templates com tag (`` sql`...` ``, `` $queryRaw`...` ``) não entram.
+
+**Como corrigir:** passe os valores como parâmetros: `cursor.execute("... WHERE id = %s", (id,))`, `$1` no Postgres, `?` no SQLite, `` sql`...` `` ou `` $queryRaw`...` `` no Prisma.
+**Padrões:** `CWE-89`
+
+<a id="cod002"></a>
+### COD002 · Comando de shell montado com dado de fora
+
+`os.system`, `subprocess.run(..., shell=True)`, `exec`/`execSync` do `child_process` e parecidos com dado da requisição no comando (crítico), ou argumento de função misturado no texto do comando num app web (médio). Lista de argumentos sem shell (`subprocess.run(["ping", host])`, `execFile`) e ferramentas de linha de comando (click, typer) não entram.
+
+**Como corrigir:** rode o programa com uma lista de argumentos e sem shell, e aceite só valores de uma lista conhecida.
+**Padrões:** `CWE-78`
+
+<a id="cod003"></a>
+### COD003 · Código montado com dado de fora é executado
+
+`eval`, `exec`, `new Function`, `vm.runIn*Context`, `setTimeout` com texto ou `render_template_string` montados com dado da requisição. Qualquer pessoa roda código no seu servidor. `ast.literal_eval`, `JSON.parse` e código constante não entram.
+
+**Como corrigir:** não execute texto. Leia o dado que você espera (`json.loads`, `JSON.parse`, `ast.literal_eval`) ou mapeie valores permitidos para funções.
+**Padrões:** `CWE-94` · `CWE-95`
+
+<a id="cod004"></a>
+### COD004 · Dados carregados com pickle ou YAML inseguro
+
+`pickle`, `dill`, `joblib`, `marshal` e `yaml.load` com o carregador completo ou inseguro. Alto para dado da requisição, médio para resposta de outro servidor ou carregador inseguro escrito, baixo para `yaml.load` de arquivo local sem `Loader`. `yaml.safe_load`, `SafeLoader` e o `YAML()` do ruamel não entram, nem pickle de arquivo local.
+
+**Como corrigir:** use `yaml.safe_load` ou JSON para dados de fora; só use pickle em arquivos que você mesmo gravou, num lugar em que mais ninguém escreve.
+**Padrões:** `CWE-502`
+
+<a id="cod005"></a>
+### COD005 · HTML inserido sem limpar
+
+`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, `{@html}`, `set:html`, `Markup()` ou HTML devolvido como texto por uma rota Flask, com dado da URL ou da requisição (médio). No JavaScript, HTML montado com outras variáveis é baixo. `DOMPurify.sanitize`, `textContent`, JSX comum e HTML constante não entram.
+
+**Como corrigir:** mostre como texto (`textContent`, ou a variável direto no JSX) ou limpe antes com `DOMPurify.sanitize` (sanitize-html ou bleach no servidor).
+**Padrões:** `CWE-79`
+
+<a id="cod006"></a>
+### COD006 · Verificação do certificado TLS desligada
+
+`verify=False` no requests/httpx, `session.verify = False`, `ssl._create_unverified_context`, `CERT_NONE`, `rejectUnauthorized: false` e `NODE_TLS_REJECT_UNAUTHORIZED=0` no código, em `.env`, Dockerfile ou YAML. Qualquer um no caminho da rede se passa pelo servidor.
+
+**Como corrigir:** tire a opção. Para uma CA própria, aponte para o certificado dela (`verify="/caminho/ca.pem"` no Python, `ca:` no Node).
+**Padrões:** `CWE-295`
+
+<a id="cod007"></a>
+### COD007 · Caminho de arquivo montado com dados da requisição
+
+`open`, `send_file`, `FileResponse`, `Path(...).read_text`, `fs.readFile`, `res.sendFile` e parecidos com um valor da requisição no caminho. `secure_filename`, `basename`, `resolve()` com checagem de `is_relative_to`/`startsWith`, `sendFile(..., { root })`, o caminho que o servidor escolheu para um upload (`req.file.path`), um pedaço da rota que não aceita `/` (`/files/{id}`) e rotas só de administrador não entram.
+
+**Como corrigir:** use só o nome do arquivo (`os.path.basename`, `secure_filename`, `path.basename`) ou resolva o caminho e confira que ele continua dentro da pasta esperada.
+**Padrões:** `CWE-22`
+
+<a id="cod008"></a>
+### COD008 · Servidor busca uma URL que veio da requisição
+
+`requests.get`, `httpx`, `urlopen`, `fetch`, `axios` e parecidos no servidor quando a requisição decide para onde a URL aponta (a URL inteira ou o começo dela). Host fixo com um valor da requisição no caminho, checagem do host (`urlparse(...).hostname`, lista de permitidos) e código que roda no navegador não entram.
+
+**Como corrigir:** aceite só os domínios de que você precisa, bloqueie endereços privados e locais e não siga redirecionamentos sem conferir.
+**Padrões:** `CWE-918`
+
+<a id="cod009"></a>
+### COD009 · Redirecionamento para um endereço que veio da requisição
+
+`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` com um parâmetro da URL e parecidos. Caminho que começa com um `/...` fixo, `url_for` e checagem do host não entram.
+
+**Como corrigir:** redirecione só para caminhos relativos que começam com uma única `/` ou para domínios de uma lista conhecida.
+**Padrões:** `CWE-601`
+
+<a id="cod010"></a>
+### COD010 · Número aleatório previsível usado num segredo
+
+`Math.random()` ou o `random` do Python atribuído a (ou devolvido por) algo com nome de segredo: `reset_token`, `apiKey`, `password`, `otp`, `verification_code`. Nomes como `token_count`, `delay` ou `session_id` não entram, nem testes.
+
+**Como corrigir:** use `crypto.randomUUID()` ou `crypto.getRandomValues` no JavaScript e o módulo `secrets` no Python (`secrets.token_urlsafe`).
+**Padrões:** `CWE-338`
+
+<a id="cod011"></a>
+### COD011 · Senha guardada com hash rápido
+
+MD5, SHA-1 ou SHA-2 (`hashlib.sha256(password...)`, `createHash("sha256").update(password)`, CryptoJS) aplicado a uma variável com nome de senha. Se o banco vazar, as senhas caem na força bruta. Hash de arquivo ou do corpo da requisição não entra.
+
+**Como corrigir:** use uma função feita para senhas: bcrypt, scrypt ou Argon2 (argon2-cffi e bcrypt no Python, bcrypt no Node), ou deixe o login com um provedor de autenticação.
+**Padrões:** `CWE-916`
 
 ## Agentes e MCP
 

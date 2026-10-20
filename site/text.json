@@ -43,7 +43,7 @@
     ],
     "files_read": "{n} arquivos lidos em ./my-saas",
     "sent_to": "Enviado para api.osv.dev",
-    "groups": {"SKL": "Skills e prompts", "APP": "Apps feitos com IA", "AGT": "Agentes e MCP", "SEC": "Segredos", "DEP": "Dependências"},
+    "groups": {"SKL": "Skills e prompts", "APP": "Apps feitos com IA", "COD": "Código", "AGT": "Agentes e MCP", "SEC": "Segredos", "DEP": "Dependências"},
     "grades": [
       ["A", "Só itens baixos, ou nada"],
       ["B", "Médios, nenhum alto"],
@@ -172,7 +172,7 @@
     ],
     "files_read": "{n} files read in ./my-saas",
     "sent_to": "Sent to api.osv.dev",
-    "groups": {"SKL": "Skills and prompts", "APP": "AI-built apps", "AGT": "Agents and MCP", "SEC": "Secrets", "DEP": "Dependencies"},
+    "groups": {"SKL": "Skills and prompts", "APP": "AI-built apps", "COD": "Code", "AGT": "Agents and MCP", "SEC": "Secrets", "DEP": "Dependencies"},
     "grades": [
       ["A", "Only low items, or nothing"],
       ["B", "Medium, no high"],

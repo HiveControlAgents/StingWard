@@ -145,6 +145,179 @@ RULES = {
                "Anyone can forge a token claiming to be admin and the server will accept it.",
                "Verify the signature and pin the algorithm (e.g. algorithms=[\"HS256\"])."),
     },
+    "APP009": {
+        "group": "app",
+        "pt": ("Texto escrito pelo modelo chega a {sink}",
+               "A resposta do modelo, e os argumentos que ele preenche numa ferramenta, podem ser guiados por qualquer coisa que ele leu "
+               "(uma página, um arquivo, a mensagem de alguém). Usar isso direto transforma uma injeção de prompt em {impact}.",
+               "Trate a saída do modelo como entrada de usuário: {fix}"),
+        "en": ("Text written by the model reaches {sink}",
+               "The model's answer, and the arguments it fills in for a tool, can be steered by anything it read (a web page, a file, "
+               "someone's message). Using it as is turns a prompt injection into {impact}.",
+               "Treat model output like user input: {fix}"),
+    },
+    "APP010": {
+        "group": "app",
+        "pt": ("Dado da requisição entra no prompt de sistema",
+               "O prompt de sistema é onde ficam as suas regras. Quem manda esse valor pode reescrevê-las: tirar os limites, vazar o "
+               "prompt ou mudar o que o modelo faz.",
+               "Deixe o prompt de sistema fixo. Mande o texto do usuário como mensagem de usuário e, se uma opção precisa mudar o "
+               "prompt, escolha o trecho numa lista fixa."),
+        "en": ("Request input goes into the system prompt",
+               "The system prompt is where your rules live. Whoever sends that value can rewrite them: drop your limits, leak the "
+               "prompt or change what the model does.",
+               "Keep the system prompt fixed. Send the user's text as a user message, and if a setting must change the prompt, pick "
+               "the wording from a fixed list."),
+    },
+    "APP011": {
+        "group": "app",
+        "pt": ("Rota de IA sem login e sem limite de uso",
+               "Quem achar essa URL chama o modelo na sua conta em loop: a fatura dispara e o seu app vira proxy de IA de graça para "
+               "outras pessoas.",
+               "Exija usuário logado, limite pedidos por usuário ou IP (@upstash/ratelimit, express-rate-limit, slowapi), defina "
+               "max_tokens / maxOutputTokens e ponha um limite de gasto no painel do provedor."),
+        "en": ("AI endpoint with no login and no rate limit",
+               "Anyone who finds this URL can call the model on your account in a loop: the bill spikes and your app becomes a free "
+               "AI proxy for others.",
+               "Require a signed-in user, rate limit per user or IP (@upstash/ratelimit, express-rate-limit, slowapi), set "
+               "max_tokens / maxOutputTokens, and add a spending limit in the provider's dashboard."),
+    },
+    "APP012": {
+        "group": "app",
+        "pt": ("Carregar o modelo pode executar código ({what})", "{why}", "{fix}"),
+        "en": ("Loading the model can run code ({what})", "{why}", "{fix}"),
+    },
+    "APP013": {
+        "group": "app",
+        "pt": ("Agente pode executar o que o modelo escrever ({what})", "{why}", "{fix}"),
+        "en": ("Agent can run whatever the model writes ({what})", "{why}", "{fix}"),
+    },
+    # ------------------------------------------------------------------ falhas no código
+    "COD001": {
+        "group": "code",
+        "pt": ("Consulta SQL montada com {source}",
+               "O valor entra no meio do texto do SQL. Quem manda algo como ' OR '1'='1 consegue ler, mudar ou apagar dados do banco.",
+               "Passe os valores como parâmetros e deixe o driver juntar: cursor.execute(\"... WHERE id = %s\", (id,)), $1 no "
+               "Postgres, ? no SQLite, sql`...` ou $queryRaw`...` no Prisma."),
+        "en": ("SQL query built from {source}",
+               "The value goes straight into the SQL text. Someone who sends ' OR '1'='1 can read, change or delete data.",
+               "Pass values as parameters and let the driver combine them: cursor.execute(\"... WHERE id = %s\", (id,)), $1 in "
+               "Postgres, ? in SQLite, sql`...` or $queryRaw`...` in Prisma."),
+    },
+    "COD002": {
+        "group": "code",
+        "pt": ("Comando de shell montado com {source}",
+               "Quem controla esse valor pode colocar ; ou && e rodar qualquer comando no seu servidor.",
+               "Rode o programa com uma lista de argumentos e sem shell (subprocess.run([\"cmd\", valor]), execFile no Node) e "
+               "aceite só valores de uma lista conhecida."),
+        "en": ("Shell command built from {source}",
+               "Whoever controls that value can add ; or && and run any command on your server.",
+               "Run the program with an argument list and no shell (subprocess.run([\"cmd\", value]), execFile in Node) and accept "
+               "only values from a known list."),
+    },
+    "COD003": {
+        "group": "code",
+        "pt": ("Código montado com {source} é executado ({sink})",
+               "eval, exec, new Function e templates montados na hora rodam o texto que recebem. Com {source}, qualquer pessoa roda "
+               "código no seu servidor.",
+               "Não execute texto. Leia o dado que você espera (json.loads, JSON.parse, ast.literal_eval) ou mapeie valores "
+               "permitidos para funções."),
+        "en": ("Code built from {source} is executed ({sink})",
+               "eval, exec, new Function and templates built on the fly run whatever text they get. With {source}, anyone can run "
+               "code on your server.",
+               "Do not run text as code. Parse the data you expect (json.loads, JSON.parse, ast.literal_eval) or map allowed values "
+               "to functions."),
+    },
+    "COD004": {
+        "group": "code",
+        "pt": ("Dados carregados com {what}, que pode executar código",
+               "pickle e YAML com o carregador completo recriam qualquer objeto, o que basta para rodar comandos quando o conteúdo "
+               "vem de outra pessoa.",
+               "Use yaml.safe_load ou JSON para dados de fora; só use pickle em arquivos que você mesmo gravou, num lugar em que mais "
+               "ninguém escreve."),
+        "en": ("Data loaded with {what}, which can run code",
+               "pickle and YAML with the full loader rebuild any object, which is enough to run commands when someone else wrote "
+               "the content.",
+               "Use yaml.safe_load or JSON for outside data; only unpickle files you wrote yourself, in a place nobody else can write to."),
+    },
+    "COD005": {
+        "group": "code",
+        "pt": ("HTML inserido sem limpar ({sink})",
+               "Se o texto tiver algo que uma pessoa escreveu, um <script> ou onerror= roda no navegador de quem visita e pode tomar "
+               "a sessão dela.",
+               "Mostre como texto (textContent, ou a variável direto no JSX) ou limpe antes com DOMPurify.sanitize (sanitize-html ou "
+               "bleach no servidor)."),
+        "en": ("HTML inserted without sanitizing ({sink})",
+               "If the text contains something a person wrote, a <script> or onerror= runs in your visitors' browsers and can take "
+               "over their session.",
+               "Show it as text (textContent, or the variable straight in JSX) or clean it first with DOMPurify.sanitize "
+               "(sanitize-html or bleach on the server)."),
+    },
+    "COD006": {
+        "group": "code",
+        "pt": ("Verificação do certificado TLS desligada ({what})",
+               "Sem conferir o certificado, qualquer um no caminho da rede (Wi-Fi público, proxy, provedor) se passa pelo servidor e "
+               "lê ou altera o tráfego, tokens incluídos.",
+               "Tire a opção. Para uma CA própria, aponte para o certificado dela (verify=\"/caminho/ca.pem\" no Python, ca: no "
+               "Node) em vez de desligar a verificação."),
+        "en": ("TLS certificate check turned off ({what})",
+               "Without checking the certificate, anyone on the network path (public Wi-Fi, a proxy, the ISP) can pose as the server "
+               "and read or change the traffic, tokens included.",
+               "Remove the switch. For a private CA, point to its certificate (verify=\"/path/ca.pem\" in Python, ca: in Node) "
+               "instead of turning the check off."),
+    },
+    "COD007": {
+        "group": "code",
+        "pt": ("Caminho de arquivo montado com dados da requisição ({sink})",
+               "Um valor como ../../.env deixa alguém ler ou sobrescrever qualquer arquivo que o servidor alcança.",
+               "Use só o nome do arquivo (os.path.basename, secure_filename, path.basename) ou resolva o caminho e confira que ele "
+               "continua dentro da pasta esperada."),
+        "en": ("File path built from request input ({sink})",
+               "A value like ../../.env lets someone read or overwrite any file the server can reach.",
+               "Keep only the file name (os.path.basename, secure_filename, path.basename), or resolve the path and check that it "
+               "stays inside the folder you expect."),
+    },
+    "COD008": {
+        "group": "code",
+        "pt": ("Servidor busca uma URL que veio da requisição ({sink})",
+               "Alguém pode fazer o seu servidor chamar endereços internos, como o serviço de metadados da nuvem (169.254.169.254), "
+               "e devolver a resposta com as credenciais.",
+               "Aceite só os domínios de que você precisa, bloqueie endereços privados e locais e não siga redirecionamentos sem conferir."),
+        "en": ("Server fetches a URL taken from the request ({sink})",
+               "Someone can make your server call internal addresses, such as the cloud metadata service (169.254.169.254), and get "
+               "back the answer with credentials.",
+               "Allow only the domains you need, block private and local addresses, and do not follow redirects without checking them."),
+    },
+    "COD009": {
+        "group": "code",
+        "pt": ("Redirecionamento para um endereço que veio da requisição ({sink})",
+               "Um link do seu site pode levar as pessoas para uma página falsa igual à sua, e um endereço javascript: pode rodar código.",
+               "Redirecione só para caminhos relativos que começam com uma única / ou para domínios de uma lista conhecida."),
+        "en": ("Redirect to an address taken from the request ({sink})",
+               "A link to your site can send people to a fake page that looks like yours, and a javascript: address can run code.",
+               "Redirect only to relative paths that start with a single / or to domains from a known list."),
+    },
+    "COD010": {
+        "group": "code",
+        "pt": ("Número aleatório previsível usado em {name}",
+               "Math.random e o módulo random do Python não foram feitos para segredos: dá para adivinhar os próximos valores.",
+               "Use crypto.randomUUID() ou crypto.getRandomValues no JavaScript e o módulo secrets no Python (secrets.token_urlsafe)."),
+        "en": ("Predictable random number used for {name}",
+               "Math.random and Python's random module are not made for secrets: their next values can be guessed.",
+               "Use crypto.randomUUID() or crypto.getRandomValues in JavaScript, and the secrets module in Python (secrets.token_urlsafe)."),
+    },
+    "COD011": {
+        "group": "code",
+        "pt": ("Senha guardada com hash {algo}",
+               "{algo} é rápido de propósito: se o banco vazar, dá para testar bilhões de senhas por segundo até achar as originais.",
+               "Use uma função feita para senhas: bcrypt, scrypt ou Argon2 (argon2-cffi e bcrypt no Python, bcrypt no Node), ou "
+               "deixe o login com um provedor de autenticação."),
+        "en": ("Password hashed with {algo}",
+               "{algo} is fast on purpose: if the database leaks, attackers can test billions of guesses per second until they find "
+               "the passwords.",
+               "Use a function made for passwords: bcrypt, scrypt or Argon2 (argon2-cffi and bcrypt in Python, bcrypt in Node), or "
+               "leave login to an auth provider."),
+    },
     # ------------------------------------------------------------------ agentes, skills, MCP
     "AGT001": {
         "group": "agents",
@@ -338,6 +511,22 @@ STANDARDS = {
     "APP006": ["CWE-284"],
     "APP007": ["CWE-489"],
     "APP008": ["CWE-347"],
+    "APP009": ["CWE-1426", "LLM05:2026"],
+    "APP010": ["CWE-1427", "LLM01:2026"],
+    "APP011": ["CWE-306", "CWE-770", "LLM10:2026"],
+    "APP012": ["CWE-502", "CWE-829", "LLM03:2026"],
+    "APP013": ["CWE-94", "LLM06:2026", "ASI05"],
+    "COD001": ["CWE-89"],
+    "COD002": ["CWE-78"],
+    "COD003": ["CWE-94", "CWE-95"],
+    "COD004": ["CWE-502"],
+    "COD005": ["CWE-79"],
+    "COD006": ["CWE-295"],
+    "COD007": ["CWE-22"],
+    "COD008": ["CWE-918"],
+    "COD009": ["CWE-601"],
+    "COD010": ["CWE-338"],
+    "COD011": ["CWE-916"],
     "AGT001": ["CWE-250", "LLM03:2026", "ASI03"],
     "AGT002": ["CWE-494", "ASI05"],
     "AGT003": ["CWE-494", "LLM04:2026", "ASI04", "AST07"],

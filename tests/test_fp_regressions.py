@@ -1,4 +1,4 @@
-"""Regressões de falso positivo e de bugs em agents.py, secrets.py e app.py.
+"""Regressões de falso positivo e de bugs em agents.py, secrets.py, app.py e code.py.
 
 Cada item tem o par: o falso positivo que não pode mais disparar e o ataque de verdade que continua
 detectado. Segredos falsos são montados por concatenação e caracteres invisíveis (e letras RTL)
@@ -515,6 +515,35 @@ class AppDebug(Case):
         f = scan_files({"main.py": 'uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)\n',
                         "dev.py": 'uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)\n'})
         self.assertEqual(brief(f), [("APP007", "main.py", 1, "medium")])
+
+
+class CodeLookAlikes(Case):
+    """Chamadas que devolvem outra coisa (registro do banco, hash) não carregam o dado da requisição adiante."""
+
+    FLASK = "from flask import Flask, request, redirect, send_file\napp = Flask(__name__)\n"
+
+    def test_lookup_by_id_is_not_the_request_value(self):
+        py = self.FLASK + ("import os, hashlib\n"
+                           "@app.get('/a')\ndef a():\n"
+                           "    doc = Document.query.get_or_404(request.args['id'])\n"
+                           "    return send_file(doc.path)\n"
+                           "@app.get('/b')\ndef b():\n"
+                           "    key = hashlib.sha256(request.args['u'].encode()).hexdigest()\n"
+                           "    return open(os.path.join('cache', key)).read()\n"
+                           "@app.get('/c')\ndef c():\n"
+                           "    return send_file(os.path.join('files', request.args['name']))\n")
+        js = ("const express = require('express')\nconst app = express()\n"
+              "app.get('/f/:id', async (req, res) => {\n"
+              "  const file = await getFileById(req.params.id)\n"
+              "  res.sendFile(file.path)\n})\n"
+              "app.get('/g/:id', (req, res) => res.sendFile(req.params.id))\n")
+        f = scan_files({"app.py": py, "server.js": js})
+        self.assertEqual(brief(f, "COD007"), [("COD007", "app.py", 14, "high"), ("COD007", "server.js", 7, "high")])
+
+    def test_sql_identifier_from_an_argument_is_not_a_value(self):
+        py = ("def column(conn, col):\n    return conn.execute(f'SELECT {col} FROM items ORDER BY {col}')\n"
+              "def by_name(conn, name):\n    return conn.execute(f\"SELECT * FROM items WHERE name = '{name}'\")\n")
+        self.assertEqual(brief(scan_files({"db.py": py}), "COD001"), [("COD001", "db.py", 4, "medium")])
 
 
 if __name__ == "__main__":

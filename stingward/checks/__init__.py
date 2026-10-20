@@ -11,6 +11,9 @@ _TEXT_EXT = {
 _TEXT_NAMES = {"Dockerfile", "Makefile", "Procfile", ".cursorrules", ".windsurfrules", ".npmrc", ".pypirc", ".netrc"}
 _SKIP = re.compile(r"(\.min\.(js|css)|\.map|\.lock|-lock\.json|-lock\.yaml|\.snap)$|(^|/)(go\.sum|bun\.lockb?)$")
 _LOCKS = re.compile(r"(\.lock|-lock\.json|-lock\.yaml)$|(^|/)(go\.sum|bun\.lockb?)$")
+# Código de teste, exemplo e fixture: costuma ter problema de propósito e não é o que vai para produção.
+TESTISH = re.compile(r"(?i)(^|/)(tests?|__tests__|__mocks__|spec|e2e|fixtures?|examples?|samples?|mocks?|testdata|cookbooks?)"
+                     r"(/|$)|[._-](test|spec)\.|(^|/)(test_[^/]*|conftest)\.py$")
 
 
 def is_text_source(rel: str, mode: str = "project") -> bool:
