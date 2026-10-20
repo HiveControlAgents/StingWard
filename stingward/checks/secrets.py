@@ -141,14 +141,30 @@ def known_kinds(text: str):
 
 
 # Opção de linha de comando com segredo (--token=..., --api-key ...), que o _redact não pega por causa do hífen.
-_FLAG_SECRET = re.compile(r"(?i)(--?[\w-]*(?:token|key|secret|passw(?:or)?d|pwd|auth|credential)[\w-]*(?:=|\s+)[\"']?)([^\s\"']{6,})")
+# A opção é lida inteira primeiro e só depois se procura a palavra nela: com a palavra no meio de "[\w-]*...[\w-]*",
+# o regex tentava cada posição dela e ficava quadrático numa sequência longa ("-keykeykey...").
+_FLAG = re.compile(r"--?[\w-]+")
+_FLAG_WORD = re.compile(r"(?i)token|key|secret|passw(?:or)?d|pwd|auth|credential")
+_FLAG_VALUE = re.compile(r"(?:=|\s+)[\"']?([^\s\"']{6,})")
+
+
+def _mask_flags(text: str) -> str:
+    out, pos = [], 0
+    for m in _FLAG.finditer(text):
+        if m.start() < pos or not _FLAG_WORD.search(m.group(0)):
+            continue
+        v = _FLAG_VALUE.match(text, m.end())
+        if v:
+            out += [text[pos:v.start(1)], "[REDACTED]"]
+            pos = v.end(1)
+    return "".join(out) + text[pos:]
 
 
 def mask(text: str) -> str:
     """Texto seguro para o relatório: token vira prefixo + reticências e o resto que o _redact reconhece vira [REDACTED:tipo]."""
     for _, rx in TOKEN_PATTERNS[1:]:
         text = rx.sub(lambda m: m.group(0)[:4] + "\u2026", text)
-    text = _FLAG_SECRET.sub(lambda m: m.group(1) + "[REDACTED]", text)
+    text = _mask_flags(text)
     return redact.sanitize_text(text)
 
 
