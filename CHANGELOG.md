@@ -38,6 +38,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - The "OSV.dev did not respond" notice is printed whenever it happens, also when findings already set exit code 1 or with `--fail-on never`; it used to show only when it changed the exit code. A CISA KEV failure now prints a notice too, since vulnerabilities on that list are raised to critical.
 - Files that start with a UTF-8 byte order mark (Notepad, PowerShell) are audited. An `.mcp.json` or agent settings file saved that way could not be parsed and was skipped without a word.
 - A `.stingwardignore` that is not valid UTF-8 (a comment saved in Latin-1) no longer crashes the scan with a traceback, and one that starts with a byte order mark no longer loses its first line.
+- On Python 3.9 to 3.11, a project or skill with folders nested about a thousand levels deep no longer stops the scan with a `RecursionError`. The file listing no longer recurses; its order and what it skips are the same.
 
 ## [0.1.5] - 2026-10-20
 
