@@ -116,7 +116,8 @@ def grade(findings):
 
 
 # Nome de servidor, caminho e trecho vêm do código auditado: sem isso, um ESC[1A apagaria o veredito no terminal.
-_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
+# A quebra de linha também (\n, U+2028, U+2029): um arquivo chamado "x\nResumo: 0 · Nota: A" criaria uma linha falsa.
+_CONTROL = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]")
 
 
 def _clean(s):
@@ -536,7 +537,7 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
 
 
 _MD = {"\\": "\\\\", "|": "\\|", "<": "&lt;", ">": "&gt;", "&": "&amp;", "[": "\\[", "]": "\\]", "`": "\\`",
-       "*": "\\*", "_": "\\_", "!": "\\!", "\n": " ", "\r": " ", "@": "@&#8203;"}
+       "*": "\\*", "_": "\\_", "!": "\\!", "@": "@&#8203;"}
 
 
 def _esc(s):

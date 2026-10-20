@@ -563,6 +563,17 @@ class TextAndMarkdown(unittest.TestCase):
             for lang in ("pt", "en"):
                 self.assertIn(report.effort(rule), report_html.H[lang]["effort"])
 
+    def test_a_line_break_in_a_name_cannot_forge_a_line(self):
+        # Nome de arquivo pode ter quebra de linha: ela não pode criar no terminal uma linha que parece do relatório.
+        f = Finding("AGT003", "medium", "evil\nSummary: 0 · Grade: A\n.json", 1, {"server": "x Grade: A ", "spec": "y"})
+        text = report.text(self.ctx, [f], "en")
+        self.assertEqual([line for line in text.split("\n") if line.startswith(("Summary: 0", "Grade: A"))], [])
+        self.assertNotIn(" ", text)
+        self.assertNotIn(" ", text)
+        self.assertIn("evil\\x0aSummary: 0 · Grade: A\\x0a.json:1", text)
+        self.assertIn("x\\u2028Grade: A\\u2029", text)
+        self.assertIn("evil\\\\x0aSummary", report.markdown(self.ctx, [f], "en"))
+
     def test_every_impact_text_fills(self):
         for rule in RULES:
             entry = report.merge([Finding(rule, "high", "a.py", 1, {})], "en")[0]

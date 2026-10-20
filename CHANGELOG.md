@@ -27,6 +27,9 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - Text and Markdown reports list the same problem (same rule, title and explanation) once, with every place it was found, and start with a short "fix these first" list when there are critical or high findings. JSON and SARIF still have one record per finding.
 - Test and example code is recognized in more places (`e2e/`, `samples/`, `testdata/`, `__mocks__/`, `cookbooks/`, `test_*.py`, `conftest.py`), and findings there are lowered as they already were in `tests/` and `examples/`.
 
+### Fixed
+- The text report shows a line break in a file name or in text from the audited project as `\x0a` (and U+2028/U+2029 as `\u2028`/`\u2029`), as it already did with other control characters. A file named `x` + line break + `Summary: 0 · Grade: A` printed a fake line in the terminal.
+
 ## [0.1.5] - 2026-10-20
 
 ### Changed
