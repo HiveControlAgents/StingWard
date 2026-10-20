@@ -55,7 +55,9 @@ _HINT = re.compile(r"-----BEGIN|eyJ|AKIA|ASIA|ABIA|ACCA|gh[pousr]_|github_pat_|x
                    r"npm_|glpat-|hf_|gsk_|sb_secret_|sbp_|xai-|SG\.|pypi-|do[opr]_v1_|GOCSPX-|r8_|pcsk_|shp(?:at|ss|ca|pa)_|"
                    r"ntn_|lin_api_|\bre_[A-Za-z0-9]{8}_")
 # Token aleatório de verdade tem dígito e maiúscula/minúscula; nome de variável e exemplo de doc, não.
-_MIXED = {"openai_key", "meta_token", "npm_token", "huggingface_token", "replicate_token", "resend_key"}
+_MIXED = {"openai_key", "meta_token", "npm_token", "replicate_token", "resend_key"}
+# Token do Hugging Face: 34 letras e dígitos aleatórios, e cerca de 1 em 400 sai sem dígito. Basta ter as duas caixas.
+_CASED = {"huggingface_token"}
 # Exemplo de documentação: "sk-ant-oat01-...", "ghp_abc***", "xoxb-<token>", "AKIA1234xxxx".
 _TRUNCATED = re.compile(r"\.\.\.|\u2026|\*|<(?!/)|[xX]{4}")
 
@@ -182,7 +184,11 @@ def _real_token(kind, m, line, nxt=None):
         return _real_key(val, nxt)
     if _PLACEHOLDER.search(val) or len(set(val)) < 6 or _TRUNCATED.match(line, m.end()):
         return False
-    return kind not in _MIXED or bool(re.search(r"\d", val) and re.search(r"[a-z]", val) and re.search(r"[A-Z]", val))
+    if kind in _CASED:  # as caixas contam só depois do prefixo: o "hf" de hf_ já é minúsculo
+        body = val.split("_", 1)[1]
+        return bool(re.search(r"[a-z]", body) and re.search(r"[A-Z]", body))
+    cased = bool(re.search(r"[a-z]", val) and re.search(r"[A-Z]", val))
+    return kind not in _MIXED or bool(cased and re.search(r"\d", val))
 
 
 def _tokens(line, nxt=None):

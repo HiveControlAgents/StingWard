@@ -305,6 +305,18 @@ class TokenFormats(Case):
             with self.subTest(text=text[:10]):
                 self.assertFast(secrets.scan_text, text, "src/x.py", limit=1.0)
 
+    def test_hugging_face_tokens_without_a_digit_are_found(self):
+        # About 1 in 400 real tokens (34 random letters and digits) has no digit at all; both letter cases are enough.
+        letters = "aBcDeFgHiJkLmNoPqRsTuVwXyZ"
+        for value in ("hf_" + letters + letters[:8], "hf_" + R36[:34]):
+            with self.subTest(value=value[:8]):
+                f = scan_files({"src/hub.py": f'hub = Hub("{value}")\n'})
+                self.assertEqual([(x.rule, x.params["kind_en"], x.severity) for x in f],
+                                 [("SEC001", "Hugging Face token", "critical")])
+        for value in ("hf_" + letters.lower() + "abcdefgh", "hf_" + letters.upper() + "ABCDEFGH", "hf_" + "1234567890" * 4):
+            with self.subTest(value=value[:8]):
+                self.assertEqual(brief(scan_files({"src/hub.py": f'hub = Hub("{value}")\n'}), "SEC001"), [])
+
     def test_webhook_is_judged_by_its_own_url_not_by_the_rest_of_the_line(self):
         slack = "https://hooks.slack.com/services/" + "T01ABCDEF/B02GHIJKL/" + "q8W3e5R7t9Y1u3I5o7P9a1S3"
         discord = "https://discord.com/api/webhooks/" + "112233445566778899/" + "Zq8W3e5R7t9Y1u3I5o7P9a1S3d5F7g9H"
