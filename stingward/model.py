@@ -37,6 +37,8 @@ class Context:
     git_tracked: set[str] | None = None
     sources: dict = field(default_factory=dict)   # metadados das bases consultadas
     mode: str = "project"                          # project | skill | agents
+    too_big: list = field(default_factory=list)    # arquivos de código e texto que o limite de tamanho deixou de fora
+    truncated: bool = False                        # a listagem parou em scan.MAX_FILES
     _cache: dict = field(default_factory=dict)
 
     def read(self, rel: str) -> str:

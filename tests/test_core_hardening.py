@@ -564,5 +564,46 @@ class OutputFiles(unittest.TestCase):
         self.assertIn(f"não consegui gravar {tmp.name}", err)
 
 
+
+class WhatWasNotRead(unittest.TestCase):
+    """Arquivo grande demais ou pasta com arquivos demais: a auditoria cobre menos, e isso tem que ser dito."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _write(self, rel, size):
+        path = os.path.join(self.tmp.name, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write("x" * size)
+
+    def test_big_code_file_is_said(self):
+        self._write("lib/server.js", 500)
+        self._write("public/photo.png", 500)
+        self._write("src/app.js", 10)
+        for mode, argv in (("project", []), ("skill", ["skill"])):
+            with self.subTest(mode=mode), mock.patch.object(scan, "MAX_BYTES", 100), \
+                    mock.patch.object(scan, "SKILL_MAX_BYTES", 100):
+                code, _, err = run_main(argv + [self.tmp.name, "--offline", "--lang", "en", "--format", "json"])
+                self.assertEqual(code, 0, err)
+                self.assertIn("1 file(s) over", err)
+                self.assertIn("server.js", err)
+                self.assertNotIn("photo.png", err)
+        code, _, err = run_main([self.tmp.name, "--offline", "--format", "json"])
+        self.assertEqual(err, "")
+
+    def test_file_limit_is_said(self):
+        for i in range(7):
+            self._write(f"src/f{i}.js", 10)
+        with mock.patch.object(scan, "MAX_FILES", 5):
+            code, out, err = run_main([self.tmp.name, "--offline", "--lang", "en", "--format", "json"])
+            self.assertIn("more than 5 files", err)
+            self.assertEqual(len(scan.run(self.tmp.name, offline=True)[0].files), 5)
+        with mock.patch.object(scan, "MAX_FILES", 7):
+            code, out, err = run_main([self.tmp.name, "--offline", "--lang", "en", "--format", "json"])
+            self.assertEqual(err, "")
+
+
 if __name__ == "__main__":
     unittest.main()

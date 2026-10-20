@@ -162,6 +162,8 @@ MSG = {
            "nogit": "stingward: não consegui baixar {target}: o git não está instalado ou não abriu ({detail})",
            "outside": "stingward: não vou auditar {target}: a subpasta {detail} fica fora do repositório baixado",
            "write": "stingward: não consegui gravar {path}: {detail}",
+           "too_big": "stingward: {n} arquivo(s) acima de {mb} MB não foram lidos e ficaram fora da auditoria: {files}",
+           "truncated": "stingward: a pasta tem mais de {n} arquivos; parei de ler aí, e o resto ficou fora da auditoria.",
            "osv_down": "stingward: o OSV.dev não respondeu e as dependências não foram checadas (use --offline para pular de propósito).",
            "kev_down": "stingward: a lista CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com "
                        "severidade abaixo da real.",
@@ -177,6 +179,8 @@ MSG = {
            "nogit": "stingward: could not download {target}: git is not installed or did not start ({detail})",
            "outside": "stingward: will not audit {target}: the subfolder {detail} is outside the downloaded repository",
            "write": "stingward: could not write {path}: {detail}",
+           "too_big": "stingward: {n} file(s) over {mb} MB were not read and are not covered by this audit: {files}",
+           "truncated": "stingward: the folder has more than {n} files; reading stopped there and the rest is not covered by this audit.",
            "osv_down": "stingward: OSV.dev did not respond, so dependencies were not checked (use --offline to skip them on purpose).",
            "kev_down": "stingward: the CISA KEV list did not respond: a vulnerability attackers already exploit may show a lower "
                        "severity than it should.",
@@ -297,6 +301,12 @@ def main(argv=None):
         _emit(args, ctx, findings, lang, label, only, remote=tmp is not None, audit=audit)
         if audit is not None and audit.mask.changed:
             _say(lang, "masked")
+        if ctx.too_big:
+            limit = scan.SKILL_MAX_BYTES if ctx.mode == "skill" else scan.MAX_BYTES
+            shown = ", ".join(ctx.too_big[:5]) + (", ..." if len(ctx.too_big) > 5 else "")
+            _say(lang, "too_big", n=len(ctx.too_big), mb=limit // 1_000_000, files=shown)
+        if ctx.truncated:
+            _say(lang, "truncated", n=scan.MAX_FILES)
         if args.review_template:
             text, kept, stale = review.template(findings, lang, old=old, target=report_html._name(ctx, label, report_html.H[lang]))
             _write(args.review_template, text)

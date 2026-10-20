@@ -43,6 +43,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A password with an `@` in a database URL (`postgres://admin:xxxx@xxxx@db.example.com/app`) is masked whole in every report. Masking stopped at the first `@`, so the HTML excerpt showed the rest of the password. The same fix makes such a URL to `localhost` count as a local database (low), as other local URLs already did.
 - A PGP/GPG private key (the armored block that GnuPG exports) is reported as a private key (SEC001, critical) and masked like the other private keys. Only PEM keys (`-----BEGIN ... PRIVATE KEY-----`) were.
 - Telegram bot tokens (also inside `https://api.telegram.org/bot<token>/...`) and the `AccountKey` and `SharedAccessKey` of Azure connection strings are masked in every report. A Claude Code permission that called the Telegram API showed the bot token in the text, Markdown, JSON and HTML reports.
+- What the audit did not read is now said on stderr: code and text files over the size limit (2 MB, or 10 MB in `stingward skill`), and a folder with more than 50,000 files, where reading stops. Both used to be skipped without a word, so a skill could hide its code in an oversized file and still get "nothing serious found".
 
 ## [0.1.5] - 2026-10-20
 
