@@ -97,18 +97,48 @@ def _jwt_role(token: str):
         return None
 
 
-def _real_token(kind, m, line):
+_PEM_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
+_PEM_HEADER = re.compile(r"(?:Proc-Type|DEK-Info|Comment):")
+_B64_RUN = re.compile(r"[A-Za-z0-9+/]{20,}")
+
+
+def _pem_body(text: str) -> bool:
+    """O texto tem corpo de chave: base64 com maiúscula, minúscula e dígito, e não um "...", "abc" ou "YOUR_KEY"."""
+    for run in _B64_RUN.findall(text):
+        if (len(set(run)) >= 10 and re.search(r"\d", run) and re.search(r"[a-z]", run) and re.search(r"[A-Z]", run)
+                and not _PLACEHOLDER.search(run)):
+            return True
+    return False
+
+
+def _real_key(val, nxt):
+    """Chave privada de verdade, e não só o cabeçalho: código que lida com chaves (startsWith, replace, placeholder=
+    "-----BEGIN...") também escreve o cabeçalho. O corpo vem na mesma linha (JSON com \\n) ou, se depois do
+    cabeçalho só sobra pontuação, na linha seguinte (nxt). nxt None é valor solto sem linha seguinte (.env, config
+    de MCP): aí o cabeçalho sozinho conta, como antes."""
+    body = re.sub(r"\\[rn]", "\n", val[_PEM_BEGIN.match(val).end():])
+    closed = "-----END" in body
+    body = body.split("-----END", 1)[0]
+    lines = [ln for ln in body.split("\n") if re.search(r"[A-Za-z0-9]", ln) and not _PEM_HEADER.match(ln.strip(" \t\"'`"))]
+    if lines or closed:
+        return _pem_body(" ".join(lines))
+    if nxt is None:
+        return True
+    return _pem_body(nxt) or _PEM_HEADER.match(nxt.strip(" \t\"'`>")) is not None
+
+
+def _real_token(kind, m, line, nxt=None):
     """Descarta exemplo de documentação: placeholder, valor truncado ("sk-ant-oat01-...") e nome de variável."""
     val = m.group(0)
     if kind == "private_key":
-        return True
+        return _real_key(val, nxt)
     if _PLACEHOLDER.search(val) or len(set(val)) < 6 or _TRUNCATED.match(line, m.end()):
         return False
     return kind not in _MIXED or bool(re.search(r"\d", val) and re.search(r"[a-z]", val) and re.search(r"[A-Z]", val))
 
 
-def _tokens(line):
-    """(tipo, match) de cada token de formato conhecido na linha, sem sobreposição."""
+def _tokens(line, nxt=None):
+    """(tipo, match) de cada token de formato conhecido na linha, sem sobreposição. nxt: a linha seguinte."""
     spans, out = [], []
     if not _HINT.search(line):
         return out
@@ -117,7 +147,7 @@ def _tokens(line):
             if any(a < m.end() and m.start() < b for a, b in spans):
                 continue
             spans.append(m.span())
-            if _real_token(kind, m, line):
+            if _real_token(kind, m, line, nxt):
                 out.append((kind, m))
     return out
 
@@ -203,8 +233,8 @@ def _known_sev(kind, val):
     return "critical" if kind in CRITICAL else "high"
 
 
-def _known(line, n, rel, low_conf, out):
-    for kind, m in _tokens(line):
+def _known(line, n, rel, low_conf, out, nxt=""):
+    for kind, m in _tokens(line, nxt):
         if kind == "jwt":
             role = _jwt_role(m.group(0))
             if role == "service_role":
@@ -242,16 +272,18 @@ def scan_text(text: str, rel: str, generic: bool = True, sample: bool = False):
     markdown = rel.lower().endswith((".md", ".mdx", ".mdc"))
     out, fence = [], False
     # split("\n") e não splitlines(): \f e \v contariam como quebra e a linha do achado sairia errada.
-    for n, line in enumerate(text.split("\n"), 1):
+    lines = text.split("\n")
+    for n, line in enumerate(lines, 1):
+        nxt = lines[n] if n < len(lines) else ""
         if markdown and _FENCE.match(line):
             fence = not fence
         if len(line) > 4000:
             # Linha enorme (bundle minificado): só formatos conhecidos, um achado por tipo.
             found = []
-            _known(line, n, rel, low_conf, found)
+            _known(line, n, rel, low_conf, found, nxt)
             out += list({(f.rule, f.params.get("kind_en")): f for f in found}.values())
             continue
-        _known(line, n, rel, low_conf, out)
+        _known(line, n, rel, low_conf, out, nxt)
         if generic:
             _generic(line, n, rel, low_conf or sample or fence, out)
     return out
