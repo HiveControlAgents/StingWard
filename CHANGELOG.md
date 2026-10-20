@@ -40,6 +40,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A `.stingwardignore` that is not valid UTF-8 (a comment saved in Latin-1) no longer crashes the scan with a traceback, and one that starts with a byte order mark no longer loses its first line.
 - On Python 3.9 to 3.11, a project or skill with folders nested about a thousand levels deep no longer stops the scan with a `RecursionError`. The file listing no longer recurses; its order and what it skips are the same.
 - An output file that cannot be written (`--json`, `--sarif`, `--markdown`, `--html` or `--review-template` in a folder that does not exist, or pointing at a folder) gives a one-line error and exit code 2. It used to crash with a traceback and exit code 1, the code for findings.
+- A password with an `@` in a database URL (`postgres://admin:xxxx@xxxx@db.example.com/app`) is masked whole in every report. Masking stopped at the first `@`, so the HTML excerpt showed the rest of the password. The same fix makes such a URL to `localhost` count as a local database (low), as other local URLs already did.
 
 ## [0.1.5] - 2026-10-20
 

@@ -95,7 +95,10 @@ _TOKEN_PATTERNS = [
 ]
 
 # Esquema com teto de tamanho: sem ele, "a.a.a.a..." testaria cada letra até o fim do texto (tempo quadrático).
-_URL_CREDS = re.compile(r"(?P<scheme>\b[a-zA-Z][a-zA-Z0-9+.\-]{0,30}://)(?P<user>[^:/\s@\[]*):(?P<pw>[^@\s/]+)@")
+# A senha vai até o último @ antes do host: "P@ssw0rd" sem codificar é comum, e cortar no primeiro @ deixaria
+# "ssw0rd" no relatório. Depois de um @, aspas, vírgula, ?, #, & e = encerram: são de outro valor ou da query.
+_URL_CREDS = re.compile(r"(?P<scheme>\b[a-zA-Z][a-zA-Z0-9+.\-]{0,30}://)(?P<user>[^:/\s@\[]*):"
+                        r"(?P<pw>[^@\s/]+(?:@[^@\s/\"'`<>,;?#&=]+)*)@")
 _DISCORD_HOOK = re.compile(r"(?P<base>https?://(?:[\w-]+\.)?discord(?:app)?\.com/api/webhooks/\d+/)(?P<tok>[\w-]+)")
 _SLACK_HOOK = re.compile(r"(?P<base>https://hooks\.slack\.com/services/)(?P<tok>[\w/]+)")
 _AUTH_SCHEME = re.compile(r"(?i)\b(?P<s>Bearer|Basic|Digest)\s+(?P<v>[A-Za-z0-9\-._~+/]{8,}=*)")
