@@ -94,7 +94,14 @@ def _fetch(target):
             raise FetchError("nogit", str(e)) from None
         if r.returncode != 0:
             raise FetchError("git", (r.stderr or "").strip())
-        return tmp, os.path.join(tmp, "repo", sub)
+        repo = os.path.realpath(os.path.join(tmp, "repo"))
+        path = os.path.join(tmp, "repo", sub)
+        # A subpasta vem da URL e os links simbólicos, do autor da skill: "../.." ou skill -> ~ levariam a auditoria
+        # (e o veredito) para uma pasta que não é a skill baixada.
+        real = os.path.realpath(path)
+        if real != repo and not real.startswith(repo + os.sep):
+            raise FetchError("outside", sub)
+        return tmp, path
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
@@ -142,6 +149,7 @@ MSG = {
            "git": "stingward: não consegui baixar {target}: {detail}",
            "timeout": f"stingward: não consegui baixar {{target}}: o git clone passou de {CLONE_TIMEOUT} s",
            "nogit": "stingward: não consegui baixar {target}: o git não está instalado ou não abriu ({detail})",
+           "outside": "stingward: não vou auditar {target}: a subpasta {detail} fica fora do repositório baixado",
            "stale": "stingward: {n} item(ns) de {path} não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu).",
            "todo": "stingward: {n} achado(s) ainda sem status em {path}; eles contam como achados.",
            "masked": "stingward: mascarei algo que parece segredo num comentário ou no parecer. Confira o relatório antes de entregar.",
@@ -152,6 +160,7 @@ MSG = {
            "git": "stingward: could not download {target}: {detail}",
            "timeout": f"stingward: could not download {{target}}: git clone took more than {CLONE_TIMEOUT} s",
            "nogit": "stingward: could not download {target}: git is not installed or did not start ({detail})",
+           "outside": "stingward: will not audit {target}: the subfolder {detail} is outside the downloaded repository",
            "stale": "stingward: {n} item(s) in {path} match no finding of this scan (the code changed or the finding is gone).",
            "todo": "stingward: {n} finding(s) still have no status in {path}; they count as found.",
            "masked": "stingward: masked something that looks like a secret in a comment or the notes. Check the report before you deliver it.",

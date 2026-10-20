@@ -31,6 +31,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - Masking secrets no longer takes quadratic time on long values. A skill whose MCP config carried a 60 KB argument kept `stingward skill` busy for about 100 seconds (hours for a few hundred KB); it now takes about two seconds for 600 KB.
 - Command line errors (folder not found, unknown command, a wrong `--only`) follow `--lang` and the system language. They were always in Portuguese.
 - `stingward skill <url>` that cannot download the skill exits with code 2 and a one-line message, also when `git clone` takes more than 180 seconds or git is not installed. It used to exit with 1, the code for "findings", or crash with a traceback, and a timeout or Ctrl+C left the temporary clone behind.
+- `stingward skill https://github.com/<owner>/<repo>/tree/<branch>/<folder>` only audits a folder inside the downloaded repository. A folder such as `../../etc`, or one that the repository makes a symbolic link to a folder on your machine, used to be audited instead of the skill, and the verdict was about that folder.
 
 ## [0.1.5] - 2026-10-20
 
