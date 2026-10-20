@@ -1273,6 +1273,14 @@ class CodeEngine(unittest.TestCase):
                 self.assertLess(time.time() - t, 1)
                 self.assertEqual([(f.rule, f.severity) for f in found], [("COD001", "high")])
 
+    def test_long_line_before_math_random_stays_fast(self):
+        """O nome que recebe o Math.random() é procurado na linha: espaços longos ali faziam a busca cúbica."""
+        src = "const resetToken = Math.random().toString(36)\nx:" + " " * 1200 + "b Math.random()\n"
+        t = time.time()
+        found = code.scan_js("a.js", src)
+        self.assertLess(time.time() - t, 1)
+        self.assertEqual([(f.rule, f.line) for f in found], [("COD010", 1)])
+
     def test_line_numbers_follow_comments_and_strings(self):
         src = EXPRESS + ("/* a comment\n   eval(req.body.a)\n*/\n"
                          "const s = `multi\nline ${1}\ntext`\n"
