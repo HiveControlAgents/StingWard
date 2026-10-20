@@ -30,9 +30,10 @@ def is_dependency_file(rel: str) -> bool:
 
 
 def is_requirements(rel: str) -> bool:
-    """requirements*.txt, ou um .txt numa pasta requirements/ (base.txt, production.txt...)."""
+    """requirements*.txt, *-requirements.txt (dev-requirements.txt, test_requirements.txt) ou um .txt numa pasta
+    requirements/ (base.txt, production.txt...)."""
     parts = rel.split("/")
-    return re.fullmatch(r"requirements[\w.-]*\.txt", parts[-1]) is not None or \
+    return re.fullmatch(r"requirements[\w.-]*\.txt|[\w.-]*[-_]requirements\.txt", parts[-1]) is not None or \
         (len(parts) > 1 and parts[-2] == "requirements" and parts[-1].endswith(".txt"))
 
 
@@ -325,6 +326,11 @@ _PARSERS = {
 }
 
 
+# Linha com forma de requisito (nome, extras, depois versão, marcador ou nada). Frase de documento ("The system
+# shall...") e URL não são versão aberta: *-requirements.txt pode ser texto de especificação.
+_REQ_LINE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\s*(?:\[[^\]]*\]\s*)?(?:$|[<>=!~;@(,])")
+
+
 def open_ranges(root: Path, rel: str, requirements=False):
     """Manifesto sem lockfile ao lado: quantas dependências têm versão aberta."""
     name = rel.rsplit("/", 1)[-1]
@@ -346,7 +352,7 @@ def open_ranges(root: Path, rel: str, requirements=False):
         n = 0
         for line in _lines(text):
             line = line.split("#", 1)[0].strip()
-            if re.match(r"^[A-Za-z0-9]", line) and not _PIN.match(line):
+            if _REQ_LINE.match(line) and not _PIN.match(line):
                 n += 1
         return n
     return 0
