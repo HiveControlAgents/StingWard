@@ -264,6 +264,9 @@ _SQL_LOOK = re.compile(r"""(?isx)
   )""")
 # O valor entra onde vai um dado ('...', = x, LIKE '%x', IN (x)), não um nome de tabela ou coluna ("tabela", ORDER BY x).
 _VALUE_POS = re.compile(r"""(?:'|%|(?:[=<>]|\blike|\bilike|\bin\s*\(|\bvalues\s*\()\s*["'%]*)$""", re.I)
+# Começo de endereço que para onde o host ou a porta começa: "https://", "//", "http://localhost:". O que vem depois
+# decide o servidor ("evil.com/?", "@evil.com"). "https://api.example.com" + caminho é a base do código mais o caminho.
+_IN_HOST = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*:)?//(?:[^/?#\\\s]*[.:@])?\Z")
 _SQL_DDL = re.compile(r"\s*\(?\s*(?:pragma|create|drop|alter|truncate)\b", re.I)
 # Nome de variável que costuma guardar placeholders (",".join("?" * n)) ou um pedaço de SQL escrito no código (tabela,
 # coluna, ORDER BY, WHERE montado). O pedaço só conta fora da posição de dado: '{query}' é o texto da busca.
@@ -1370,18 +1373,20 @@ class _Py:
             return True
         return isinstance(v, ast.Call) and self._dot(v.func).endswith(("Path", "PurePath", "os.path.join", "joinpath"))
 
-    def lead_origins(self, node, env, depth=0):
-        """Origens do começo do endereço (esquema e host), não de um pedaço do caminho."""
+    def lead_origins(self, node, env, depth=0, host=False):
+        """Origens do começo do endereço (esquema e host), não de um pedaço do caminho. host: o host escrito depois de um
+        "https://" fixo também conta (para buscar no servidor; num redirect para https://{Host}/ ninguém de fora manda o
+        cabeçalho Host pelo navegador de outra pessoa)."""
         if isinstance(node, ast.BoolOp):
-            return self.lead_origins(node.values[0], env, depth)
+            return self.lead_origins(node.values[0], env, depth, host)
         v = self.vals.get(node.id) if isinstance(node, ast.Name) and node.id not in self.strs else None
         if depth < 3 and isinstance(v, ast.BinOp) and isinstance(v.op, ast.Add):
             # full = BASE + caminho; requests.get(full): o começo é o do valor declarado.
-            return self.lead_origins(v, env, depth + 1)
+            return self.lead_origins(v, env, depth + 1, host)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add) and not _builds_string(node):
             while isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
                 node = node.left  # BASE + caminho: o começo é o da esquerda
-            return self.lead_origins(node, env, depth + 1)
+            return self.lead_origins(node, env, depth + 1, host)
         if isinstance(node, ast.Name) and node.id in self.strs:
             parts = self.pieces(node, env)
         elif _builds_string(node):
@@ -1389,6 +1394,8 @@ class _Py:
         else:
             return self.origins(node, env)
         parts = [p for p in parts if not (p[0] == "lit" and p[1] == "")]
+        if host and len(parts) > 1 and parts[0][0] == "lit" and _IN_HOST.match(parts[0][1]):
+            parts = parts[1:]  # f"https://{host}/x": o texto fixo para onde o host começa
         if parts and parts[0][0] == "expr" and parts[0][1] is not None:
             return self.origins(parts[0][1], env)
         return set()
@@ -1405,7 +1412,7 @@ class _Py:
         if http:
             url = _arg(call, 1 if last == "request" else 0, "url")
             if url is not None and not _const_str(url) and not fn.guard_url and not fn.admin:
-                o = self.lead_origins(url, env)
+                o = self.lead_origins(url, env, host=True)
                 if REQ in o:
                     self.out.add("COD008", "high", ln, {"sink": d + "()"})
                 elif TOOL in o:
@@ -3362,8 +3369,8 @@ class _Js:
             return True, fixed
         return TOOL not in self.origins(*parts[0][1]), fixed
 
-    def lead_origins(self, a, b, depth=0):
-        """Origens do começo do endereço (esquema e host), não de um pedaço do caminho."""
+    def lead_origins(self, a, b, depth=0, host=False):
+        """Origens do começo do endereço (esquema e host), não de um pedaço do caminho. host: como em _Py.lead_origins."""
         a, b = self.trim(a, b)
         s = self.mask[a:b]
         if depth < 3 and s in self.vals and s not in self.strs:
@@ -3372,7 +3379,7 @@ class _Js:
             x, y = self.trim(*self.vals[s])
             if re.match(r"new\s+URL\s*\(", self.mask[x:y]) and self.close(self.mask.index("(", x)) == y - 1 or \
                     len(self.split_plus(x, y)) > 1:
-                return self.lead_origins(x, y, depth + 1)
+                return self.lead_origins(x, y, depth + 1, host)
         w = re.match(r"(?:new\s+URL|decodeURIComponent|decodeURI|String|encodeURI)\s*\(", s)
         if w and self.close(a + w.end() - 1) == b - 1:
             inner = self.args(a + w.end())
@@ -3381,6 +3388,8 @@ class _Js:
             a, b = inner[0]
         parts = self.pieces(a, b)
         parts = [p for p in parts if not (p[0] == "lit" and not p[1])]
+        if host and len(parts) > 1 and parts[0][0] == "lit" and _IN_HOST.match(parts[0][1]):
+            parts = parts[1:]  # `https://${host}/x`
         if not parts or parts[0][0] != "expr":
             return set()
         x, y = parts[0][1]
@@ -3398,7 +3407,7 @@ class _Js:
             return
         if _JS_GUARD_URL.search(self.mask, self.guard_start(m.start(), 800), m.start()):
             return
-        o = self.lead_origins(*args[0])
+        o = self.lead_origins(*args[0], host=True)
         if REQ in o and self.server:
             self.out.add("COD008", "high", self.line(m.start()), {"sink": re.sub(r"\s", "", m.group(0)).rstrip("(") + "()"})
         elif TOOL in o and not self.use_client:
