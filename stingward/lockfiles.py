@@ -1,9 +1,13 @@
 """Leitura de lockfiles e manifestos. Devolve (ecossistema OSV, nome, versão, arquivo, linha)."""
 from __future__ import annotations
 
+import bisect
 import json
 import re
+from collections import namedtuple
 from pathlib import Path
+
+from .vulndb import _vkey
 
 LOCKFILES = {
     "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock",
@@ -298,3 +302,495 @@ def open_ranges(root: Path, rel: str):
                 n += 1
         return n
     return 0
+
+
+# --------------------------------------------------------------------------- faixas de versão (manifesto sem lockfile)
+
+class Range(namedtuple("Range", "eco name spec req floor upper inclusive prefix suffix file line")):
+    """Dependência declarada como faixa. spec é a faixa e req o requisito, como estão escritos; floor é a menor
+    versão aceita e upper o teto (inclusive diz se o próprio teto vale). prefix + faixa nova + suffix reescreve req."""
+    __slots__ = ()
+
+    @property
+    def exact(self):
+        """Faixa de uma versão só (Pillow (==10.0.0), "v1.2.3"): é versão fixada, assunto do DEP001."""
+        return self.inclusive and self.upper is not None and _vkey(self.upper) == _vkey(self.floor)
+
+
+def ranges(root: Path, rel: str):
+    """Faixas com piso de requirements*.txt, package.json ou pyproject.toml. Quem chama decide se há lockfile."""
+    name = rel.rsplit("/", 1)[-1]
+    text = _read(root, rel)
+    if text is None:
+        return []
+    try:
+        if name == "package.json":
+            return list(_npm_ranges(text, rel))
+        if name == "pyproject.toml":
+            items = pyproject_requirements(text)
+        elif re.fullmatch(r"requirements[\w.-]*\.txt", name):
+            items = _requirement_lines(text)
+        else:
+            return []
+        return [r for r in (_python_range(req, rel, ln) for req, ln in items) if r]
+    except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
+        return []
+
+
+def in_range(r: Range, version: str) -> bool:
+    k = _vkey(version)
+    if k < _vkey(r.floor):
+        return False
+    if r.upper is None:
+        return True
+    u = _vkey(r.upper)
+    return k < u or (r.inclusive and k == u)
+
+
+def raised(r: Range, version: str) -> str:
+    """O requisito com o piso trocado por version. O teto fica se version cabe nele; se não cabe, a faixa abre."""
+    inside = r.upper is not None and in_range(r, version)
+    if r.eco == "npm":
+        p = _npm_parts(version)
+        if r.upper is None or p is None or p[0] is None:
+            spec = ">=" + version
+        elif not inside:
+            spec = "^" + version
+        elif not r.inclusive and _vkey(r.upper) == _vkey(_caret_upper(*p[:3])):
+            spec = "^" + version
+        elif not r.inclusive and _vkey(r.upper) == _vkey(_tilde_upper(*p[:2])):
+            spec = "~" + version
+        else:
+            spec = f">={version} {'<=' if r.inclusive else '<'}{r.upper}"
+    else:
+        spec = ">=" + version + (f",{'<=' if r.inclusive else '<'}{r.upper}" if inside else "")
+    return r.prefix + spec + r.suffix
+
+
+_VERSION = re.compile(r"v?\d+(?:\.\d+)*(?:[-+_.]?[A-Za-z0-9]+)*")
+
+
+def _release(v):
+    m = re.match(r"v?(\d+(?:\.\d+)*)", v)
+    return [int(x) for x in m.group(1).split(".")] if m else []
+
+
+def _pick(lows, excl, highs, skip=()):
+    """(piso, teto, teto_inclusivo) a partir dos limites da faixa. None se o piso não é uma versão certa
+    (só >X, ou o piso tirado por !=), se ele é 0 (aceita tudo) ou se a faixa é vazia."""
+    if not lows or not all(_VERSION.fullmatch(v) for v in lows + excl + [h for h, _ in highs]):
+        return None
+    floor = max(lows, key=_vkey)
+    k, parts = _vkey(floor), _release(floor)
+    if not any(parts) or any(_vkey(v) >= k for v in excl):
+        return None
+    for v in skip:
+        if v.endswith(".*"):
+            base = _release(v[:-2])
+            if base and (parts + [0] * len(base))[:len(base)] == base:
+                return None
+        elif _VERSION.fullmatch(v) and _vkey(v) == k:
+            return None
+    if not highs:
+        return floor, None, False
+    upper, inclusive = min(highs, key=lambda h: (_vkey(h[0]), h[1]))
+    u = _vkey(upper)
+    if u < k or (u == k and not inclusive):
+        return None
+    return floor, upper, inclusive
+
+
+# ------------------------------------------------------------------ Python (PEP 440 / PEP 508)
+
+_PY_REQ = re.compile(r"([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)\s*(\[[^\]]*\])?\s*")
+_PY_OP = re.compile(r"(~=|===|==|!=|<=|>=|<|>)\s*([A-Za-z0-9_.*+!-]+)")
+
+
+def _next_release(v, depth):
+    """Primeira versão depois do prefixo: _next_release("2.25", 0) == "3", _next_release("3.2", 1) == "3.3"."""
+    rel = _release(v)[:depth + 1]
+    rel[-1] += 1
+    return ".".join(map(str, rel))
+
+
+def python_floor(req: str):
+    """Piso de um requisito PEP 508 ("Pillow>=10", "foo[bar]~=1.2", "django==3.2.*"): (nome, extras, faixa,
+    piso, teto, teto_inclusivo), ou None. >X sozinho, nome sem versão e URL não têm piso."""
+    text = req.split(";", 1)[0].strip()
+    m = _PY_REQ.match(text)
+    if not m:
+        return None
+    name, extras = m.group(1), re.sub(r"\s+", "", m.group(2) or "")
+    spec = text[m.end():].strip()
+    if spec.startswith("(") and spec.endswith(")"):  # forma antiga: foo (>=1.0)
+        spec = spec[1:-1].strip()
+    if not spec:
+        return None
+    lows, excl, highs, skip = [], [], [], []
+    for part in spec.split(","):
+        p = _PY_OP.fullmatch(part.strip())
+        if not p or "!" in p.group(2):  # época (1!2.0) ou lixo: melhor não adivinhar
+            return None
+        op, v = p.groups()
+        if op == "==" and v.endswith(".*"):
+            base = v[:-2]
+            lows.append(base)
+            if _release(base):
+                highs.append((_next_release(base, len(_release(base)) - 1), False))
+        elif op in ("==", "==="):
+            lows.append(v)
+            highs.append((v, True))
+        elif op == "~=":
+            lows.append(v)
+            if len(_release(v)) >= 2:
+                highs.append((_next_release(v, len(_release(v)) - 2), False))
+        elif op == ">=":
+            lows.append(v)
+        elif op == ">":
+            excl.append(v)
+        elif op == "<=":
+            highs.append((v, True))
+        elif op == "<":
+            highs.append((v, False))
+        else:
+            skip.append(v)
+    picked = _pick(lows, excl, highs, skip)
+    return (name, extras, spec) + picked if picked else None
+
+
+def _python_range(req, rel, line):
+    f = python_floor(req)
+    if not f:
+        return None
+    name, extras, spec, floor, upper, inclusive = f
+    return Range("PyPI", name, spec, req.split(";", 1)[0].strip(), floor, upper, inclusive, name + extras, "", rel, line)
+
+
+def _requirement_lines(text):
+    """(requisito, linha) de um requirements.txt: junta as linhas quebradas com \\ e tira comentários e opções
+    (-r, -e, --hash). Os fixados com == ficam de fora: _requirements já lê esses para o DEP001."""
+    out, buf, start = [], "", 0
+    for i, line in enumerate(_lines(text), 1):
+        if not buf:
+            start = i
+        line = line.split("#", 1)[0].rstrip()
+        if line.endswith("\\"):
+            buf += line[:-1] + " "
+            continue
+        req, buf = (buf + line).strip(), ""
+        if not req or req.startswith("-"):
+            continue
+        req = re.split(r"\s+--?[A-Za-z]", req, maxsplit=1)[0].strip()
+        if not _PIN.match(req):
+            out.append((req, start))
+    return out
+
+
+# ------------------------------------------------------------------ npm (node-semver)
+
+_NPM_LOCAL = ("file:", "link:", "workspace:", "portal:", "patch:", "git", "http:", "https:", "github:", "gitlab:",
+              "bitbucket:", "gist:")
+_NPM_VER = re.compile(r"[vV]?(\d+|[xX*])(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?")
+_NPM_CMP = re.compile(r"(\^|~>?|>=|<=|>|<|=)?(.+)")
+
+
+def _npm_parts(v):
+    """(major, minor, patch, pre); a parte que falta ou é x/* vira None. None se não é versão."""
+    m = _NPM_VER.fullmatch(v)
+    if not m:
+        return None
+    parts = [int(g) if g and g.isdigit() else None for g in m.groups()[:3]]
+    for i in (1, 2):  # 1.x.3: depois de um curinga, o resto também é curinga
+        if parts[i - 1] is None:
+            parts[i] = None
+    return parts[0], parts[1], parts[2], m.group(4) if parts[2] is not None else None
+
+
+def _v3(major, minor, patch, pre=None):
+    return f"{major}.{minor or 0}.{patch or 0}" + (f"-{pre}" if pre else "")
+
+
+def _caret_upper(major, minor, patch):
+    """Teto de ^: ^1.2.3 < 2.0.0, ^0.2.3 < 0.3.0, ^0.0.3 < 0.0.4, ^0.x < 1.0.0."""
+    if major:
+        return f"{major + 1}.0.0"
+    if minor is None:
+        return "1.0.0"
+    if minor:
+        return f"0.{minor + 1}.0"
+    return "0.1.0" if patch is None else f"0.0.{patch + 1}"
+
+
+def _tilde_upper(major, minor):
+    """Teto de ~ e das versões parciais: ~1.2.3 e 1.2.x < 1.3.0; ~1 e 1.x < 2.0.0."""
+    return f"{major + 1}.0.0" if minor is None else f"{major}.{minor + 1}.0"
+
+
+def npm_floor(spec: str):
+    """Piso de uma faixa do npm ("^1.6.0", "~1.2", ">=1.2 <2", "1.x", "1.2.3 - 2"): (piso, teto, teto_inclusivo),
+    ou None para *, latest e outras tags, ||, >X e o que não vem do registro (git, file:, link:, workspace:, URL)."""
+    s = spec.strip()
+    if not s or "||" in s or s.lower().startswith(_NPM_LOCAL) or "/" in s or ":" in s:
+        return None
+    hyphen = re.fullmatch(r"(\S+)\s+-\s+(\S+)", s)
+    if hyphen:
+        lo, hi = _npm_parts(hyphen.group(1)), _npm_parts(hyphen.group(2))
+        if not lo or not hi or lo[0] is None or hi[0] is None:
+            return None
+        high = (_v3(*hi), True) if hi[2] is not None else (_tilde_upper(hi[0], hi[1]), False)
+        return _pick([_v3(*lo)], [], [high])
+    lows, excl, highs = [], [], []
+    for c in re.sub(r"(>=|<=|>|<|=|\^|~>?)\s+", r"\1", s).split():
+        m = _NPM_CMP.fullmatch(c)
+        op, p = m.group(1) or "", _npm_parts(m.group(2))
+        if p is None:
+            return None
+        major, minor, patch, pre = p
+        if major is None:  # *, x: qualquer versão
+            if op in ("", "=", ">=", "^", "~", "~>"):
+                continue
+            return None
+        v = _v3(major, minor, patch, pre)
+        if op in ("", "="):
+            lows.append(v)
+            highs.append((v, True) if patch is not None else (_tilde_upper(major, minor), False))
+        elif op == "^":
+            lows.append(v)
+            highs.append((_caret_upper(major, minor, patch), False))
+        elif op in ("~", "~>"):
+            lows.append(v)
+            highs.append((_tilde_upper(major, minor), False))
+        elif op == ">=":
+            lows.append(v)
+        elif op == ">":
+            excl.append(v)
+        elif op == "<=":
+            highs.append((v, True) if patch is not None else (_tilde_upper(major, minor), False))
+        else:
+            highs.append((v, False))
+    return _pick(lows, excl, highs)
+
+
+def _npm_ranges(text, rel):
+    d = json.loads(text)
+    if not isinstance(d, dict):
+        return
+    find = _line_finder(text)
+    for sec in ("dependencies", "devDependencies", "optionalDependencies"):
+        deps = d.get(sec)
+        if not isinstance(deps, dict):
+            continue
+        for key, spec in deps.items():
+            if not isinstance(spec, str) or _EXACT.fullmatch(spec):
+                continue
+            s = spec.strip()
+            name, rng = _npm_alias(key, s)
+            f = npm_floor(rng)
+            if f:
+                prefix = f'"{key}": "' + s[:len(s) - len(rng)]  # mantém o npm:nome-real@ do alias
+                yield Range("npm", name, rng, f'"{key}": "{s}"', *f, prefix, '"', rel, find(f'"{key}"'))
+
+
+# ------------------------------------------------------------------ pyproject.toml
+
+class _Str(str):
+    """String do TOML que lembra a linha onde começa."""
+    line = 0
+
+
+class _Toml:
+    """Leitor mínimo de TOML: o Python 3.9 e o 3.10 não têm tomllib, e o tomllib não diz a linha. Entende
+    tabelas, chaves com ponto ou aspas, os quatro tipos de string, listas e tabelas inline; números, datas e
+    booleanos são pulados. Uma linha que ele não entende é pulada inteira, sem derrubar o resto do arquivo."""
+
+    _BARE = re.compile(r"[A-Za-z0-9_-]+")
+    _BASIC = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+    _LITERAL = re.compile(r"'([^'\n]*)'")
+    _SCALAR = re.compile(r"[^,\]}\n#]+")
+    _ESC = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r", "e": "\x1b"}
+    MAX_DEPTH = 32
+
+    def __init__(self, text):
+        self.s, self.i, self.depth = text, 0, 0
+        self.newlines = [m.start() for m in re.finditer("\n", text)]
+
+    def line(self, i):
+        return bisect.bisect_left(self.newlines, i) + 1
+
+    def statements(self):
+        """(caminho completo da chave, valor) de cada atribuição; o caminho começa pela tabela atual."""
+        table, s = (), self.s
+        while True:
+            self.skip(newlines=True)
+            if self.i >= len(s):
+                return
+            start = self.i
+            try:
+                if s[self.i] == "[":
+                    table = self.header()
+                    self.end_of_line()
+                else:
+                    keys = self.key()
+                    self.expect("=")
+                    value = self.value()
+                    self.end_of_line()
+                    yield table + keys, value
+            except (ValueError, IndexError, RecursionError):
+                nl = s.find("\n", start)
+                self.i, self.depth = (len(s) if nl < 0 else nl + 1), 0
+
+    def skip(self, newlines=False):
+        s = self.s
+        while self.i < len(s):
+            c = s[self.i]
+            if c in " \t" or (newlines and c in "\r\n"):
+                self.i += 1
+            elif c == "#":
+                nl = s.find("\n", self.i)
+                self.i = len(s) if nl < 0 else nl
+            else:
+                return
+
+    def expect(self, tok):
+        self.skip()
+        if not self.s.startswith(tok, self.i):
+            raise ValueError(tok)
+        self.i += len(tok)
+
+    def end_of_line(self):
+        self.skip()
+        if self.i < len(self.s) and self.s[self.i] not in "\r\n":
+            raise ValueError("fim de linha")
+
+    def header(self):
+        close = "]]" if self.s.startswith("[[", self.i) else "]"
+        self.i += len(close)
+        keys = self.key()
+        self.expect(close)
+        return keys
+
+    def key(self):
+        keys = []
+        while True:
+            self.skip()
+            c = self.s[self.i:self.i + 1]
+            if c == '"':
+                keys.append(self.basic())
+            elif c == "'":
+                keys.append(self.match(self._LITERAL))
+            else:
+                keys.append(self.match(self._BARE, group=0))
+            self.skip()
+            if not self.s.startswith(".", self.i):
+                return tuple(keys)
+            self.i += 1
+
+    def match(self, rx, group=1):
+        m = rx.match(self.s, self.i)
+        if not m:
+            raise ValueError(rx.pattern)
+        self.i = m.end()
+        return m.group(group)
+
+    def basic(self):
+        return re.sub(r"\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)", self._unescape, self.match(self._BASIC))
+
+    def _unescape(self, m):
+        e = m.group(1)
+        if len(e) == 1:
+            return self._ESC.get(e, e)
+        code = int(e[1:], 16)
+        if code > 0x10FFFF:  # chr() daria ValueError ou, no 3.9, OverflowError
+            raise ValueError("escape")
+        return chr(code)
+
+    def multiline(self, quote):
+        start, j = self.i, self.i + 3
+        while True:
+            k = self.s.find(quote, j)
+            if k < 0:
+                raise ValueError("string sem fim")
+            slashes = 0
+            while quote == '"""' and k - 1 - slashes >= start + 3 and self.s[k - 1 - slashes] == "\\":
+                slashes += 1
+            if slashes % 2 == 0:
+                break
+            j = k + 1
+        extra = 0
+        while extra < 2 and self.s.startswith(quote[0], k + 3):  # """a"""" termina em a": até duas aspas a mais
+            k, extra = k + 1, extra + 1
+        self.i = k + 3
+        return self.s[start + 3:k]
+
+    def value(self):
+        self.skip()
+        s, i = self.s, self.i
+        line = self.line(i)
+        if s.startswith('"""', i) or s.startswith("'''", i):
+            out = _Str(self.multiline(s[i:i + 3]))
+        elif s.startswith('"', i):
+            out = _Str(self.basic())
+        elif s.startswith("'", i):
+            out = _Str(self.match(self._LITERAL))
+        elif s.startswith("[", i) or s.startswith("{", i):
+            self.depth += 1
+            if self.depth > self.MAX_DEPTH:
+                raise ValueError("aninhado demais")
+            out = self.array() if s[i] == "[" else self.inline_table()
+            self.depth -= 1
+            return out
+        else:
+            if not self.match(self._SCALAR, group=0).strip():
+                raise ValueError("valor")
+            return None
+        out.line = line
+        return out
+
+    def array(self):
+        self.i += 1
+        out = []
+        while True:
+            self.skip(newlines=True)
+            if self.s.startswith("]", self.i):
+                self.i += 1
+                return out
+            out.append(self.value())
+            self.skip(newlines=True)
+            if self.s.startswith(",", self.i):
+                self.i += 1
+            elif not self.s.startswith("]", self.i):
+                raise ValueError("lista")
+
+    def inline_table(self):
+        self.i += 1
+        out = {}
+        while True:
+            self.skip(newlines=True)
+            if self.s.startswith("}", self.i):
+                self.i += 1
+                return out
+            keys = self.key()
+            self.expect("=")
+            out[keys] = self.value()
+            self.skip(newlines=True)
+            if self.s.startswith(",", self.i):
+                self.i += 1
+            elif not self.s.startswith("}", self.i):
+                raise ValueError("tabela")
+
+
+def pyproject_requirements(text: str):
+    """(requisito, linha) de [project] dependencies e [project.optional-dependencies] de um pyproject.toml."""
+    out = []
+
+    def walk(path, value):
+        if isinstance(value, dict):
+            for k, v in value.items():
+                walk(path + k, v)
+        elif isinstance(value, list) and (path == ("project", "dependencies") or
+                                          (len(path) == 3 and path[:2] == ("project", "optional-dependencies"))):
+            out.extend((str(x), x.line) for x in value if isinstance(x, _Str))
+
+    for path, value in _Toml(text).statements():
+        walk(path, value)
+    return out

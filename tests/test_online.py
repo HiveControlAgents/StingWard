@@ -422,6 +422,42 @@ class BatchSize(unittest.TestCase):
         self.assertLess(time.monotonic() - t0, 240)
 
 
+# --------------------------------------------------------------------------- faixas sem lockfile (DEP004)
+
+@online
+class RangeFloors(unittest.TestCase):
+    def test_lowest_version_of_ranges_without_lockfile(self):
+        # Pillow 10.0.0 tinha 35 registros no OSV em 2026-10-20 (18 falhas distintas, juntando GHSA e PYSEC da mesma CVE),
+        # a pior de execução de código; correção de todas só na 12.3.0.
+        files = {"requirements.txt": "Pillow>=10\n",
+                 "pyproject.toml": '[project]\nname = "stingward-online-fixture"\ndependencies = ["Pillow>=10"]\n',
+                 "package-lock.json": npm_lock([("lodash", "4.17.15")]),
+                 "web/package.json": json.dumps({"dependencies": {"axios": "^1.6.0"}}, indent=2) + "\n"}
+        with mock.patch.object(vulndb, "osv_query", wraps=vulndb.osv_query) as q:
+            ctx, findings = deps_scan(files)
+        self.assertEqual(q.call_count, 1)  # fixados e pisos num lote só
+        self.assertEqual(q.call_args[0][0], [("npm", "lodash", "4.17.15"), ("PyPI", "Pillow", "10"), ("npm", "axios", "1.6.0")])
+        self.assertTrue(ctx.sources.get("osv"))
+        self.assertEqual(ctx.sources.get("packages"), 3)
+        pillow = by_pkg(findings, "DEP004")["Pillow"]
+        self.assertEqual(sorted((f.file, f.line) for f in pillow), [("pyproject.toml", 3), ("requirements.txt", 1)])
+        for f in pillow:
+            with self.subTest(file=f.file):
+                self.assertEqual(f.params["floor"], "10")
+                self.assertGreaterEqual(len(f.params["vulns"]), 15)
+                self.assertIn("CVE-2023-50447", [v["id"] for v in f.params["vulns"]])  # ImageMath.eval, execução de código
+                self.assertGreaterEqual(vt(f.params["fixed"]), vt("12.3.0"))
+                self.assertIn(f"replace Pillow>=10 with Pillow>={f.params['fixed']}", f.params["fix_en"])
+                if not f.params["whole_range"]:
+                    self.assertEqual(f.severity, "medium")
+        axios = by_pkg(findings, "DEP004")["axios"][0]
+        self.assertEqual((axios.file, axios.line, axios.params["floor"], axios.params["upper"]), ("web/package.json", 3, "1.6.0", "2.0.0"))
+        self.assertGreaterEqual(vt(axios.params["fixed"]), vt("1.12.0"))
+        self.assertIn('with "axios": "^1.', axios.params["fix_en"])
+        self.assertNotIn("Pillow", by_pkg(findings, "DEP001"))
+        self.assertIn("lodash", by_pkg(findings, "DEP001"))
+
+
 # --------------------------------------------------------------------------- falha de rede
 
 def _dead_port():
@@ -459,7 +495,7 @@ class NetworkFailure(unittest.TestCase):
 
 # A ordem importa só para a NVD: sem chave ela aceita ~5 pedidos a cada 30 s, e o teste de ponta a
 # ponta gasta vários. Os testes da NVD rodam antes dele para não serem pulados à toa.
-_ORDER = (OsvQuery, KevEpss, NvdSeverity, DepsCheck, EndToEnd, BatchSize, NetworkFailure)
+_ORDER = (OsvQuery, KevEpss, NvdSeverity, DepsCheck, EndToEnd, BatchSize, RangeFloors, NetworkFailure)
 
 
 def load_tests(loader, standard_tests, pattern):

@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 
-from . import __version__, gitsafe, report, scan
+from . import __version__, gitsafe, report, report_html, scan
 from .model import SEV_RANK
 
 COMMANDS = {"scan", "skill", "agents"}
@@ -34,10 +34,11 @@ def _parser():
     ap.add_argument("command", nargs="?", default="scan", help="scan (padrão), skill ou agents")
     ap.add_argument("target", nargs="?", default=".", help="pasta do projeto, ou caminho/URL da skill")
     ap.add_argument("--lang", choices=["pt", "en"], default=None, help="idioma do relatório")
-    ap.add_argument("--format", choices=["text", "json", "markdown", "sarif"], default="text", help="formato na saída padrão")
+    ap.add_argument("--format", choices=["text", "json", "markdown", "sarif", "html"], default="text", help="formato na saída padrão")
     ap.add_argument("--sarif", metavar="ARQ", help="grava SARIF (painel de segurança do GitHub)")
     ap.add_argument("--markdown", metavar="ARQ", help="grava Markdown (comentário de PR)")
     ap.add_argument("--json", metavar="ARQ", help="grava JSON")
+    ap.add_argument("--html", metavar="ARQ", help="grava o relatório em HTML (um arquivo só, para entregar ou imprimir em PDF)")
     ap.add_argument("--fail-on", choices=["critical", "high", "medium", "low", "never"], default="high",
                     help="sai com código 1 se houver achado desta severidade ou acima (padrão: high)")
     ap.add_argument("--only", default=None, help="só estas verificações: deps,secrets,app,code,agents")
@@ -110,6 +111,31 @@ def _git_prefix(path):
     return gitsafe.prefix(path)
 
 
+def _emit(args, ctx, findings, lang, label, only, remote):
+    verdict = args.command == "skill"
+    # Skill baixada não tem prefixo no SARIF: os caminhos são da pasta auditada, não do repositório clonado.
+    prefix = lambda: "" if args.command == "agents" or remote else _git_prefix(ctx.root)
+    outputs = {
+        "text": lambda: report.text(ctx, findings, lang, color=not args.no_color and sys.stdout.isatty(), target=label, show_verdict=verdict),
+        "json": lambda: report.as_json(ctx, findings, lang),
+        "markdown": lambda: report.markdown(ctx, findings, lang, target=label, show_verdict=verdict),
+        "sarif": lambda: report.sarif(ctx, findings, lang, prefix=prefix()),
+        "html": lambda: report_html.render(ctx, findings, lang, target=label, checks=only),
+    }
+    done = {}
+
+    def out(fmt):
+        if fmt not in done:
+            done[fmt] = outputs[fmt]()
+        return done[fmt]
+
+    sys.stdout.write(out(args.format))
+    for fmt, path in (("sarif", args.sarif), ("markdown", args.markdown), ("json", args.json), ("html", args.html)):
+        if path:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(out(fmt))
+
+
 def main(argv=None):
     _utf8_output()
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -149,22 +175,12 @@ def main(argv=None):
                 return 2
             ctx, findings = scan.run(args.target, mode="project", offline=args.offline, only=only)
             label = args.target
+        # Os relatórios saem antes de apagar a skill baixada: o HTML lê dela os trechos de código e o commit.
+        _emit(args, ctx, findings, lang, label, only, remote=tmp is not None)
     finally:
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    verdict = args.command == "skill"
-    outputs = {
-        "text": lambda: report.text(ctx, findings, lang, color=not args.no_color and sys.stdout.isatty(), target=label, show_verdict=verdict),
-        "json": lambda: report.as_json(ctx, findings, lang),
-        "markdown": lambda: report.markdown(ctx, findings, lang, target=label, show_verdict=verdict),
-        "sarif": lambda: report.sarif(ctx, findings, lang, prefix=_git_prefix(ctx.root) if args.command != "agents" else ""),
-    }
-    sys.stdout.write(outputs[args.format]())
-    for fmt, path in (("sarif", args.sarif), ("markdown", args.markdown), ("json", args.json)):
-        if path:
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(outputs[fmt]())
     if args.fail_on == "never":
         return 0
     if any(SEV_RANK[f.severity] >= SEV_RANK[args.fail_on] for f in findings):

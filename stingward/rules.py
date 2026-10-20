@@ -35,6 +35,15 @@ RULES = {
                "Without a lockfile nobody knows which version gets installed, so it cannot be audited.",
                "Generate and commit a lockfile (npm install, poetry lock, uv lock) or pin versions with ==."),
     },
+    "DEP004": {
+        "group": "deps",
+        "pt": ("{pkg} {spec}: {headline}",
+               "{why}{exploit}",
+               "{fix}"),
+        "en": ("{pkg} {spec}: {headline}",
+               "{why}{exploit}",
+               "{fix}"),
+    },
     # ------------------------------------------------------------------ segredos
     "SEC001": {
         "group": "secrets",
@@ -479,13 +488,17 @@ RULES = {
 def texts(rule: str, lang: str, params: dict):
     """Devolve (título, por quê, como corrigir) já preenchidos."""
     lang = lang if lang in ("pt", "en") else "en"
-    spec = RULES[rule][lang]
+    return tuple(fill(t, lang, params) for t in RULES[rule][lang])
+
+
+def fill(template: str, lang: str, params: dict) -> str:
+    """Preenche {nome} com os parâmetros do achado; campo que falta vira texto vazio."""
     safe = _Defaults(params)
     # Parâmetros que dependem do idioma vêm como nome_pt / nome_en.
     for k, v in params.items():
         if k.endswith("_" + lang):
             safe[k[:-3]] = v
-    return tuple(t.format_map(safe) for t in spec)
+    return template.format_map(safe)
 
 
 class _Defaults(dict):
@@ -499,6 +512,7 @@ STANDARDS = {
     "DEP001": ["CWE-1395"],
     "DEP002": ["CWE-506", "LLM04:2026", "AST02"],
     "DEP003": ["CWE-1395"],
+    "DEP004": ["CWE-1395"],
     "SEC001": ["CWE-798", "LLM02:2026"],
     "SEC002": ["CWE-538"],
     "SEC003": ["CWE-538"],

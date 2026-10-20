@@ -141,11 +141,21 @@ class Reports(unittest.TestCase):
         self.assertNotEqual(report._sources_line(self.ctx(osv_error="down"), "en"), report._sources_line(self.ctx(), "en"))
 
     def test_many_low_findings_are_folded(self):
-        findings = [Finding("SKL003", "low", f"f{i}.md", 1, {"phrase": "x"}) for i in range(20)]
+        # títulos diferentes: cada um é um item; o mesmo título em vários arquivos vira um item só (teste abaixo)
+        findings = [Finding("SKL003", "low", f"f{i}.md", 1, {"snippet": f"phrase {i}"}) for i in range(20)]
         out = report.text(self.ctx(), findings, "en", max_low=5)
         self.assertIn("f4.md", out)
         self.assertNotIn("f5.md", out)
         self.assertIn("and 15 more low-severity item(s)", out)
+
+    def test_same_problem_in_many_places_is_one_item(self):
+        findings = [Finding("SKL003", "low", f"f{i}.md", 1, {"snippet": "x"}) for i in range(20)]
+        out = report.text(self.ctx(), findings, "en", max_low=5)
+        self.assertEqual(out.count("Instruction that tries to override the user"), 1)
+        self.assertIn("where: f0.md:1, f1.md:1", out)
+        self.assertIn("f9.md:1 and 10 more", out)
+        self.assertNotIn("more low-severity", out)
+        self.assertIn("Summary: 20 low", out)  # a contagem e a nota continuam por achado
 
     def test_color_and_reference_link(self):
         f = Finding("SEC001", "critical", "a.js", 1, {"kind_en": "key", "kind_pt": "chave"}, refs=["https://osv.dev/x"])
