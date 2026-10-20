@@ -196,7 +196,7 @@ Regras do Firestore ou Storage com `allow read, write: if true` (ou a data do mo
 A resposta de uma chamada de LLM (OpenAI, Anthropic, Gemini, LangChain, AI SDK...) ou os argumentos de uma ferramenta MCP ou do AI SDK chegam a `eval`/`exec`, um comando de shell, um template, uma consulta SQL, ou `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. Uma injeção de prompt em qualquer coisa que o modelo leu vira código no seu servidor ou script no navegador de quem usa o app. Crítico quando a resposta é executada, alto para argumentos de ferramenta e SQL, médio para HTML. `JSON.parse`, `json.loads` e DOMPurify cortam a cadeia.
 
 **Como corrigir:** trate a saída do modelo como entrada de usuário: peça JSON e valide, mapeie para uma lista fixa de ações, passe os argumentos do shell em lista, rode o SQL com um usuário só de leitura e limpe o HTML com DOMPurify.
-**Padrões:** `CWE-1426` · `LLM05:2026`
+**Padrões:** `CWE-1426` · `LLM10:2026`
 
 <a id="app010"></a>
 ### APP010 · Dado da requisição entra no prompt de sistema
@@ -212,7 +212,7 @@ Um valor da requisição escrito no meio das instruções: `{"role": "system", "
 Uma rota do servidor que chama um modelo (`app/api/**/route.ts` do Next.js, server action, handler do Express ou Hono, rota do FastAPI ou Flask) sem sinal de login nem limite de pedidos no arquivo, no `middleware.ts`, num `app.use(...)` global ou nas dependências do router. Qualquer pessoa chama em loop na sua conta. Não entra em skills, testes e exemplos.
 
 **Como corrigir:** exija usuário logado, limite pedidos por usuário ou IP (`@upstash/ratelimit`, `express-rate-limit`, `slowapi`), defina `max_tokens` e ponha um limite de gasto no painel do provedor.
-**Padrões:** `CWE-306` · `CWE-770` · `LLM10:2026`
+**Padrões:** `CWE-306` · `CWE-770` · `LLM06:2026`
 
 <a id="app012"></a>
 ### APP012 · Carregar o modelo pode executar código
@@ -220,7 +220,7 @@ Uma rota do servidor que chama um modelo (`app/api/**/route.ts` do Next.js, serv
 `from_pretrained(..., trust_remote_code=True)` roda Python do repositório do modelo; `FAISS.load_local(..., allow_dangerous_deserialization=True)` e `torch.load` sem `weights_only=True` abrem o arquivo com pickle. Alto quando o arquivo vem da requisição, médio quando a opção insegura está escrita, baixo para um `torch.load` simples (seguro por padrão desde o PyTorch 2.6).
 
 **Como corrigir:** fixe `revision=` num commit revisado, passe `weights_only=True` ou use safetensors, e carregue só índices criados por você.
-**Padrões:** `CWE-502` · `CWE-829` · `LLM03:2026`
+**Padrões:** `CWE-502` · `CWE-829` · `LLM04:2026`
 
 <a id="app013"></a>
 ### APP013 · Agente pode executar o que o modelo escrever
@@ -228,7 +228,7 @@ Uma rota do servidor que chama um modelo (`app/api/**/route.ts` do Next.js, serv
 `PythonREPLTool`, `ShellTool` e `load_tools(["python_repl"])` do LangChain, `allow_dangerous_code=True`, `use_docker: False` do AutoGen, `auto_run = True` do Open Interpreter e parecidos: uma instrução escondida num documento, página ou mensagem vira código rodando na sua máquina. Médio para agentes de SQL (`create_sql_agent`, `SQLDatabaseChain`), que rodam no seu banco o SQL do modelo, e para `allow_dangerous_requests=True`. Classes de ferramenta só contam quando vêm da biblioteca de agentes.
 
 **Como corrigir:** tire a ferramenta, ou rode numa sandbox (container sem segredos e sem rede) e confirme cada execução. Dê aos agentes de SQL um usuário de banco só de leitura.
-**Padrões:** `CWE-94` · `LLM06:2026` · `ASI05`
+**Padrões:** `CWE-94` · `LLM03:2026` · `ASI05`
 
 ## Código
 
