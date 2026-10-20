@@ -113,7 +113,7 @@ Chaves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord, R
 <a id="sec002"></a>
 ### SEC002 · `.env` no git
 
-O `.env` está versionado, então todo clone e fork leva as chaves junto.
+O `.env` está versionado, então todo clone e fork leva as chaves junto. O `.env.vault` do dotenv-vault só guarda os ambientes cifrados e é feito para ir ao git: só conta se também tiver um segredo em texto puro. O `.env.keys`, que abre o cofre, continua contando.
 
 **Como corrigir:** `git rm --cached .env`, coloque no `.gitignore` e troque as chaves.
 **Padrões:** `CWE-538`
@@ -121,7 +121,7 @@ O `.env` está versionado, então todo clone e fork leva as chaves junto.
 <a id="sec003"></a>
 ### SEC003 · `.env` fora do `.gitignore`
 
-Ainda não foi para o git, mas o próximo `git add .` leva junto.
+Ainda não foi para o git, mas o próximo `git add .` leva junto. O `.env.vault` (dotenv-vault, cifrado) fica de fora: ele é feito para ir ao git.
 
 **Como corrigir:** adicione `.env` (e `.env.*`) ao `.gitignore`.
 **Padrões:** `CWE-538`

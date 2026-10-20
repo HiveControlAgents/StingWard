@@ -424,9 +424,9 @@ def _env_has_secret(text: str) -> bool:
         key, val = m["key"], m["val"].strip().split(" #", 1)[0].strip().strip("\"'")
         if not val or _PLACEHOLDER.search(val) or val.lower() in _WEAK_PW:
             continue
-        # Valor cifrado pelo dotenvx e a chave pública dele: commitar esse .env é o uso previsto (a privada fica
-        # no .env.keys, que continua contando).
-        if val.startswith("encrypted:") or key.startswith("DOTENV_PUBLIC_KEY"):
+        # Valor cifrado pelo dotenvx e a chave pública dele, e os ambientes cifrados do .env.vault (dotenv-vault):
+        # commitar esse arquivo é o uso previsto (a chave que abre fica no .env.keys, que continua contando).
+        if val.startswith("encrypted:") or key.startswith(("DOTENV_PUBLIC_KEY", "DOTENV_VAULT")):
             continue
         toks = _tokens(val)
         # A chave anon do Supabase vai para o navegador de propósito; o SEC001 também não a conta. A service_role
@@ -470,10 +470,15 @@ def check(ctx):
         if ENV_NAME.match(name) and not ENV_TEMPLATE.search(name):
             if ctx.mode == "agents":
                 continue
+            # O .env.vault do dotenv-vault é feito para ir ao git (só leva os ambientes cifrados): só conta se
+            # alguém pôs nele um segredo em texto puro.
+            vault = name == ".env.vault"
             if ctx.git_tracked is not None and rel in ctx.git_tracked:
                 # .env só com URL, porta e "changethis" (template de projeto) continua no relatório, mas baixo.
-                findings.append(Finding("SEC002", "high" if _env_has_secret(ctx.read(rel)) else "low", rel, None, {"name": name}))
-            elif not _ignored_by_gitignore(ctx, rel):
+                secret = _env_has_secret(ctx.read(rel))
+                if secret or not vault:
+                    findings.append(Finding("SEC002", "high" if secret else "low", rel, None, {"name": name}))
+            elif not vault and not _ignored_by_gitignore(ctx, rel):
                 findings.append(Finding("SEC003", "medium", rel, None, {"name": name}))
             continue
         if not is_text_source(rel, ctx.mode):

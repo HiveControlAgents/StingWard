@@ -113,7 +113,7 @@ API keys (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord, Replic
 <a id="sec002"></a>
 ### SEC002 · `.env` committed to git
 
-An `.env` file is tracked by git, so every clone and fork has its keys.
+An `.env` file is tracked by git, so every clone and fork has its keys. The `.env.vault` of dotenv-vault holds only encrypted environments and is made to be committed: it counts only when it also holds a plain secret. The `.env.keys` that opens it still counts.
 
 **Fix:** `git rm --cached .env`, add it to `.gitignore` and rotate the keys.
 **Standards:** `CWE-538`
@@ -121,7 +121,7 @@ An `.env` file is tracked by git, so every clone and fork has its keys.
 <a id="sec003"></a>
 ### SEC003 · `.env` missing from `.gitignore`
 
-Not committed yet, but the next `git add .` takes it along.
+Not committed yet, but the next `git add .` takes it along. A `.env.vault` (dotenv-vault, encrypted) is left out: it is meant to be committed.
 
 **Fix:** add `.env` (and `.env.*`) to `.gitignore`.
 **Standards:** `CWE-538`

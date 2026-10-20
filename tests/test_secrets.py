@@ -450,6 +450,25 @@ class CommittedEnv(Case):
         other = signed_jwt({"iss": "supabase-demo", "role": "service_role"}, b"project-own-secret-" + b"Q8w3E5r7T9y1")
         self.assertEqual(self.sev(".env", f"SUPABASE_SERVICE_ROLE_KEY={other}\n"), ["high"])
 
+    VAULT = ("#/-------------------.env.vault---------------------/\n#/         cloud-agnostic vaulting standard      /\n"
+             "#/--------------------------------------------------/\n\n# development\n"
+             'DOTENV_VAULT_DEVELOPMENT="' + R36 + R36[::-1] + '"\nDOTENV_VAULT_DEVELOPMENT_VERSION=2\n\n'
+             '# production\nDOTENV_VAULT_PRODUCTION="' + R36[::-1] + R36 + '"\nDOTENV_VAULT_PRODUCTION_VERSION=2\n')
+
+    def test_dotenv_vault_file_is_made_to_be_committed(self):
+        # dotenv-vault encrypts every environment into .env.vault, and its docs say to commit it: no "remove it from
+        # git" (SEC002) and no "add it to .gitignore" (SEC003). The keys that open it (.env.keys) still count.
+        for tracked in ({".env.vault"}, set()):
+            with self.subTest(tracked=tracked):
+                f = scan_files({".env.vault": self.VAULT}, tracked=tracked)
+                self.assertEqual(brief(f, "SEC002", "SEC003"), [])
+        f = scan_files({"api/.env.vault": self.VAULT + "STRIPE_SECRET=Tr0ub4dor77xKq9\n"}, tracked={"api/.env.vault"})
+        self.assertEqual(brief(f, "SEC002", "SEC003"), [("SEC002", "api/.env.vault", None, "high")])
+        keys = 'DOTENV_KEY_PRODUCTION="dotenv://:key_' + "0dec82bea24ada79a983dcc11b431e28" * 2 + \
+               '@dotenv.local/vault/.env.vault?environment=production"\n'
+        self.assertEqual(self.sev(".env.keys", keys), ["high"])
+        self.assertEqual(brief(scan_files({".env.keys": keys}, tracked=set()), "SEC003"), [("SEC003", ".env.keys", None, "medium")])
+
     def test_dotenvx_encrypted_file_is_low(self):
         text = (f'#/---[DOTENV_PUBLIC_KEY]---/\nDOTENV_PUBLIC_KEY="{self.HEX}"\nDOTENV_PUBLIC_KEY_PRODUCTION="{self.HEX}"\n\n'
                 f'OPENAI_API_KEY="{self.CIPHER}"\nDB_PASSWORD={self.CIPHER}\n')
