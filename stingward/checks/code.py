@@ -2777,10 +2777,16 @@ class _Js:
         return out
 
     def expr_end(self, p, limit=3000):
+        """Fim da expressão que começa em p. Cobra o trecho lido de fato: com 400 por chamada, um arquivo de muitas
+        declarações curtas (var a=1;var b=2;...) esgotava o teto do arquivo sem ter lido quase nada."""
+        end = self.scan_expr_end(p, limit)
+        self.spend(end - p + 1)
+        return end
+
+    def scan_expr_end(self, p, limit):
         mask = self.mask
         depth = 0
         n = min(len(mask), p + limit)
-        self.spend(min(n - p, 400))  # o fim costuma vir logo; o resto é cobrado em origins()
         for m in _EXPR_STOP.finditer(mask, p, n):
             c, i = m.group(), m.start()
             if c in "([{":

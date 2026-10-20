@@ -1680,6 +1680,13 @@ class CodeEngine(unittest.TestCase):
                  "nested.js": "const x = " + "[" * 3000 + "]" * 3000 + "\n", "huge.js": "// x\n" * 200_000}
         self.assertEqual(got(run(files)), [])
 
+    def test_many_short_declarations_fit_in_the_budget(self):
+        """Cada declaração era cobrada como 400 caracteres lidos, mesmo terminando no ; logo depois: um arquivo com
+        muitas declarações curtas (código gerado, var a=1;var b=2;...) esgotava o teto e o resto do arquivo não era lido."""
+        src = EXPRESS + ("var a=1;var b=2;" * 100 + "\n") * 300 + "app.post('/x', (req, res) => { eval(req.body.code) })\n"
+        self.assertFalse(code._minified(src))
+        self.assertEqual(got(run({"server.js": src})), [("COD003", "server.js", 303, "critical")])
+
     def test_long_files_are_not_taken_for_minified(self):
         """Um arquivo comum de 4000 linhas é lido até o fim; só linhas realmente longas indicam bundle minificado."""
         src = EXPRESS + "const a = 1 // filler line here\n" * 4000 + "app.post('/x', (req, res) => { eval(req.body.code) })\n"
