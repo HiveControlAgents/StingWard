@@ -2088,6 +2088,9 @@ _JS_REQ = re.compile(
     r"\bevent\s*\.\s*(?:body|queryStringParameters|pathParameters|multiValueQueryStringParameters)\b|"
     r"(?<![\w$.])(?:useSearchParams|useParams|useQueryState)\s*\(|\brouter\s*\.\s*query\b|"
     r"(?<![\w$])(?:window\.|document\.)?location\s*\.\s*(?:search|hash)\b")
+# A busca de um endereço guardada com outro nome: new URL(req.url).searchParams, request.nextUrl.searchParams.
+_JS_PARAMS_END = re.compile(r"\.\s*searchParams\Z")
+_JS_REQ_URL = re.compile(r"\b(?:req|request)\s*\.\s*(?:url|nextUrl)\b|\bnextUrl\b")
 _JS_MCP_ARGS = re.compile(r"\brequest\s*\.\s*params\b")
 # Começos possíveis de _JS_REQ e _JS_LLM, com texto fixo na frente (rápidas); a regex completa confere em volta.
 _JS_REQ_HINT = re.compile(r"\.\s*(?:query|body|params|cookies|headers|files?|fields|json|formData|text|param|header|parseBody|"
@@ -2534,6 +2537,8 @@ class _Js:
             m = _JS_UPLOAD.sub(lambda x: " " * len(x.group()), m)
         if self.has_req and _JS_REQ.search(m):
             o.add(REQ)
+        if self.has_req and _JS_PARAMS_END.search(s) and _JS_REQ_URL.search(s):
+            o.add(REQ)  # const sp = new URL(req.url).searchParams: sp.get('x') é a busca da requisição
         if self.has_llm and _JS_LLM.search(m):
             o.add(LLM)
         env = self.env
