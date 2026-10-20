@@ -44,6 +44,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A PGP/GPG private key (the armored block that GnuPG exports) is reported as a private key (SEC001, critical) and masked like the other private keys. Only PEM keys (`-----BEGIN ... PRIVATE KEY-----`) were.
 - Telegram bot tokens (also inside `https://api.telegram.org/bot<token>/...`) and the `AccountKey` and `SharedAccessKey` of Azure connection strings are masked in every report. A Claude Code permission that called the Telegram API showed the bot token in the text, Markdown, JSON and HTML reports.
 - What the audit did not read is now said on stderr: code and text files over the size limit (2 MB, or 10 MB in `stingward skill`), and a folder with more than 50,000 files, where reading stops. Both used to be skipped without a word, so a skill could hide its code in an oversized file and still get "nothing serious found".
+- A version with a huge number in a lockfile (`1.0.0-999...9`, thousands of digits), which OSV.dev still answers with vulnerabilities, no longer crashes the online scan with `ValueError` on Python 3.11 and later.
 
 ## [0.1.5] - 2026-10-20
 

@@ -605,5 +605,23 @@ class WhatWasNotRead(unittest.TestCase):
             self.assertEqual(err, "")
 
 
+
+class HostileVersions(unittest.TestCase):
+    """O OSV responde com falhas para versões absurdas ("1.0.0-999...9"); a versão vem do lockfile do projeto ou da skill."""
+
+    def test_huge_numbers_in_a_version_do_not_crash(self):
+        big = "9" * 5000
+        vuln = {"affected": [{"package": {"ecosystem": "npm", "name": "lodash"},
+                              "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "4.17.21"}]}]}]}
+        for version in (f"1.0.0-{big}", f"x{big}", big, f"{big}.1", "\u00b2!1.0"):
+            with self.subTest(version=version[:12]):
+                vulndb._vkey(version)
+                vulndb._major(version)
+                vulndb.fixed_version(vuln, "npm", "lodash", version)
+                vulndb.affects_whole_range(vuln, "npm", "lodash", version, version)
+        self.assertLess(vulndb._vkey("1.0.0-" + big), vulndb._vkey("1.0.0"))
+        self.assertLess(vulndb._vkey("1.2.3"), vulndb._vkey("1.10.0"))
+
+
 if __name__ == "__main__":
     unittest.main()

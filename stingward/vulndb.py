@@ -215,23 +215,32 @@ _PRE = {"dev": 0, "a": 1, "alpha": 1, "b": 2, "beta": 2, "c": 3, "pre": 3, "prev
 _POST = ("post", "rev", "r")
 
 
+def _int(digits: str) -> int:
+    """int() de um pedaço de versão. A versão vem do lockfile (de uma skill de terceiros, inclusive) e o OSV responde
+    com falhas até para "1.0.0-999...9": com mais de 4300 dígitos o int() do Python 3.11+ levanta ValueError."""
+    try:
+        return int(digits[:30])
+    except ValueError:  # "²".isdigit() é True, mas int("²") não existe
+        return 0
+
+
 def _vkey(v: str):
     """Ordem de semver, PEP 440, RubyGems e Go: pré-lançamento (dev, alpha, rc...) antes da final, post depois."""
     v = v.strip().lstrip("vV").split("+", 1)[0].lower()
     epoch, _, v = v.rpartition("!")
     m = re.match(r"\d+(?:\.\d+)*", v)
-    release = [int(x) for x in m.group().split(".")] if m else []
+    release = [_int(x) for x in m.group().split(".")] if m else []
     while release and release[-1] == 0:  # 1.0 == 1.0.0
         release.pop()
     rest = re.findall(r"\d+|[a-z]+", v[m.end():] if m else v)
     phase = 1 if not rest else 2 if rest[0] in _POST else 0
-    tags = [(0, int(t), "") if t.isdigit() else (1, _PRE.get(t, 2), t) for t in rest]
-    return int(epoch) if epoch.isdigit() else 0, release, phase, tags
+    tags = [(0, _int(t), "") if t.isdigit() else (1, _PRE.get(t, 2), t) for t in rest]
+    return _int(epoch) if epoch.isdigit() else 0, release, phase, tags
 
 
 def _major(v: str):
     m = re.match(r"\d+", v.strip().lstrip("vV"))
-    return int(m.group()) if m else None
+    return _int(m.group()) if m else None
 
 
 def fixed_version(vuln: dict, ecosystem: str, name: str, version: str):
