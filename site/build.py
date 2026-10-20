@@ -145,6 +145,14 @@ def link_to(target, here):
     return "./" if path == "." else path + "/"
 
 
+def pairs(key, page, text):
+    """zip for a text.json list and what the page builds for it. A different length means the texts drifted from the
+    page, and zip would silently drop the extra entries."""
+    if len(page) != len(text):
+        raise SystemExit(f"site/text.json: {key} has {len(text)} entries, the page has {len(page)}")
+    return zip(page, text)
+
+
 def from_demo(demo, path, snippet):
     """A piece of a demo file shown on the page, checked against the file so the picture cannot drift from the demo."""
     with open(os.path.join(demo, path), encoding="utf-8") as fh:
@@ -205,7 +213,7 @@ class Page:
                 (["./my-saas"], self.demo, "stingward ./my-saas"),
                 (["skill", "skills/stingward"], ROOT, "stingward skill skills/stingward")]
         names, sheets, peek = [], [], ""
-        for i, ((args, cwd, shown), item) in enumerate(zip(runs, t["reports"])):
+        for i, ((args, cwd, shown), item) in enumerate(pairs("reports", runs, t["reports"])):
             text = cli(args, cwd, lang, online=self.online)
             if i == 0:  # the hero shows the verdict and the first finding of this report
                 blocks = text.split("\n\n")
@@ -250,7 +258,7 @@ class Page:
                       + "".join(f'<li{" class=is-on" if g == grade else ""}><b>{g}</b> {e(m)}</li>' for g, m in t["grades"]) + "</ol>")
         frags = [frag_files, frag_osv, frag_checks, frag_grade]
         panes, names = [], []
-        for i, (stage, frag) in enumerate(zip(t["stages"], frags)):
+        for i, (frag, stage) in enumerate(pairs("stages", frags, t["stages"])):
             hidden = "" if i == 0 else " hidden"
             panes.append(f'<div class="frag" data-ui data-stage="{i}"{hidden}>{frag}</div>')
             names.append(f'<li data-stage="{i}"{" class=is-on" if i == 0 else ""}>{e(stage["name"])}</li>')
@@ -331,7 +339,7 @@ class Page:
              f'{e(rows[3]["comment_title"])}</p><ul class="pr__rows">{comment_rows}</ul></div>'),
         ]
         out = []
-        for i, (row, prev) in enumerate(zip(rows, previews)):
+        for i, (prev, row) in enumerate(pairs("where", previews, rows)):
             out.append(f'<li class="index__item" data-reveal><button class="index__row" type="button" data-pane="{i}">'
                        f'<span class="index__name">{e(row["name"])}</span><code class="index__cmd">{e(row["cmd"])}</code></button>'
                        f'<div class="index__thumb">{prev}</div></li>')
