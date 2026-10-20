@@ -32,6 +32,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - The Markdown report (the pull request comment) no longer turns text from the audited project into links: a bare `https://...` or `www....` address, `#12` and `owner/repo#3` get a zero-width space, so GitHub shows them as plain text and does not add a reference to the issue they name. Images, HTML and @mentions were already inert.
 - A token in the address given to `stingward skill` (an address with the token before `@github.com`, used to clone a private repository) is masked in the first line of the text report and on the cover of the HTML report. It used to be printed as typed.
 - When the Markdown report has more than 50 problems, its last row said "and N more low-severity item(s)" even when the ones left out were high or critical. It now says how many are left out at each severity, such as "and 3 more item(s): 2 high, 1 low".
+- The HTML report fits a phone screen again. In the remediation plan the effort column kept its desktop width of 80 pixels, so a status such as "Accepted risk" was cut off and the page scrolled sideways, and the place column stayed at a third of the width, splitting paths over several lines. On a 320-pixel screen a long name such as `NEXT_PUBLIC_OPENAI_API_KEY` also pushed the "fix these first" list off the screen.
 
 ## [0.1.5] - 2026-10-20
 

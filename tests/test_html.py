@@ -623,6 +623,32 @@ class TextAndMarkdown(unittest.TestCase):
 
 
 
+class Layout(unittest.TestCase):
+    """O CSS do relatório: o que só um navegador mostraria, conferido no texto do CSS."""
+
+    def blocks(self, css):
+        return [({x.strip() for x in sel.split(",")}, body) for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)]
+
+    def test_on_a_phone_the_plan_cells_drop_their_desktop_widths(self):
+        # No celular o plano vira grade: largura fixa de coluna da tabela (80px no esforço) cortava "RISCO ACEITO" e
+        # fazia a página rolar para o lado; os 34% do "onde" espremiam o caminho numa coluna estreita.
+        desktop, phone = report_html.CSS.split("@media (max-width:700px){", 1)
+        phone = phone.split("\n}\n", 1)[0]
+        fixed = {s for sels, body in self.blocks(desktop) if re.search(r"(?:^|;)width:", body) for s in sels if s.startswith(".plan .")}
+        self.assertEqual(fixed, {".plan .num", ".plan .where", ".plan .effort"})
+        reset = {s for sels, body in self.blocks(phone) if re.search(r"(?:^|;)width:auto", body) for s in sels}
+        self.assertEqual(fixed - reset, set())
+
+    def test_long_names_wrap_in_the_fix_first_list(self):
+        # NEXT_PUBLIC_OPENAI_API_KEY no título não tem onde quebrar: num celular de 320px o item saía da tela.
+        rules = {}
+        for sels, body in self.blocks(report_html.CSS):
+            for sel in sels:
+                rules[sel] = rules.get(sel, "") + ";" + body
+        self.assertIn("overflow-wrap:anywhere", rules[".first-item"])
+        self.assertIn("min-width:0", rules[".first-item"])
+
+
 class LowestVersion(unittest.TestCase):
     def test_dep004_lists_the_issues_of_the_lowest_version(self):
         root = tree({"requirements.txt": "Pillow>=10\n"})

@@ -967,7 +967,8 @@ border-radius:16px;background:#fff;color:var(--g)}
 .sev{display:inline-block;padding:1px 7px;border:1.5px solid var(--c);border-radius:4px;background:var(--cb);color:var(--c);font-size:11px;font-weight:800;
 letter-spacing:.07em;text-transform:uppercase;line-height:1.5;white-space:nowrap;vertical-align:1px}
 .first{list-style:none;padding:0;display:grid;gap:10px;counter-reset:first}
-.first-item{position:relative;padding:12px 16px 12px 50px;border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;break-inside:avoid}
+.first-item{position:relative;min-width:0;padding:12px 16px 12px 50px;border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;
+break-inside:avoid;overflow-wrap:anywhere}
 .first-item::before{counter-increment:first;content:counter(first);position:absolute;left:16px;top:11px;font-size:20px;font-weight:800;color:var(--faint)}
 .first-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
 .first-title{font-weight:700;text-decoration:none;font-size:16px;line-height:1.35}
@@ -1064,7 +1065,7 @@ section{padding:36px 16px}
 .plan thead{display:none}
 .plan,.plan tbody{display:block}
 .plan tr{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:2px 8px;padding:10px 0;border-bottom:1px solid var(--line)}
-.plan td,.plan th{border:0;padding:0;width:auto}
+.plan td,.plan th,.plan .num,.plan .where,.plan .effort{border:0;padding:0;width:auto}
 .plan .num{grid-row:1/3}
 .plan .problem{grid-column:2;grid-row:1}
 .plan .effort{grid-column:3;grid-row:1;text-align:right}
