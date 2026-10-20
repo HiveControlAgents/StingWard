@@ -26,6 +26,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - The DEP003 docs no longer list `pyproject.toml`: it never raised DEP003, since libraries declare ranges on purpose.
 - Text and Markdown reports list the same problem (same rule, title and explanation) once, with every place it was found, and start with a short "fix these first" list when there are critical or high findings. JSON and SARIF still have one record per finding.
 - Test and example code is recognized in more places (`e2e/`, `samples/`, `testdata/`, `__mocks__/`, `cookbooks/`, `test_*.py`, `conftest.py`), and findings there are lowered as they already were in `tests/` and `examples/`.
+- The source package on PyPI no longer ships `tests/`: those tests read files that only the repository has, so they could not run from it. CI now checks what the sdist and the wheel hold.
 
 ### Fixed
 - The Claude Code skill pre-approved any `python3` command that mentioned `scripts/run.py` and any `stingward` command, so a hidden instruction in a skill under review could run its own code or overwrite a file such as `~/.bashrc` without a prompt. It now pre-approves only its three commands, written with `${CLAUDE_SKILL_DIR}`, and puts `--` before the skill's path or URL so it cannot be read as an option (with the options before `skill`, which Python 3.9 to 3.12 need). The commands run Python with `-I`, so a `PYTHONPATH` with an empty entry no longer lets the checked folder's own `json.py` or `shutil.py` run.

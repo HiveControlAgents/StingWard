@@ -1,5 +1,5 @@
-"""De ponta a ponta, do jeito que as pessoas usam: a skill do Claude Code, o lançador do npm, os passos da Action
-e o site. Nada aqui usa a rede; os segredos de teste são falsos e montados por concatenação.
+"""De ponta a ponta, do jeito que as pessoas usam: a skill do Claude Code, o lançador do npm, os passos da Action,
+o site e os pacotes publicados. Nada aqui usa a rede; os segredos de teste são falsos e montados por concatenação.
 """
 import io
 import json
@@ -8,8 +8,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
+import zipfile
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
@@ -398,3 +400,42 @@ class SiteFocus(unittest.TestCase):
         for sel in (".folder:focus-visible .folder__tab", "a.folder__tab:focus-visible"):
             with self.subTest(selector=sel):
                 self.assertIn("text-decoration: underline", rules.get(sel, "no rule"))
+
+
+# --------------------------------------------------------------------------- os pacotes do PyPI
+
+DIST = os.environ.get("STINGWARD_DIST")
+
+
+def _package_files():
+    """Os arquivos .py do pacote, como caminhos do pacote publicado (stingward/checks/x.py)."""
+    out = set()
+    for folder, dirs, files in os.walk(os.path.join(ROOT, "stingward")):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        out |= {os.path.relpath(os.path.join(folder, f), ROOT).replace(os.sep, "/") for f in files if f.endswith(".py")}
+    return out
+
+
+@unittest.skipUnless(DIST, "set STINGWARD_DIST to the folder `python -m build` wrote (the CI package job does)")
+class Packaging(unittest.TestCase):
+    def _one(self, suffix):
+        found = [os.path.join(DIST, f) for f in os.listdir(DIST) if f.endswith(suffix)]
+        self.assertEqual(len(found), 1, found)
+        return found[0]
+
+    def test_the_sdist_holds_the_package_and_its_metadata_only(self):
+        """Os testes não rodam a partir do sdist (faltam os arquivos que eles leem): ficam no repositório."""
+        with tarfile.open(self._one(".tar.gz")) as tar:
+            names = {n.split("/", 1)[1] for n in tar.getnames() if "/" in n}
+        meta = {"PKG-INFO", "README.md", "LICENSE", "NOTICE", "pyproject.toml", "setup.cfg", "MANIFEST.in"}
+        files = {n for n in names if not n.endswith("/") and n not in {"stingward", "stingward/checks", "stingward.egg-info"}}
+        extra = {n for n in files - meta - _package_files() if not n.startswith("stingward.egg-info/")}
+        self.assertEqual(extra, set())
+        self.assertLessEqual(_package_files() | {"LICENSE", "NOTICE", "README.md", "pyproject.toml"}, files)
+
+    def test_the_wheel_holds_the_package_and_its_licenses_only(self):
+        with zipfile.ZipFile(self._one(".whl")) as whl:
+            names = set(whl.namelist())
+        info = f"stingward-{cli.__version__}.dist-info/"
+        self.assertEqual({n for n in names if not n.startswith(info)}, _package_files())
+        self.assertLessEqual({info + "licenses/LICENSE", info + "licenses/NOTICE"}, names)
