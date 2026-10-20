@@ -1040,6 +1040,72 @@ class SourceFailures(unittest.TestCase):
             self.assertNotIn(report.T[lang]["sources"], report.markdown(self.ctx(osv=True), [], lang))
 
 
+class PartialOsv(unittest.TestCase):
+    """O OSV.dev respondeu, mas faltaram detalhes de alguns avisos (checks/deps.py põe osv e osv_error): a checagem de
+    dependências ficou incompleta, não deixou de acontecer. Todo formato diz isso com a mensagem de osv_error."""
+    DETAIL = "2 vulnerability detail(s) could not be fetched from OSV.dev: GHSA-aaaa-bbbb-cccc, PYSEC-2024-1"
+    SAID = {"pt": "OSV.dev · checagem de dependências incompleta: " + DETAIL,
+            "en": "OSV.dev · dependency check incomplete: " + DETAIL}
+    COVER = {"pt": '<p class="warn">A checagem de dependências ficou incompleta: ' + DETAIL,
+             "en": '<p class="warn">The dependency check is incomplete: ' + DETAIL}
+    CELL = {"pt": "<td>consultado em parte: " + DETAIL + "</td>", "en": "<td>partly answered: " + DETAIL + "</td>"}
+
+    def setUp(self):
+        self.root = tree({"package-lock.json": "{}\n"})
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.dep = Finding("DEP003", "low", "package.json", None, {"manifest": "package.json", "count": 1})
+
+    def ctx(self, **sources):
+        return ctx_for(self.root, files=["package-lock.json"], packages=3, **sources)
+
+    def test_every_format_says_the_check_is_incomplete(self):
+        for lang in ("pt", "en"):
+            for findings in ([], [self.dep]):
+                with self.subTest(lang=lang, findings=len(findings)):
+                    ctx = self.ctx(osv=True, osv_error=self.DETAIL)
+                    text = report.text(ctx, list(findings), lang)
+                    self.assertIn(self.SAID[lang], text)
+                    self.assertNotIn(report.T[lang]["osv_fail"], text)
+                    md = report.markdown(ctx, list(findings), lang)
+                    self.assertIn(self.SAID[lang], md.replace("\\", ""))
+                    self.assertNotIn(report.T[lang]["osv_fail"], md)
+                    page = report_html.render(ctx, list(findings), lang)
+                    self.assertIn(self.COVER[lang], page)
+                    self.assertIn(self.CELL[lang], page)
+                    self.assertNotIn(report_html.H[lang]["warn_osv"], page)
+
+    def test_osv_that_did_not_answer_is_still_said_so(self):
+        for lang in ("pt", "en"):
+            ctx = self.ctx(osv_error="timeout")
+            self.assertIn(report.T[lang]["osv_fail"], report.text(ctx, [], lang))
+            self.assertIn(report_html.H[lang]["warn_osv"], report_html.render(ctx, [], lang))
+
+    def test_the_message_from_the_network_is_plain_text(self):
+        ctx = self.ctx(osv=True, osv_error="1 vulnerability detail(s) could not be fetched from OSV.dev: X\x1b[31m <img src=x> [go](https://e.test)")
+        self.assertNotIn("\x1b", report.text(ctx, [], "en"))
+        md = report.markdown(ctx, [], "en")
+        for raw in ("\x1b", "<img", "[go]("):
+            self.assertNotIn(raw, md)
+        page = report_html.render(ctx, [], "en")
+        for raw in ("\x1b", "<img"):
+            self.assertNotIn(raw, page)
+
+    def test_stderr_says_incomplete_and_the_gate_still_fails(self):
+        def partial(ctx):
+            ctx.sources.update(packages=3, osv=True, osv_error=self.DETAIL)
+            return []
+        for lang, said, not_said in (("en", "stingward: the dependency check is incomplete: " + self.DETAIL, "did not respond"),
+                                     ("pt", "stingward: a checagem de dependências ficou incompleta: " + self.DETAIL, "não respondeu")):
+            with self.subTest(lang=lang):
+                err = io.StringIO()
+                with mock.patch.dict(scan.CHECKS, {"deps": partial}), mock.patch.object(vulndb, "fetch_json", side_effect=AssertionError("network")), \
+                        contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                    code = cli.main([self.root, "--lang", lang])
+                self.assertEqual(code, 3)
+                self.assertIn(said, err.getvalue())
+                self.assertNotIn(not_said, err.getvalue())
+
+
 class AreaOrder(unittest.TestCase):
     """Em "Achados em detalhe" vem primeiro a área do achado mais grave; no empate, a que tem mais itens; depois a ordem fixa."""
 

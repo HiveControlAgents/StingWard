@@ -52,6 +52,7 @@ H = {
         },
         "warn_offline": "Modo offline: as dependências não foram checadas contra as bases de falhas conhecidas.",
         "warn_osv": "O OSV.dev não respondeu: as dependências não foram checadas contra as bases de falhas conhecidas.",
+        "warn_osv_partial": "A checagem de dependências ficou incompleta: {detail}. Rode de novo mais tarde para completá-la.",
         "warn_kev": "A lista CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com severidade abaixo da real.",
         "warn_big": ("{n} arquivo de código ou texto acima de {mb} MB não foi lido e ficou fora desta auditoria. A lista está em {scope}.",
                      "{n} arquivos de código ou texto acima de {mb} MB não foram lidos e ficaram fora desta auditoria. A lista está em {scope}."),
@@ -107,7 +108,7 @@ H = {
                 "kev": ("CISA KEV", "falhas que atacantes estão explorando agora"),
                 "epss": ("EPSS (FIRST)", "chance de exploração nos próximos 30 dias"),
                 "nvd": ("NVD", "nota de severidade quando o aviso não traz")},
-        "st_ok": "consultado", "st_kev": "consultado, catálogo {v}", "st_fail": "não respondeu", "st_offline": "pulado (modo offline)",
+        "st_ok": "consultado", "st_partial": "consultado em parte: {detail}", "st_kev": "consultado, catálogo {v}", "st_fail": "não respondeu", "st_offline": "pulado (modo offline)",
         "st_off": "não rodou (verificação de dependências desligada)", "st_nopkg": "não foi preciso: nenhum pacote encontrado",
         "st_nocve": "não foi preciso: nenhuma CVE encontrada", "st_noscore": "não foi preciso: todos os avisos tinham nota",
         "st_empty": "consultado, sem resposta útil", "st_na": "não foi preciso",
@@ -171,6 +172,7 @@ H = {
         },
         "warn_offline": "Offline mode: dependencies were not checked against the vulnerability databases.",
         "warn_osv": "OSV.dev did not respond: dependencies were not checked against the vulnerability databases.",
+        "warn_osv_partial": "The dependency check is incomplete: {detail}. Run it again later to complete it.",
         "warn_kev": "The CISA KEV list did not respond: a vulnerability attackers already exploit may show a lower severity than it should.",
         "warn_big": ("{n} code or text file over {mb} MB was not read and is not covered by this audit. The list is under {scope}.",
                      "{n} code or text files over {mb} MB were not read and are not covered by this audit. The list is under {scope}."),
@@ -226,7 +228,7 @@ H = {
                 "kev": ("CISA KEV", "vulnerabilities attackers are exploiting now"),
                 "epss": ("EPSS (FIRST)", "likelihood of exploitation in the next 30 days"),
                 "nvd": ("NVD", "severity scores missing from advisories")},
-        "st_ok": "consulted", "st_kev": "consulted, catalog {v}", "st_fail": "did not respond", "st_offline": "skipped (offline mode)",
+        "st_ok": "consulted", "st_partial": "partly answered: {detail}", "st_kev": "consulted, catalog {v}", "st_fail": "did not respond", "st_offline": "skipped (offline mode)",
         "st_off": "not run (dependency check turned off)", "st_nopkg": "not needed: no packages found",
         "st_nocve": "not needed: no CVE found", "st_noscore": "not needed: every advisory had a score",
         "st_empty": "consulted, no useful answer", "st_na": "not needed",
@@ -574,6 +576,8 @@ def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, 
         warns.append(t["warn_only"].format(checks=_checks(checks, t)))
     if "deps" in checks and ctx.offline:
         warns.append(t["warn_offline"])
+    elif "deps" in checks and report.osv_partial(ctx):
+        warns.append(t["warn_osv_partial"].format(detail=report._clean(ctx.sources["osv_error"])))
     elif "deps" in checks and ctx.sources.get("osv_error"):
         warns.append(t["warn_osv"])
     elif "deps" in checks and ctx.sources.get("kev_error"):
@@ -826,7 +830,8 @@ def _source_rows(ctx, checks, t):
         elif ctx.offline:
             st = t["st_offline"]
         elif key == "osv":
-            st = t["st_ok"] if s.get("osv") else t["st_fail"] if s.get("osv_error") else t["st_nopkg"]
+            st = (t["st_partial"].format(detail=report._clean(s["osv_error"])) if report.osv_partial(ctx) else
+                  t["st_ok"] if s.get("osv") else t["st_fail"] if s.get("osv_error") else t["st_nopkg"])
         elif not s.get("osv"):
             st = t["st_na"]
         elif key == "kev":

@@ -179,6 +179,7 @@ class SkillReportBack(unittest.TestCase):
         _, body = _skill()
         self.assertIn("`sources.osv`", body)
         self.assertIn("`sources.osv_error`", body)
+        self.assertIn("If both `sources.osv` and `sources.osv_error` are set", body)  # resposta parcial (checks/deps.py)
         with tempfile.TemporaryDirectory() as tmp:
             with open(os.path.join(tmp, "package-lock.json"), "w", encoding="utf-8") as fh:
                 json.dump({"lockfileVersion": 3, "packages": {"node_modules/left-pad": {"version": "1.3.0"}}}, fh)

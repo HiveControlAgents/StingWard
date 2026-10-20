@@ -246,6 +246,7 @@ MSG = {
            "too_big": "stingward: {n} arquivo(s) acima de {mb} MB não foram lidos e ficaram fora da auditoria: {files}",
            "truncated": "stingward: a pasta tem mais de {n} arquivos; parei de ler aí, e o resto ficou fora da auditoria.",
            "osv_down": "stingward: o OSV.dev não respondeu e as dependências não foram checadas (use --offline para pular de propósito).",
+           "osv_partial": "stingward: a checagem de dependências ficou incompleta: {detail}. Rode de novo mais tarde.",
            "kev_down": "stingward: a lista CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com "
                        "severidade abaixo da real.",
            "stale": "stingward: {n} item(ns) de {path} não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu).",
@@ -264,6 +265,7 @@ MSG = {
            "too_big": "stingward: {n} file(s) over {mb} MB were not read and are not covered by this audit: {files}",
            "truncated": "stingward: the folder has more than {n} files; reading stopped there and the rest is not covered by this audit.",
            "osv_down": "stingward: OSV.dev did not respond, so dependencies were not checked (use --offline to skip them on purpose).",
+           "osv_partial": "stingward: the dependency check is incomplete: {detail}. Run it again later.",
            "kev_down": "stingward: the CISA KEV list did not respond: a vulnerability attackers already exploit may show a lower "
                        "severity than it should.",
            "stale": "stingward: {n} item(s) in {path} match no finding of this scan (the code changed or the finding is gone).",
@@ -398,7 +400,9 @@ def main(argv=None):
             shutil.rmtree(tmp, ignore_errors=True)
 
     # A base que falhou é dita sempre, em qualquer formato: com --format json ou sarif o stderr é o único aviso legível.
-    if ctx.sources.get("osv_error"):
+    if report.osv_partial(ctx):  # respondeu em parte: dizer "não respondeu" exageraria (o código de saída continua 3)
+        _say(lang, "osv_partial", detail=report._clean(ctx.sources["osv_error"]))
+    elif ctx.sources.get("osv_error"):
         _say(lang, "osv_down")
     elif ctx.sources.get("kev_error"):
         _say(lang, "kev_down")

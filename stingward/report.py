@@ -34,6 +34,7 @@ T = {
         "offline": "modo offline: dependências não foram checadas",
         "pkgs": "{n} pacote(s) verificado(s)", "osv_fail": "OSV.dev não respondeu: dependências não foram checadas",
         "kev_fail": "CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com severidade abaixo da real",
+        "osv_partial": "checagem de dependências incompleta: {detail}",
         "too_big": "Fora da auditoria: {n} arquivo(s) acima de {mb} MB não foram lidos: {files}",
         "truncated": "Fora da auditoria: a pasta tem mais de {n} arquivos; a leitura parou aí e o resto não foi lido.",
         "badge": "Selo para o README",
@@ -73,6 +74,7 @@ T = {
         "offline": "offline mode: dependencies were not checked",
         "pkgs": "{n} package(s) checked", "osv_fail": "OSV.dev did not respond: dependencies were not checked",
         "kev_fail": "CISA KEV did not respond: a vulnerability attackers already exploit may show a lower severity than it should",
+        "osv_partial": "dependency check incomplete: {detail}",
         "too_big": "Not covered: {n} file(s) over {mb} MB were not read: {files}",
         "truncated": "Not covered: the folder has more than {n} files; reading stopped there and the rest was not read.",
         "badge": "README badge",
@@ -210,11 +212,13 @@ def _sources_line(ctx, lang):
     t = T[lang]
     if ctx.offline:
         return t["offline"]
-    if ctx.sources.get("osv_error"):
+    if ctx.sources.get("osv_error") and not ctx.sources.get("osv"):
         return t["osv_fail"]
     parts = [t["pkgs"].format(n=ctx.sources.get("packages", 0))]
     if ctx.sources.get("osv"):
         parts.append("OSV.dev")
+    if osv_partial(ctx):  # respondeu, mas faltaram detalhes de alguns avisos: a mensagem vem de checks/deps.py
+        parts.append(t["osv_partial"].format(detail=_clean(ctx.sources["osv_error"])))
     if ctx.sources.get("kev"):
         kv = ctx.sources["kev"]
         parts.append(f"CISA KEV {_clean(kv)}" if isinstance(kv, str) else "CISA KEV")  # a versão vem da rede
@@ -255,6 +259,11 @@ def thousands(n, lang):
     """50.000 em português, 50,000 em inglês."""
     text = f"{n:,}"
     return text.replace(",", ".") if lang == "pt" else text
+
+
+def osv_partial(ctx):
+    """O OSV.dev respondeu, mas a checagem ficou incompleta (osv e osv_error juntos): não é o mesmo que não responder."""
+    return bool(ctx.sources.get("osv") and ctx.sources.get("osv_error"))
 
 
 def source_failed(ctx):
