@@ -122,7 +122,7 @@ It comments the report on the PR (and updates the same comment on every run), up
 |---|---|
 | `0` | Nothing at or above `--fail-on` |
 | `1` | Something at or above `--fail-on` was found |
-| `2` | Usage error |
+| `2` | Usage error, a folder that does not exist or a skill that could not be downloaded |
 | `3` | OSV.dev did not answer, so dependencies were not checked. A CI gate should not pass silently; use `--offline` to skip them on purpose. |
 
 Environment: `STINGWARD_LANG` sets the default language, `NVD_API_KEY` raises the NVD rate limit and `STINGWARD_CACHE` moves the cache folder.
