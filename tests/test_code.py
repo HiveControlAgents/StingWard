@@ -1281,6 +1281,17 @@ class CodeEngine(unittest.TestCase):
         self.assertLess(time.time() - t, 1)
         self.assertEqual([(f.rule, f.line) for f in found], [("COD010", 1)])
 
+    def test_percent_format_with_long_flags_stays_fast(self):
+        """"%" seguido de milhares de zeros (flags e largura casavam os mesmos zeros de vários jeitos) e milhares de
+        "%(" sem ")" (cada um lia o resto do texto)."""
+        fmt = "SELECT * FROM t WHERE a = '%s'" + (" %" + "0" * 3000 + "!") * 30 + " %(" * 20000
+        src = (FLASK + "import sqlite3\ncur = sqlite3.connect('x').cursor()\n@app.get('/a')\ndef a():\n"
+               f"    cur.execute(\"{fmt}\" % request.args['a'])\n")
+        t = time.time()
+        found = code.scan_python("app.py", src)
+        self.assertLess(time.time() - t, 1)
+        self.assertEqual([(f.rule, f.severity) for f in found], [("COD001", "high")])
+
     def test_line_numbers_follow_comments_and_strings(self):
         src = EXPRESS + ("/* a comment\n   eval(req.body.a)\n*/\n"
                          "const s = `multi\nline ${1}\ntext`\n"
