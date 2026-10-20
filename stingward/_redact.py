@@ -21,8 +21,12 @@ def _ph(kind: str) -> str:
     return f"[REDACTED:{kind}]"
 
 
+# "[REDACTED]" sem tipo é o que o mask() das verificações já pôs antes: lido como valor, ganharia um segundo marcador.
+_PH_PREFIXES = ("[REDACTED:", "[REDACTED]")
+
+
 def _is_ph(value: str) -> bool:
-    return value.startswith("[REDACTED:")
+    return value.startswith(_PH_PREFIXES)
 
 
 def _note(findings, kind):
@@ -78,8 +82,9 @@ def is_sensitive_key(key) -> bool:
 # --------------------------------------------------------------------------
 
 _TOKEN_PATTERNS = [
+    # PEM (RSA, EC, OPENSSH, ENCRYPTED...) e o bloco armado do PGP/GPG, que termina em "PRIVATE KEY BLOCK-----".
     ("private_key", re.compile(
-        r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)")),
+        r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|\Z)")),
     # Prefixos com mínimo baixo de propósito: pegam também tokens já truncados.
     ("jwt", re.compile(r"(?<![\w-])eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{3,}(?:\.[A-Za-z0-9_-]*)?")),
     ("aws_access_key", re.compile(r"\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{12,16}\b")),
@@ -92,9 +97,17 @@ _TOKEN_PATTERNS = [
     ("meta_token", re.compile(r"\bEAA[A-Za-z0-9]{20,}")),
     ("twilio_key", re.compile(r"\bSK[0-9a-fA-F]{32}\b")),
     ("npm_token", re.compile(r"\bnpm_[A-Za-z0-9]{8,}")),
+    # Bot do Telegram (123456789:AA...), também dentro da URL da API: https://api.telegram.org/bot<token>/sendMessage
+    ("telegram_token", re.compile(r"(?:(?<=bot)|(?<![\w-]))\d{8,10}:AA[A-Za-z0-9_-]{20,}")),
+    # Connection string do Azure (Storage, Service Bus, Event Hubs): só o valor some, o nome do campo fica.
+    ("azure_key", re.compile(r"(?:(?<=AccountKey=)|(?<=SharedAccessKey=))[A-Za-z0-9+/]{16,}={0,2}")),
 ]
 
-_URL_CREDS = re.compile(r"(?P<scheme>\b[a-zA-Z][a-zA-Z0-9+.\-]*://)(?P<user>[^:/\s@\[]*):(?P<pw>[^@\s/]+)@")
+# Esquema com teto de tamanho: sem ele, "a.a.a.a..." testaria cada letra até o fim do texto (tempo quadrático).
+# A senha vai até o último @ antes do host: "P@ssw0rd" sem codificar é comum, e cortar no primeiro @ deixaria
+# "ssw0rd" no relatório. Depois de um @, aspas, vírgula, ?, #, & e = encerram: são de outro valor ou da query.
+_URL_CREDS = re.compile(r"(?P<scheme>\b[a-zA-Z][a-zA-Z0-9+.\-]{0,30}://)(?P<user>[^:/\s@\[]*):"
+                        r"(?P<pw>[^@\s/]+(?:@[^@\s/\"'`<>,;?#&=]+)*)@")
 _DISCORD_HOOK = re.compile(r"(?P<base>https?://(?:[\w-]+\.)?discord(?:app)?\.com/api/webhooks/\d+/)(?P<tok>[\w-]+)")
 _SLACK_HOOK = re.compile(r"(?P<base>https://hooks\.slack\.com/services/)(?P<tok>[\w/]+)")
 _AUTH_SCHEME = re.compile(r"(?i)\b(?P<s>Bearer|Basic|Digest)\s+(?P<v>[A-Za-z0-9\-._~+/]{8,}=*)")
@@ -146,10 +159,12 @@ def _apply_tokens(s: str, f) -> str:
 # --------------------------------------------------------------------------
 
 _EXT = r"(?:py|js|mjs|cjs|ts|tsx|jsx|go|java|kt|rb|php|rs|cs|scala|swift)"
+# Os padrões só começam no início de um caminho e têm teto de tamanho: valor longo vindo da skill auditada
+# (config de MCP) não pode levar tempo quadrático.
 _FRAME_PATTERNS = [
     re.compile(r'File "[^"\n]+", line \d+'),
-    re.compile(r"(?:https?|file|webpack|node):/{1,3}[^\s()]+?\." + _EXT + r"(?::\d+){1,2}"),
-    re.compile(r"(?:[A-Za-z]:)?(?:[\w.\-@~%]*[/\\])+[\w.\-@%]+\." + _EXT + r"(?::\d+){1,2}"),
+    re.compile(r"(?:https?|file|webpack|node):/{1,3}[^\s()]{1,500}?\." + _EXT + r"(?::\d+){1,2}"),
+    re.compile(r"(?<![\w.\-@~%/\\])(?:[A-Za-z]:)?(?:[\w.\-@~%]*[/\\])+[\w.\-@%]+\." + _EXT + r"(?::\d+){1,2}"),
     re.compile(r"\b[\w$]+\." + _EXT + r":\d+(?::\d+)?"),
 ]
 
@@ -175,14 +190,16 @@ def _restore_frames(s: str, frames) -> str:
 # Estágio 2: estruturas (JSON, cabeçalhos, chave=valor, caminhos de URL)
 # --------------------------------------------------------------------------
 
+# "chave" => "valor" é o array do PHP (config do Laravel, wp-config) e o hash do Ruby.
 _JSON_PLAIN = re.compile(
-    r"""(?<!\\)(?P<q>["'])(?P<key>[^"'\\\s:]{1,64})(?P=q)\s*:\s*"""
+    r"""(?<!\\)(?P<q>["'])(?P<key>[^"'\\\s:]{1,64})(?P=q)\s*(?::|=>)\s*"""
     r"""(?:(?P<vq>["'])(?P<sval>(?:\\.|(?!(?P=vq))[^\\\n])*)(?P<close>(?P=vq)|(?=\n)|\Z)"""
     r"""|(?P<nval>-?[\w.+\-]+))""")
-# JSON serializado dentro de string: {\"password\": \"x\"}
+# JSON serializado dentro de string: {\"password\": \"x\"}. Até 8 barras (8 níveis de escape): sem teto, uma
+# sequência longa de barras seria varrida de cada posição até o fim (tempo quadrático).
 _JSON_ESCAPED = re.compile(
-    r"""(?P<q>\\+["'])(?P<key>[^"'\\\s:]{1,64})(?P=q)\s*:\s*"""
-    r"""(?:(?P<vq>\\+["'])(?P<sval>(?:(?!(?P=vq))[^\n])*?)(?P<close>(?P=vq)|(?=\n)|\Z)"""
+    r"""(?P<q>\\{1,8}["'])(?P<key>[^"'\\\s:]{1,64})(?P=q)\s*:\s*"""
+    r"""(?:(?P<vq>\\{1,8}["'])(?P<sval>(?:(?!(?P=vq))[^\n])*?)(?P<close>(?P=vq)|(?=\n)|\Z)"""
     r"""|(?P<nval>-?[\w.+\-]+))""")
 
 
@@ -230,7 +247,10 @@ def _apply_headers(s: str, f) -> str:
 
 # Casa só chave + separador. O valor é lido à mão para que uma chave não sensível
 # nunca "engula" um par sensível que vem depois (next=/cb?token=abc).
-_ASSIGN_KEY = re.compile(r"(?<![\w.\-\[\]%\"'\\])(?P<key>[A-Za-z_][\w.\-\[\]]{0,63})(?P<sep>\s*[=:]\s*)")
+# Separador: := e ::= (Go, Pascal, BNF), ?= (Makefile), == e != (senha comparada no código) e => só antes de aspas
+# (hash do Ruby; sem aspas é arrow function). Lidos como "=" ou ":", o valor virava o resto do operador e vazava.
+_ASSIGN_KEY = re.compile(r"(?<![\w.\-\[\]%\"'\\])(?P<key>[A-Za-z_][\w.\-\[\]]{0,63})"
+                         r"(?P<sep>\s*(?::{1,2}=|\?=|={2,3}|!={1,2}|=>(?=\s*[\"'])|[=:])\s*)")
 _UNQUOTED_STOP = set("&;,\"'<>#)]}") | {" ", "\t", "\r", "\n"}
 
 
@@ -249,7 +269,7 @@ def _read_value(s: str, i: int):
             j += 1
         return min(j, len(s))
     j = i
-    if s.startswith("[REDACTED:", i):
+    if s.startswith(_PH_PREFIXES, i):
         end = s.find("]", i)
         return end + 1 if end != -1 else len(s)
     while j < len(s) and s[j] not in _UNQUOTED_STOP:
@@ -369,7 +389,8 @@ def _apply_structured(s: str, f) -> str:
 # Codificação dupla: decodifica para detectar, troca só o que tinha segredo
 # --------------------------------------------------------------------------
 
-_ENCODED = re.compile(r"[^\s\"'<>]*%[0-9A-Fa-f]{2}[^\s\"'<>]*")
+# Só a partir do começo de cada pedaço: tentar de cada posição seria quadrático num valor longo sem %.
+_ENCODED = re.compile(r"(?<![^\s\"'<>])[^\s\"'<>]*%[0-9A-Fa-f]{2}[^\s\"'<>]*")
 
 
 def _apply_encoded(s: str, f) -> str:

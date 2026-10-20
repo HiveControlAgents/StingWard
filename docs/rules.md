@@ -36,6 +36,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [APP011](#app011) | AI endpoint with no login and no rate limit | 🟡 |
 | [APP012](#app012) | Loading the model can run code | 🟠 |
 | [APP013](#app013) | Agent can run whatever the model writes | 🟠 |
+| [APP014](#app014) | Tool argument written by the model reaches a shell, code, SQL, a path or a URL | 🔴 |
 | [COD001](#cod001) | SQL query built from outside input | 🟠 |
 | [COD002](#cod002) | Shell command built from outside input | 🔴 |
 | [COD003](#cod003) | Code built from outside input is executed | 🔴 |
@@ -48,7 +49,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [COD010](#cod010) | Predictable random number used for a secret | 🔵 |
 | [COD011](#cod011) | Password hashed with a fast hash | 🟡 |
 | [AGT001](#agt001) | Agent permission too broad | 🟠 |
-| [AGT002](#agt002) | Hook downloads and runs remote code | 🟠 |
+| [AGT002](#agt002) | Hook or MCP server downloads and runs remote code | 🟠 |
 | [AGT003](#agt003) | MCP server without a pinned version | 🟡 |
 | [AGT004](#agt004) | Credential hard-coded in MCP config | 🔴 |
 | [AGT005](#agt005) | Remote MCP server over plain HTTP | 🟡 |
@@ -70,7 +71,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 <a id="dep001"></a>
 ### DEP001 · Dependency version with known vulnerabilities
 
-Looks up every package and version from your lockfiles (npm, Yarn, pnpm, Bun, pip `requirements.txt`, Poetry, uv, Pipenv, PDM, Go modules, Cargo, Bundler, Composer) in OSV.dev. Severity comes from the advisory (CVSS or GitHub severity); a CVE in the **CISA KEV** catalog (exploited in the wild) is raised to critical, and an **EPSS** score of 50% or more (likely exploitation in the next 30 days) raises it one level. You get one finding per package, with the single upgrade that fixes all of its known issues.
+Looks up every package and version from your lockfiles (npm, Yarn, pnpm, Bun, pip `requirements.txt`, Poetry, uv, Pipenv, PDM, Go modules, Cargo, Bundler, Composer, NuGet `packages.lock.json`) in OSV.dev. Severity comes from the advisory (CVSS or GitHub severity); a CVE in the **CISA KEV** catalog (exploited in the wild) is raised to critical, and an **EPSS** score of 50% or more (likely exploitation in the next 30 days) raises it one level. You get one finding per package, with the single upgrade that fixes all of its known issues.
 
 **Fix:** upgrade to the version shown. If some issues have no fix yet, the finding says so: consider replacing the package.
 **Standards:** `CWE-1395`
@@ -78,9 +79,9 @@ Looks up every package and version from your lockfiles (npm, Yarn, pnpm, Bun, pi
 <a id="dep002"></a>
 ### DEP002 · Malicious package
 
-OSV `MAL-*` records and GitHub "malware" advisories: packages published to steal data or run code. This is an attack, not a bug.
+OSV `MAL-*` records and GitHub "malware" advisories: packages published to steal data or run code. This is an attack, not a bug. A pinned or locked version is critical. When it is the lowest version of a range without a lockfile (see DEP004), it is critical only when every version the range allows is malicious; when the record lists only some releases, the installed version is probably a later one and the finding is high.
 
-**Fix:** remove the package, delete `node_modules`/virtualenvs, and rotate every key and password on the machine and in the project.
+**Fix:** remove the package, delete `node_modules`/virtualenvs, and rotate every key and password on the machine and in the project. When only the lowest version of a range is malicious (high), raise the range's minimum past it and commit a lockfile; clean up and rotate the keys only if the version installed is a malicious one.
 **Standards:** `CWE-506` · `LLM04:2026` · `AST02`
 
 <a id="dep003"></a>
@@ -94,7 +95,7 @@ OSV `MAL-*` records and GitHub "malware" advisories: packages published to steal
 <a id="dep004"></a>
 ### DEP004 · Version range allows vulnerable versions
 
-Without a lockfile, a range such as `Pillow>=10` or `"axios": "^1.6.0"` is all that decides the version, and its lowest version still counts: a machine that already has it keeps it, and installers can pick it. Stingward asks OSV.dev about the lowest version of each range (`>=`, `~=` and `==X.*` in Python; `^`, `~`, `>=`, `1.2.x` and `>=a <b` in npm), in the same batch as the pinned packages, for `requirements*.txt` and `package.json` without a lockfile beside them and for the `[project]` dependencies of a `pyproject.toml` without `poetry.lock`, `uv.lock` or `pdm.lock`. A package pinned elsewhere in the project is left to DEP001. The installed version is often newer, so the finding is medium at most (low when the worst issue is below high), unless the range's upper bound leaves out the fix: then every version it allows is affected and the severity is the full DEP001 one.
+Without a lockfile, a range such as `Pillow>=10` or `"axios": "^1.6.0"` is all that decides the version, and its lowest version still counts: a machine that already has it keeps it, and installers can pick it. Stingward asks OSV.dev about the lowest version of each range (`>=`, `~=` and `==X.*` in Python; `^` and `~` in Poetry; `^`, `~`, `>=`, `1.2.x` and `>=a <b` in npm), in the same batch as the pinned packages, for `requirements*.txt` and `*-requirements.txt` (also the `.txt` files of a `requirements/` folder and the files they include with `-r` or `-c`) and `package.json` without a lockfile beside them and for the dependencies of a `pyproject.toml` without `poetry.lock`, `uv.lock` or `pdm.lock` (`[project]` and its optional dependencies, `[dependency-groups]`, the `dev-dependencies` of `[tool.uv]`, and Poetry's `[tool.poetry.dependencies]`, `dev-dependencies` and groups; git, path and URL dependencies are left out). A package pinned elsewhere in the project is left to DEP001. The installed version is often newer, so the finding is medium at most (low when the worst issue is below high), unless the range's upper bound leaves out the fix: then every version it allows is affected and the severity is the full DEP001 one.
 
 **Fix:** raise the minimum to the version shown, for example replace `Pillow>=10` with `Pillow>=12.3.0`. If no version in the range has the fix, widen the range.
 **Standards:** `CWE-1395`
@@ -104,7 +105,7 @@ Without a lockfile, a range such as `Pillow>=10` or `"axios": "^1.6.0"` is all t
 <a id="sec001"></a>
 ### SEC001 · Secret in code
 
-API keys (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord...), private keys, passwords in URLs, webhooks and sensitive assignments. The value is never printed in any report format, only its type and location. Matches in tests, docs and examples are lowered.
+API keys (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord, Replicate, Pinecone, Shopify, Notion, Linear, Resend, Clerk...), Google OAuth client secrets (`GOCSPX-`, high: an installed app ships its own), private keys (also in `id_rsa`, `.pem`, `.key` and `.p8` files), passwords in URLs, webhooks and sensitive assignments. The value is never printed in any report format, only its type and location. Matches in tests, docs and examples are lowered.
 
 **Fix:** move the value to an environment variable or a secret manager, then rotate it: it is already in the history.
 **Standards:** `CWE-798` · `LLM02:2026`
@@ -112,7 +113,7 @@ API keys (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord...), pr
 <a id="sec002"></a>
 ### SEC002 · `.env` committed to git
 
-An `.env` file is tracked by git, so every clone and fork has its keys.
+An `.env` file is tracked by git, so every clone and fork has its keys. The `.env.vault` of dotenv-vault holds only encrypted environments and is made to be committed: it counts only when it also holds a plain secret. The `.env.keys` that opens it still counts.
 
 **Fix:** `git rm --cached .env`, add it to `.gitignore` and rotate the keys.
 **Standards:** `CWE-538`
@@ -120,7 +121,7 @@ An `.env` file is tracked by git, so every clone and fork has its keys.
 <a id="sec003"></a>
 ### SEC003 · `.env` missing from `.gitignore`
 
-Not committed yet, but the next `git add .` takes it along.
+Not committed yet, but the next `git add .` takes it along. A `.env.vault` (dotenv-vault, encrypted) is left out: it is meant to be committed.
 
 **Fix:** add `.env` (and `.env.*`) to `.gitignore`.
 **Standards:** `CWE-538`
@@ -128,7 +129,7 @@ Not committed yet, but the next `git add .` takes it along.
 <a id="sec004"></a>
 ### SEC004 · Supabase `service_role` key in code
 
-The `service_role` key bypasses Row Level Security: whoever has it can read and change every table.
+The `service_role` key bypasses Row Level Security: whoever has it can read and change every table. The default key of a local Supabase (the one `supabase start` creates on every machine: issuer `supabase-demo`, signed with the CLI's default secret) is low, with a "local default key" note, and does not make a committed `.env` high. Any other `service_role` key is critical.
 
 **Fix:** keep it only on the server, never in the frontend, and rotate it in the Supabase dashboard.
 **Standards:** `CWE-798`
@@ -202,7 +203,7 @@ Firestore or Storage rules with `allow read, write: if true` (or the test-mode d
 <a id="app009"></a>
 ### APP009 · Model output reaches code, a shell, SQL or HTML
 
-The answer of an LLM call (OpenAI, Anthropic, Gemini, LangChain, the AI SDK...) or the arguments of an MCP or AI SDK tool reach `eval`/`exec`, a shell command, a template, a SQL query, or `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. A prompt injection in anything the model read turns into code on your server or scripts in your users' browsers. Critical when the answer is executed, high for tool arguments and SQL, medium for HTML. `JSON.parse`, `json.loads` and DOMPurify break the chain.
+The answer of an LLM call (OpenAI, Anthropic, Gemini, LangChain, the AI SDK...) reaches `eval`/`exec`, a shell command, a template, a SQL query, or `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. A prompt injection in anything the model read turns into code on your server or scripts in your users' browsers. Critical when the answer is executed, high for SQL, medium for HTML. `JSON.parse`, `json.loads` and DOMPurify break the chain. The arguments the model writes for a tool are covered by [APP014](#app014).
 
 **Fix:** treat model output like user input: ask for JSON and validate it, map it to a fixed list of actions, pass shell arguments as a list, run SQL with a read-only user, and clean HTML with DOMPurify.
 **Standards:** `CWE-1426` · `LLM10:2026`
@@ -239,22 +240,36 @@ LangChain `PythonREPLTool`, `ShellTool` and `load_tools(["python_repl"])`, `allo
 **Fix:** remove the tool, or run it in a sandbox (a container with no secrets and no network) and confirm each run. Give SQL agents a read-only database user.
 **Standards:** `CWE-94` · `LLM03:2026` · `ASI05`
 
+<a id="app014"></a>
+### APP014 · Tool argument written by the model reaches a shell, code, SQL, a path or a URL
+
+An MCP server or agent tool passes one of its arguments to a dangerous call. The AI model fills in those arguments, not you or your code, and anything it read before the call (a web page, a file, an issue, an email) can hide instructions that change what it writes. Read as tool arguments: the parameters of FastMCP `@mcp.tool()`/`@server.tool()` functions and of `mcp.add_tool(f)`, the `arguments` of a low-level `@server.call_tool()` handler, `server.tool(...)`, `server.registerTool(...)` and `setRequestHandler(CallToolRequestSchema, ...)` handlers in TypeScript, LangChain `@tool` and `BaseTool._run`, AI SDK `tool({ execute })`, and `tool_call.function.arguments` or `block.input` read from an OpenAI or Anthropic response. A value passed to a helper in the same file, to a function the tool imports from another file of the project (two levels deep), or through a `{"name": function}` table, is followed.
+
+Severity follows the sink. Critical when the argument is mixed into a shell command or code written in the code (`os.system("git log " + ref)`, `` exec(`ls ${dir}`) ``, `["sh", "-c", f"..."]`). High when the tool runs the whole command or code it receives, for SQL built with the argument, for pickle or unsafe YAML, and for a path joined to a folder of the code (`os.path.join(BASE, name)`, where `../` leaves it). Medium for any other path, for a URL the server fetches and for HTML. In skills the finding keeps its full severity; in tests and examples it drops to low like the other code findings.
+
+Not reported: parameters typed as numbers, booleans, `Literal`, a local `Enum` or `Field(pattern=...)`, Zod `z.number()`/`z.enum()`, parameters the framework injects (`ctx: Context`), argument lists with no shell whose program is written in the code, an argument passed first to a check such as `validate_name(arg)` or `check_path(arg)` (in TypeScript, path checks such as `validatePath(p)`), `shlex.quote`, query parameters, `basename`, `resolve()` plus an `is_relative_to`/`startsWith` check, a fixed file name inside a folder the model picks, a fixed host, an allow list of hosts, and code that runs in the browser. A tool that runs a whole SQL query it receives is a SQL tool by design and is not reported. A JSON Schema with only `"type": "string"` does not count as validation.
+
+The CWE and the OWASP Top 10 for Agentic Applications entry depend on the sink: CWE-78 and ASI05 for shell commands, CWE-94 and ASI05 for code and templates, CWE-502 and ASI05 for pickle and YAML, CWE-89 and ASI02 for SQL, CWE-22 and ASI02 for paths, CWE-918 and ASI02 for URLs, CWE-79 for HTML.
+
+**Fix:** treat every tool argument as untrusted input: run programs with an argument list and no shell, pass SQL values as parameters, keep paths inside one folder (resolve them and check the prefix), allow only the hosts the tool needs, and type arguments as narrowly as you can (numbers, enums, patterns). If the tool must run commands, ask the user to confirm each one.
+**Standards:** `LLM03:2026`
+
 ## Code
 
-Python files are read with `ast` and JavaScript/TypeScript (also the `<script>` of `.vue`, `.svelte` and `.astro`) with tight patterns, following where each value came from inside the function: the request (Flask, FastAPI, Django, Express, Next.js, Hono...), a function argument, or another server. A call to your own helper (`get_file_by_id(id)`) is not followed, because it returns something else, and neither is a parameter the framework already turned into a number, boolean or UUID (`item_id: int`, `<int:id>`). Minified bundles are skipped, and tests, examples and fixtures drop to low.
+Python files are read with `ast` and JavaScript/TypeScript (also the `<script>` of `.vue`, `.svelte` and `.astro`) with tight patterns, following where each value came from inside the function: the request (Flask, FastAPI, Django, Express, Next.js, Hono...), a function argument, or another server. A call to your own helper (`get_file_by_id(id)`) is not followed, because it returns something else, and neither is a parameter the framework already turned into a number, boolean or UUID (`item_id: int`, `<int:id>`). Minified bundles and third-party libraries copied into the project (a `/*! name vX.Y` or `@license` header, `vendor/`, `third_party/`, `static/js/lib/`) are skipped in a project, but read in `stingward skill`, where they are the code that runs; tests, examples and fixtures drop to low.
 
 <a id="cod001"></a>
 ### COD001 · SQL query built from outside input
 
-An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, `read_sql`, `pool.query`, `knex.raw`, `$queryRawUnsafe` and similar. High with request data, medium with a function argument placed where a value goes (`= '{name}'`, `LIKE`, `IN (...)`). Table names from constants, `?`/`%s`/`$1` parameters, ORM builders and tagged templates (`` sql`...` ``, `` $queryRaw`...` ``) are not reported.
+An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, `read_sql`, `pool.query`, `knex.raw`, `$queryRawUnsafe`, Django's `.extra(where=..., select=..., tables=...)` and similar. High with request data, medium with a function argument placed where a value goes (`= '{name}'`, `LIKE`, `IN (...)`). Medium when request data, model output or a tool argument picks a column or table name (`ORDER BY {order}`, `FROM {table}`, `LIMIT {limit}`); a name checked against a fixed list or taken from a dict in the code is not reported. Table names from constants, `?`/`%s`/`$1` parameters, ORM builders and tagged templates (`` sql`...` ``, `` $queryRaw`...` ``) are not reported.
 
-**Fix:** pass values as parameters: `cursor.execute("... WHERE id = %s", (id,))`, `$1` in Postgres, `?` in SQLite, `` sql`...` `` or `` $queryRaw`...` `` in Prisma.
+**Fix:** pass values as parameters: `cursor.execute("... WHERE id = %s", (id,))`, `$1` in Postgres, `?` in SQLite, `` sql`...` `` or `` $queryRaw`...` `` in Prisma. A column or table name cannot be a parameter: pick it from a fixed list (`SORTS[key]`, `if order not in ALLOWED: abort(400)`).
 **Standards:** `CWE-89`
 
 <a id="cod002"></a>
 ### COD002 · Shell command built from outside input
 
-`os.system`, `subprocess.run(..., shell=True)`, `exec`/`execSync` from `child_process` and similar with request data in the command (critical), or a function argument mixed into the command text in a web app (medium). An argument list with no shell (`subprocess.run(["ping", host])`, `execFile`) and command-line tools (click, typer) are not reported.
+`os.system`, `subprocess.run(..., shell=True)`, `["sh", "-c", ...]`, `exec`/`execSync` from `child_process`, `spawn(cmd, { shell: true })`, `spawn("sh", ["-c", cmd])`, execa with `shell: true` and similar with request data in the command (critical), or a function argument mixed into the command text in a web app (medium). An argument list with no shell (`subprocess.run(["ping", host])`, `execFile`, `spawn("ls", [dir])`) and command-line tools (click, typer) are not reported.
 
 **Fix:** run the program with an argument list and no shell, and accept only values from a known list.
 **Standards:** `CWE-78`
@@ -278,7 +293,7 @@ An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, 
 <a id="cod005"></a>
 ### COD005 · HTML inserted without sanitizing
 
-`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, `{@html}`, `set:html`, `Markup()` or an HTML string returned by a Flask route, with data from the URL or the request (medium). In JavaScript, HTML built from other variables is low. `DOMPurify.sanitize`, `textContent`, plain JSX and constant HTML are not reported.
+`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, `{@html}`, `set:html`, `Markup()`, `res.send`/`res.write`/`res.end` in Express, `c.html` in Hono, or an HTML string returned by a Flask route or a FastAPI route with `response_class=HTMLResponse`, with data from the URL or the request (medium). In JavaScript, HTML built from other variables is low. `DOMPurify.sanitize`, `escapeHtml`, `textContent`, plain JSX, constant HTML, `res.json` and text with no HTML tag are not reported.
 
 **Fix:** show it as text (`textContent`, or the variable straight in JSX) or clean it first with `DOMPurify.sanitize` (sanitize-html or bleach on the server).
 **Standards:** `CWE-79`
@@ -302,7 +317,7 @@ An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, 
 <a id="cod008"></a>
 ### COD008 · Server fetches a URL taken from the request
 
-`requests.get`, `httpx`, `urlopen`, `fetch`, `axios` and similar on the server when the request decides where the URL points (the whole URL or its start). A fixed host with a request value in the path, a check of the host (`urlparse(...).hostname`, an allow list) and code that runs in the browser are not reported.
+`requests.get`, `httpx`, `urlopen`, `fetch`, `axios` and similar on the server when the request decides where the URL points (the whole URL or its start). A fixed host with a request value in the path, a check of the host (`urlparse(...).hostname`, an allow list) and code that runs in the browser are not reported. High, or medium when the host comes from the request's own `Host` or `X-Forwarded-Host` header (`f"https://{request.headers['Host']}/api"`): another person's browser cannot set it, and the proxy in front usually checks it, but whoever calls the server directly can.
 
 **Fix:** allow only the domains you need, block private and local addresses, and do not follow redirects without checking them.
 **Standards:** `CWE-918`
@@ -310,7 +325,7 @@ An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, 
 <a id="cod009"></a>
 ### COD009 · Redirect to an address taken from the request
 
-`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` with a URL parameter, and similar. A path that starts with a fixed `/...`, `url_for` and a check of the host are not reported.
+`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` with a URL parameter, and similar. A path that starts with a fixed `/...`, `url_for` and a check of the host are not reported. A start made only of slashes (`"/" + next`, `` `/${next}` ``, `"//" + host`) is reported: with `next = "/evil.com"` the browser goes to `//evil.com`, another site. So is a host from the request right after a fixed scheme (`"https://" + request.args["host"]`, `` `https://${req.body.host}/home` ``), but not one from the `Host` or `X-Forwarded-Host` header: that is the site's own host, which nobody else's browser picks.
 
 **Fix:** redirect only to relative paths that start with a single `/` or to domains from a known list.
 **Standards:** `CWE-601`
@@ -318,7 +333,7 @@ An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, 
 <a id="cod010"></a>
 ### COD010 · Predictable random number used for a secret
 
-`Math.random()` or Python's `random` assigned to (or returned by) something named like a secret: `reset_token`, `apiKey`, `password`, `otp`, `verification_code`. Names like `token_count`, `delay` or `session_id` are not reported, and neither are tests.
+`Math.random()` or Python's `random` assigned to (or returned by) something named like a secret: `reset_token`, `apiKey`, `password`, `otp`, `verification_code`, also at module level and when the value is built in a callback (`[...Array(32)].map(() => ...Math.random()...)`). A session id (`session_id`, `sessionId`, `sid`) counts when it goes into a cookie. Names like `token_count` or `delay`, a session id that never reaches a cookie, and tests are not reported.
 
 **Fix:** use `crypto.randomUUID()` or `crypto.getRandomValues` in JavaScript, and the `secrets` module in Python (`secrets.token_urlsafe`).
 **Standards:** `CWE-338`
@@ -342,9 +357,9 @@ MD5, SHA-1 or SHA-2 (`hashlib.sha256(password...)`, `createHash("sha256").update
 **Standards:** `CWE-250` · `LLM03:2026` · `ASI03`
 
 <a id="agt002"></a>
-### AGT002 · Hook downloads and runs remote code
+### AGT002 · Hook or MCP server downloads and runs remote code
 
-A hook that pipes `curl` or `wget` into a shell. Whoever controls that URL runs code on your machine every time the hook fires.
+A hook command, or the command that launches an MCP server (for example `sh -c "curl ... | sh"`), that pipes `curl` or `wget` into a shell. Whoever controls that URL runs code on your machine every time the hook fires or the server starts.
 
 **Fix:** pin the script in the repository and review it.
 **Standards:** `CWE-494` · `ASI05`

@@ -31,16 +31,28 @@ class NetError(Exception):
     pass
 
 
-def fetch_json(url: str, body=None, ttl: int = 0, timeout: int = 30, headers=None):
-    """GET (ou POST com body) que devolve JSON. ttl > 0 usa cache em disco."""
+# Quanto a data da cópia no cache pode estar à frente do relógio e ainda valer. A cópia recém-gravada pode ler uma
+# fração no futuro: no Windows com Python 3.12, time.time() e st_mtime saem do mesmo tique do relógio por contas
+# diferentes, e st_mtime às vezes dá o último dígito a mais. Disco de rede usa o relógio do servidor.
+_CLOCK_SKEW = 60  # segundos
+
+
+def fetch_json(url: str, body=None, ttl: int = 0, timeout: int = 30, headers=None, valid=None):
+    """GET (ou POST com body) que devolve JSON. ttl > 0 usa cache em disco.
+
+    valid(dados) diz se a resposta tem a forma esperada. Resposta fora da forma (proxy, portal cativo, API mudada)
+    conta como falha: tenta de novo, não vai para o cache e, no fim, vira NetError. Cópia assim no cache é ignorada."""
     path = None
     cache = cache_dir() if ttl else None
     if cache is not None:
         key = hashlib.sha256((url + json.dumps(body, sort_keys=True)).encode()).hexdigest()[:32]
         path = cache / f"{key}.json"
         try:
-            if time.time() - path.stat().st_mtime < ttl:
-                return json.loads(path.read_text("utf-8"))
+            # Mais de _CLOCK_SKEW no futuro (cache de outra máquina, relógio errado) não vale: senão nunca venceria.
+            if -_CLOCK_SKEW <= time.time() - path.stat().st_mtime < ttl:
+                cached = json.loads(path.read_text("utf-8"))
+                if valid is None or valid(cached):
+                    return cached
         except (OSError, ValueError):
             pass
     data = json.dumps(body).encode() if body is not None else None
@@ -52,6 +64,8 @@ def fetch_json(url: str, body=None, ttl: int = 0, timeout: int = 30, headers=Non
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 out = json.loads(r.read().decode("utf-8"))
+            if valid is not None and not valid(out):
+                raise ValueError("unexpected response")
             break
         except urllib.error.HTTPError as e:
             last = e

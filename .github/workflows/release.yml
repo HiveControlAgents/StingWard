@@ -69,7 +69,7 @@ jobs:
         uses: actions/setup-node@v7
         with: { node-version: "22", registry-url: "https://registry.npmjs.org" }
       - if: steps.exists.outputs.skip == 'false'
-        run: npm install -g npm@latest  # trusted publishing needs npm 11.5.1+
+        run: npm install -g npm@11.21.0  # trusted publishing needs npm 11.5.1+; exact, since this job holds id-token
       - if: steps.exists.outputs.skip == 'false'
         run: sh scripts/build-npm.sh
       # Trusted publishing on npmjs.com (HiveControlAgents/StingWard, release.yml, environment npm): no token stored.

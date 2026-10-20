@@ -23,8 +23,8 @@ from stingward.rules import RULES
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ANSI = re.compile(r"\x1b\[")
 LANG_VARS = ("STINGWARD_LANG", "LC_ALL", "LC_MESSAGES", "LANG")
-JSON_KEYS = {"tool", "version", "grade", "sources", "findings"}
-FINDING_KEYS = {"rule", "severity", "file", "line", "title", "why", "fix", "refs", "tags", "standards", "data"}
+JSON_KEYS = {"tool", "version", "grade", "sources", "not_read", "findings"}
+FINDING_KEYS = {"rule", "severity", "file", "line", "fingerprint", "title", "why", "fix", "refs", "tags", "standards", "data"}
 
 GH = "ghp_" + "Ab3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0eF3hJ6"
 ANT = "sk-ant-" + "api03-" + "Q7wErTy8UiOp2AsDfGh5JkL"
@@ -203,8 +203,10 @@ class CliTest(unittest.TestCase):
         self.assertIn(doc["grade"], "ABCDF")
         self.assertIsInstance(doc["sources"], dict)
         ranks = []
+        self.assertEqual(len({f["fingerprint"] for f in doc["findings"]}), len(doc["findings"]))
         for f in doc["findings"]:
             self.assertEqual(set(f), FINDING_KEYS)
+            self.assertRegex(f["fingerprint"], r"^[0-9a-f]{16}$")
             self.assertIn(f["rule"], RULES)
             self.assertIn(f["severity"], SEVERITIES)
             self.assertTrue(os.path.isfile(os.path.join(root, f["file"])), f["file"])
@@ -301,12 +303,12 @@ class ExitCodes(CliTest):
             with self.subTest(argv=argv):
                 code, out, err = run_main(argv + ["--offline"])
                 self.assertEqual((code, out), (2, ""))
-                self.assertIn("pasta não encontrada", err)
+                self.assertIn("folder not found", err)
 
     def test_unknown_command(self):
         code, out, err = run_main(["--offline", "frobnicate", self.levels["clean"]])
         self.assertEqual((code, out), (2, ""))
-        self.assertIn("comando desconhecido: frobnicate", err)
+        self.assertIn("unknown command: frobnicate", err)
         code, _, err = run_main(["scan", self.levels["clean"], "extra-arg"])
         self.assertEqual(code, 2)
         self.assertIn("unrecognized arguments", err)
@@ -415,14 +417,27 @@ class AgentsCommand(CliTest):
             ".gemini/settings.json", "Library/Application Support/Claude/claude_desktop_config.json",
             ".claude/skills/evil/SKILL.md"]))  # sem ~/.env, ~/.stingwardignore nem projetos dentro da home
 
+    def test_no_readme_badge_for_the_machine(self):
+        # A auditoria da própria máquina não tem README onde pôr selo.
+        env = {"HOME": self.home, "USERPROFILE": self.home}
+        text = run_main(["agents", "--offline", "--lang", "en"], env=env)[1]
+        md = run_main(["agents", "--offline", "--lang", "en", "--format", "markdown"], env=env)[1]
+        for out in (text, md):
+            self.assertNotIn("img.shields.io", out)
+        self.assertNotIn("README badge", text)
+        self.assertIn("Grade: F", text)
+        self.assertIn("### Security audit", md)
+        self.assertIn("README badge", run_main([self.levels["clean"], "--offline", "--lang", "en"])[1])  # projeto continua
+
     def test_agents_text_label_and_empty_home(self):
         code, out, _ = run_main(["agents", "--offline", "--lang", "en"], env={"HOME": self.home, "USERPROFILE": self.home})
         self.assertEqual(code, 1)
         self.assertIn("Security audit: ~", out)
         empty = tree({"notes.txt": "x\n"})
         code, out, _ = run_main(["agents", "--offline", "--lang", "en"], env={"HOME": empty, "USERPROFILE": empty})
-        self.assertEqual(code, 0)
-        self.assertIn("Nothing found", out)
+        self.assertEqual(code, 4)
+        self.assertIn("No agent configuration was found on this machine (0 files read)", out)
+        self.assertNotIn("Grade: A", out)
 
 
 # =========================================================================== idioma
@@ -517,7 +532,7 @@ class Formats(CliTest):
         findings = [Finding("SKL003", "low", f"f{i:02}.md", 1, {"snippet": f"phrase {i}"}) for i in range(55)]
         out = report.markdown(Context(root=".", files=[], offline=True), findings, "en")
         self.check_markdown(out, 55)
-        self.assertIn("and 5 more low-severity item(s)", out)
+        self.assertIn("and 5 more item(s): 5 low", out)
 
     def test_sarif(self):
         code, out, _ = run_main([self.mixed, "--offline", "--format", "sarif"])
@@ -698,6 +713,19 @@ class Subprocess(CliTest):
         self.assertIn("Auditoria de segurança", run_proc([self.levels["clean"], "--offline"], env={"LANG": "pt_BR.UTF-8"})[1])
         self.assertIn("Security audit", run_proc([self.levels["clean"], "--offline"], env={"LANG": "en_US.UTF-8"})[1])
 
+    def test_nothing_read_fails_the_gate(self):
+        # Pasta vazia, caminho errado ou checkout esquecido no CI: um portão de CI não pode passar porque nada foi lido.
+        empty = tree({})
+        only_binary = tree({"logo.png": "\x00PNG\n"})
+        for argv in ([empty], ["skill", empty], [only_binary]):
+            code, out, err = run_proc(argv + ["--offline", "--lang", "en"])
+            self.assertEqual(code, 4, argv)
+            self.assertIn("no file was read, so there is nothing to grade", err)
+            self.assertIn("No file was read (0 files)", out)
+        self.assertEqual(run_proc([empty, "--offline", "--fail-on", "never"])[0], 0)
+        self.assertIn("nenhum arquivo foi lido", run_proc([empty, "--offline", "--lang", "pt"])[2])
+        self.assertEqual(run_proc([self.levels["clean"], "--offline"])[0], 0)  # pasta lida e limpa continua 0
+
     def test_skill(self):
         code, out, err = run_proc(["skill", os.path.join(self.mixed, "skills", "x"), "--offline", "--lang", "en", "--no-color"])
         self.assertEqual(code, 1, err)
@@ -714,8 +742,8 @@ class Subprocess(CliTest):
     def test_errors(self):
         code, out, err = run_proc([os.path.join(self.levels["clean"], "nope"), "--offline"])
         self.assertEqual((code, out), (2, ""))
-        self.assertIn("pasta não encontrada", err)
-        code, out, err = run_proc(["--offline", "frobnicate", self.levels["clean"]])
+        self.assertIn("folder not found", err)
+        code, out, err = run_proc(["--offline", "frobnicate", self.levels["clean"]], env={"STINGWARD_LANG": "pt"})
         self.assertEqual(code, 2)
         self.assertIn("comando desconhecido", err)
 

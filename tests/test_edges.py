@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from unittest import mock
 
 from stingward import _redact as redact, cli, gitsafe, net, report, scan, vulndb
@@ -37,6 +37,23 @@ class NetCacheAndRetries(unittest.TestCase):
             self.assertEqual(net.fetch_json("https://example.com/a", ttl=60), {"n": 1})
         self.assertEqual(op.call_count, 1)
         self.assertEqual(len(os.listdir(self.tmp.name)), 1)
+
+    def test_entry_dated_a_moment_ahead_is_still_served(self):
+        # Windows, Python 3.12: time.time() and st_mtime come from the same 100 ns clock tick through different float
+        # sums, and st_mtime can come out a fraction later. The entry just written then looked like it came from the
+        # future and was fetched again: test_second_call_is_served_from_the_cache saw 2 calls once. A network drive's
+        # clock can also be a little ahead. Far ahead (another machine, a wrong clock) still does not count.
+        with mock.patch("urllib.request.urlopen", return_value=_resp({"n": 1})):
+            net.fetch_json("https://example.com/a", ttl=3600)
+        (name,) = os.listdir(self.tmp.name)
+        mtime = os.stat(os.path.join(self.tmp.name, name)).st_mtime
+        for ahead, calls in ((1e-6, 0), (1.0, 0), (30.0, 0), (600.0, 1)):
+            with self.subTest(ahead=ahead):
+                with mock.patch("time.time", return_value=mtime - ahead), \
+                        mock.patch("urllib.request.urlopen", return_value=_resp({"n": 1})) as op:
+                    self.assertEqual(net.fetch_json("https://example.com/a", ttl=3600), {"n": 1})
+                self.assertEqual(op.call_count, calls)
+                os.utime(os.path.join(self.tmp.name, name), (mtime, mtime))  # the refetch wrote the entry again
 
     def test_body_is_part_of_the_cache_key(self):
         with mock.patch("urllib.request.urlopen", side_effect=[_resp({"n": 1}), _resp({"n": 2})]) as op:
@@ -100,7 +117,7 @@ class RemoteSkills(unittest.TestCase):
         with mock.patch("subprocess.run", return_value=subprocess.CompletedProcess([], returncode, "", "fatal: nope")) as run:
             try:
                 tmp, path = cli._fetch(target)
-            except SystemExit as e:
+            except cli.FetchError as e:
                 return run.call_args[0][0], e
         self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
         return run.call_args[0][0], path
@@ -124,8 +141,8 @@ class RemoteSkills(unittest.TestCase):
 
     def test_failed_clone_is_a_clear_error(self):
         _, err = self._fetch("owner/repo", returncode=128)
-        self.assertIsInstance(err, SystemExit)
-        self.assertIn("owner/repo", str(err.code))
+        self.assertIsInstance(err, cli.FetchError)
+        self.assertEqual((err.key, err.detail), ("git", "fatal: nope"))
 
 
 class Reports(unittest.TestCase):
@@ -214,6 +231,73 @@ class DepsDegradeGracefully(unittest.TestCase):
         _, got = self.check({"GHSA-2": self.vuln("GHSA-2")})
         self.assertEqual(got[0].params["fixed"], "")
         self.assertIn("No fixed version yet", got[0].params["fix_en"])
+
+    def check_ids(self, ids, docs, files=None):
+        """OSV lists ids for the package, but only the details in docs could be downloaded."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        files = files or {"package-lock.json": {"lockfileVersion": 3, "packages": {"": {}, "node_modules/left": {"version": "1.0.0"}}}}
+        for rel, content in files.items():
+            with open(os.path.join(tmp.name, rel), "w") as fh:
+                json.dump(content, fh)
+        self.ctx = ctx = Context(tmp.name, sorted(files))
+        with self.osv(ids, docs):
+            return deps.check(ctx)
+
+    @staticmethod
+    def osv(ids, docs):
+        stack = ExitStack()
+        for name, kw in (("osv_query", {"return_value": [list(ids)]}),
+                         ("osv_vulns", {"side_effect": lambda want: {i: docs[i] for i in want if i in docs}}),
+                         ("kev", {"return_value": ({}, "")}), ("epss", {"return_value": {}}), ("nvd_severity", {"return_value": None})):
+            stack.enter_context(mock.patch.object(vulndb, name, **kw))
+        return stack
+
+    def test_missing_details_mark_the_check_incomplete(self):
+        self.check_ids(["GHSA-1", "GHSA-gone", "MAL-2025-1"], {"GHSA-1": self.vuln("GHSA-1", "1.2.0")})
+        self.assertIn("2 vulnerability detail(s)", self.ctx.sources["osv_error"])
+        self.assertIn("GHSA-gone, MAL-2025-1", self.ctx.sources["osv_error"])
+        self.check_ids(["GHSA-1"], {"GHSA-1": self.vuln("GHSA-1", "1.2.0")})
+        self.assertNotIn("osv_error", self.ctx.sources)
+
+    def test_missing_details_fail_the_ci_gate_and_still_list_the_package(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with open(os.path.join(tmp.name, "package-lock.json"), "w") as fh:
+            json.dump({"lockfileVersion": 3, "packages": {"": {}, "node_modules/left": {"version": "1.0.0"}}}, fh)
+        out, err = io.StringIO(), io.StringIO()
+        with self.osv(["GHSA-gone"], {}), redirect_stdout(out), redirect_stderr(err):
+            code = cli.main([tmp.name, "--format", "json", "--lang", "en"])
+        self.assertEqual(code, 3)
+        self.assertEqual([f["rule"] for f in json.loads(out.getvalue())["findings"]], ["DEP001"])
+
+    def test_advisory_whose_details_did_not_download_is_still_reported(self):
+        got = self.check_ids(["GHSA-gone"], {})
+        self.assertEqual([(f.rule, f.severity) for f in got], [("DEP001", "medium")])
+        p = got[0].params
+        self.assertEqual(p["headline_en"], "GHSA-gone")
+        self.assertNotIn("No fixed version yet", p["fix_en"])
+        self.assertIn("did not send the details of GHSA-gone", p["fix_en"])
+        self.assertIn("não mandou os detalhes de GHSA-gone", p["fix_pt"])
+
+    def test_missing_details_do_not_count_as_unfixed(self):
+        got = self.check_ids(["GHSA-1", "GHSA-gone"], {"GHSA-1": self.vuln("GHSA-1", "1.2.0")})
+        p = got[0].params
+        self.assertEqual((got[0].severity, p["fixed"]), ("high", "1.2.0"))
+        self.assertNotIn("still unfixed", p["fix_en"])
+        self.assertIn("did not send the details of GHSA-gone", p["fix_en"])
+
+    def test_malicious_record_whose_details_did_not_download_is_still_reported(self):
+        got = self.check_ids(["MAL-2025-1"], {})
+        self.assertEqual([(f.rule, f.severity, f.params["vuln_id"]) for f in got], [("DEP002", "critical", "MAL-2025-1")])
+
+    def test_alias_of_a_downloaded_advisory_is_not_reported_twice(self):
+        got = self.check_ids(["GHSA-1", "CVE-1"], {"GHSA-1": self.vuln("GHSA-1", "1.2.0")})
+        self.assertEqual(len(got[0].params["vulns"]), 1)
+
+    def test_range_floor_with_missing_details(self):
+        got = self.check_ids(["GHSA-gone"], {}, {"package.json": {"dependencies": {"left": "^1.0.0"}}})
+        self.assertEqual(sorted((f.rule, f.severity) for f in got), [("DEP003", "low"), ("DEP004", "low")])
 
 
 class ListingLimits(unittest.TestCase):
