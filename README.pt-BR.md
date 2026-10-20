@@ -124,6 +124,7 @@ Ela comenta o relatório no PR (e atualiza o mesmo comentário a cada execução
 | `1` | Achou algo na severidade de `--fail-on` ou acima |
 | `2` | Erro de uso |
 | `3` | O OSV.dev não respondeu e as dependências não foram verificadas. Um portão de CI não deve passar calado; use `--offline` para pular de propósito. |
+| `4` | Nenhum arquivo foi lido, então não havia o que avaliar: pasta vazia, caminho errado ou, no CI, o código não foi baixado antes (checkout). Um portão de CI não deve passar calado; `--fail-on never` aceita. |
 
 Ambiente: `STINGWARD_LANG` define o idioma padrão, `NVD_API_KEY` aumenta o limite de consultas ao NVD e `STINGWARD_CACHE` muda a pasta de cache.
 
