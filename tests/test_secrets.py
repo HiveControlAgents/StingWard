@@ -3,6 +3,7 @@
 Segredos falsos são montados por concatenação, para o repositório continuar limpo na própria auditoria.
 """
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -169,6 +170,35 @@ class PrivateKeys(Case):
         files = {".env": "APP_NAME=demo\nPRIVATE_KEY=\"" + BEGIN + "\n" + "\n".join(BODY) + "\n" + END + "\"\n"}
         self.assertEqual(brief(scan_files(files, tracked=files), "SEC002"), [("SEC002", ".env", None, "high")])
 
+
+    def test_a_header_alone_in_docs_is_not_a_key(self):
+        pgp = "-----BEGIN PGP " + "PRIVATE KEY BLOCK-----"
+        files = {
+            "README.md": f"Paste your key:\n\n{RSA_BEGIN}\n\nThen save the file.\n",
+            "docs/keys.md": f"```\n{RSA_BEGIN}\n...\n-----END RSA " + "PRIVATE KEY-----\n```\n",
+            "docs/gpg.md": f"Export it; the file starts with `{pgp}`.\n\n{pgp}\n\n(base64 here)\n",
+            "src/last.ts": f"const h = `{BEGIN}",
+        }
+        self.assertEqual(brief(scan_files(files), "SEC001"), [])
+
+    PGP_BEGIN = "-----BEGIN PGP " + "PRIVATE KEY BLOCK-----"
+    PGP_END = "-----END PGP " + "PRIVATE KEY BLOCK-----"
+    # The shape of a pattern that also takes PGP blocks (the private_key pattern comes from _redact).
+    PGP_RX = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?"
+                        r"(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|\Z)")
+
+    def test_pgp_blocks_need_a_body_too(self):
+        armored = self.PGP_BEGIN + "\nVersion: GnuPG v2\n\n" + "\n".join(BODY) + "\n=Ab3d\n" + self.PGP_END + "\n"
+        bare = self.PGP_BEGIN + "\n\n" + "\n".join(BODY) + "\n" + self.PGP_END + "\n"
+        files = {"keys/armored.asc.txt": armored, "keys/bare.txt": bare,
+                 "src/one_line.json": '{"key": "' + self.PGP_BEGIN + "\\n\\n" + BODY[0] + "\\n" + self.PGP_END + '"}\n',
+                 "README.md": f"Starts with:\n\n{self.PGP_BEGIN}\n\n...\n\n{self.PGP_END}\n",
+                 "src/check.py": f"if text.startswith('{self.PGP_BEGIN}'):\n    pass\n"}
+        patterns = [("private_key", self.PGP_RX)] + secrets.TOKEN_PATTERNS[1:]
+        with mock.patch.object(secrets, "TOKEN_PATTERNS", patterns):
+            got = brief(scan_files(files), "SEC001")
+        self.assertEqual(got, [("SEC001", "keys/armored.asc.txt", 1, "critical"), ("SEC001", "keys/bare.txt", 1, "critical"),
+                               ("SEC001", "src/one_line.json", 1, "critical")])
 
     def test_key_files_are_read(self):
         ssh = "-----BEGIN OPENSSH " + "PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA" + R36 + "\n-----END OPENSSH " + "PRIVATE KEY-----\n"
