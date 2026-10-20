@@ -21,6 +21,9 @@ inputs:
   sarif:
     description: Upload SARIF to GitHub code scanning (needs security-events write, plus actions read in private repositories)
     default: "true"
+  category:
+    description: Code scanning category for the SARIF. Give each run its own when one workflow audits several folders
+    default: stingward
 
 outputs:
   grade:
@@ -64,7 +67,7 @@ runs:
       continue-on-error: true
       with:
         sarif_file: ${{ runner.temp }}/stingward/stingward.sarif
-        category: stingward
+        category: ${{ inputs.category }}
 
     - if: ${{ inputs.comment == 'true' && github.event_name == 'pull_request' }}
       shell: bash

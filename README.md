@@ -102,6 +102,7 @@ It comments the report on the PR (and updates the same comment on every run), up
 | `lang` | `en` | Report language: `en` or `pt` |
 | `comment` | `true` | Comment on pull requests (needs `pull-requests: write`) |
 | `sarif` | `true` | Upload SARIF to code scanning (needs `security-events: write`, plus `actions: read` in private repositories) |
+| `category` | `stingward` | Code scanning category for the SARIF. Give each run its own when one workflow audits several folders |
 
 ## Command line reference
 
