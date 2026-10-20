@@ -303,12 +303,12 @@ class ExitCodes(CliTest):
             with self.subTest(argv=argv):
                 code, out, err = run_main(argv + ["--offline"])
                 self.assertEqual((code, out), (2, ""))
-                self.assertIn("pasta não encontrada", err)
+                self.assertIn("folder not found", err)
 
     def test_unknown_command(self):
         code, out, err = run_main(["--offline", "frobnicate", self.levels["clean"]])
         self.assertEqual((code, out), (2, ""))
-        self.assertIn("comando desconhecido: frobnicate", err)
+        self.assertIn("unknown command: frobnicate", err)
         code, _, err = run_main(["scan", self.levels["clean"], "extra-arg"])
         self.assertEqual(code, 2)
         self.assertIn("unrecognized arguments", err)
@@ -716,8 +716,8 @@ class Subprocess(CliTest):
     def test_errors(self):
         code, out, err = run_proc([os.path.join(self.levels["clean"], "nope"), "--offline"])
         self.assertEqual((code, out), (2, ""))
-        self.assertIn("pasta não encontrada", err)
-        code, out, err = run_proc(["--offline", "frobnicate", self.levels["clean"]])
+        self.assertIn("folder not found", err)
+        code, out, err = run_proc(["--offline", "frobnicate", self.levels["clean"]], env={"STINGWARD_LANG": "pt"})
         self.assertEqual(code, 2)
         self.assertIn("comando desconhecido", err)
 
