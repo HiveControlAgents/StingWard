@@ -602,6 +602,17 @@ class TextAndMarkdown(unittest.TestCase):
                 self.assertIn("@github.com/", out)  # o resto do endereço continua
                 self.assertIn("private-skill", out)
 
+    def test_markdown_says_what_the_rows_left_out_are(self):
+        # A tabela do comentário para em 50 itens. Os que sobram podem ser altos: a linha final não pode chamá-los de baixos.
+        f = [Finding("APP004", "high", "db.sql", i + 1, {"table": f"t{i:02d}"}) for i in range(52)]
+        f += [Finding("DEP003", "low", "requirements.txt", None, {"manifest": "requirements.txt", "count": 2})]
+        md = report.markdown(self.ctx, f, "en")
+        self.assertNotIn("low-severity", md)
+        self.assertIn("| | and 3 more item(s): 2 high, 1 low | |", md)
+        pt = report.markdown(self.ctx, f, "pt")
+        self.assertNotIn("severidade baixa", pt)
+        self.assertIn("| | e mais 3 item(ns): 2 altos, 1 baixo | |", pt)
+
     def test_every_impact_text_fills(self):
         for rule in RULES:
             entry = report.merge([Finding(rule, "high", "a.py", 1, {})], "en")[0]

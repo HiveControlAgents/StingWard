@@ -519,7 +519,7 @@ class Formats(CliTest):
         findings = [Finding("SKL003", "low", f"f{i:02}.md", 1, {"snippet": f"phrase {i}"}) for i in range(55)]
         out = report.markdown(Context(root=".", files=[], offline=True), findings, "en")
         self.check_markdown(out, 55)
-        self.assertIn("and 5 more low-severity item(s)", out)
+        self.assertIn("and 5 more item(s): 5 low", out)
 
     def test_sarif(self):
         code, out, _ = run_main([self.mixed, "--offline", "--format", "sarif"])
