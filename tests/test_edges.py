@@ -10,7 +10,7 @@ import urllib.error
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
-from stingward import _redact as cv, cli, gitsafe, net, report, scan, vulndb
+from stingward import _redact as redact, cli, gitsafe, net, report, scan, vulndb
 from stingward.checks import deps
 from stingward.model import Context, Finding
 
@@ -240,37 +240,37 @@ class SecretEngine(unittest.TestCase):
         ]
         for s in samples:
             with self.subTest(sample=s[:30]):
-                out = cv.sanitize_text(s)
+                out = redact.sanitize_text(s)
                 self.assertNotIn(self.TOKEN[4:20], out)
                 self.assertIn("[REDACTED:", out)
 
     def test_idempotent_and_keeps_stack_frames(self):
         s = f'File "/app/main.py", line 12, in handler\n  token = "{self.TOKEN}"'
-        once = cv.sanitize_text(s)
-        self.assertEqual(cv.sanitize_text(once), once)
+        once = redact.sanitize_text(s)
+        self.assertEqual(redact.sanitize_text(once), once)
         self.assertIn('File "/app/main.py", line 12', once)
 
     def test_find_and_contains(self):
-        self.assertTrue(cv.contains_secret(f"key={self.TOKEN}"))
-        self.assertIn("github_token", cv.find_secrets(f"key={self.TOKEN}"))
-        self.assertFalse(cv.contains_secret("hello world"))
+        self.assertTrue(redact.contains_secret(f"key={self.TOKEN}"))
+        self.assertIn("github_token", redact.find_secrets(f"key={self.TOKEN}"))
+        self.assertFalse(redact.contains_secret("hello world"))
 
     def test_objects_are_walked(self):
         obj = {"user": "ana", "auth": {"token": self.TOKEN}, "items": [f"Bearer {self.TOKEN}", 3, None],
                "path": f"/v1/files/{self.TOKEN}"}
-        out = json.dumps(cv.sanitize_obj(obj))
+        out = json.dumps(redact.sanitize_obj(obj))
         self.assertNotIn(self.TOKEN[4:20], out)
         self.assertIn('"user": "ana"', out)
 
     def test_never_raises_on_odd_input(self):
         for x in (None, 3, b"bytes", ["a", {"b": object()}], "x" * 10_000, "%" * 50, "a=" * 500):
-            cv.sanitize_text(x) if not isinstance(x, (list, dict)) else cv.sanitize_obj(x)
+            redact.sanitize_text(x) if not isinstance(x, (list, dict)) else redact.sanitize_obj(x)
 
     def test_truncate(self):
-        self.assertEqual(cv.truncate("abc", 10), "abc")
-        self.assertEqual(cv.truncate("a" * 50, 20), "a" * 20 + "…[truncado]")
+        self.assertEqual(redact.truncate("abc", 10), "abc")
+        self.assertEqual(redact.truncate("a" * 50, 20), "a" * 20 + "…[truncado]")
         # Sanitiza antes de cortar e nunca deixa meio marcador: o pedaço do segredo não sobra.
-        out = cv.truncate(f"token={self.TOKEN} and more text", 12)
+        out = redact.truncate(f"token={self.TOKEN} and more text", 12)
         self.assertNotIn(self.TOKEN[4:12], out)
         self.assertNotIn("[REDACTED:" + "…", out)
 

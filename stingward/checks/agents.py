@@ -5,7 +5,7 @@ import json
 import re
 import shlex
 
-from .. import _redact as cv
+from .. import _redact as redact
 from ..model import SEV_RANK, Finding
 from . import is_text_source, line_of, secrets
 
@@ -627,7 +627,7 @@ def _looks_secret(v):
         return False
     if re.fullmatch(r"[a-z]+(?:[-_.][a-z]+)*|[\d.]+|true|false|null", v):
         return False
-    return cv._entropy(v) >= 3.0
+    return redact._entropy(v) >= 3.0
 
 
 def _credential(srv, text, rel, name):
@@ -642,7 +642,7 @@ def _credential(srv, text, rel, name):
         if not v or "${" in v or v.startswith(("$", "%")) or re.search(r"(?i)your|<|xxx|placeholder|changeme", v):
             continue
         kinds = secrets.known_kinds(v)
-        literal = k not in ("arg", "url") and cv.is_sensitive_key(k) and not _NOT_SECRET_KEY.search(k) and _looks_secret(v)
+        literal = k not in ("arg", "url") and redact.is_sensitive_key(k) and not _NOT_SECRET_KEY.search(k) and _looks_secret(v)
         if kinds or literal:
             strong = any(x in secrets.CRITICAL or x == "stripe_key" for x in kinds)
             ln = _vline(text, k) if k not in ("arg", "url") else _vline(text, v)

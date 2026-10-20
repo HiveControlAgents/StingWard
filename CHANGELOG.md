@@ -2,6 +2,11 @@
 
 All notable changes to Stingward. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] - 2026-10-20
+
+### Changed
+- The secret masking module is now `stingward/_redact.py`. Reports and behavior are the same.
+
 ## [0.1.3] - 2026-10-20
 
 ### Added
@@ -37,6 +42,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 First public release: CLI (`pipx`, `uvx`, `npx`), Claude Code plugin and skill, and GitHub Action. Checks dependencies (OSV.dev, CISA KEV, EPSS, NVD), secrets, AI-built app mistakes, agent and MCP setups, and skills, with reports in text, Markdown, JSON and SARIF in English and Portuguese.
 
+[0.1.4]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.0...v0.1.1
