@@ -156,7 +156,7 @@ RULES = {
     },
     "APP009": {
         "group": "app",
-        "pt": ("Texto escrito pelo modelo chega a {sink}",
+        "pt": ("Texto escrito pelo modelo chega {sink}",
                "A resposta do modelo, e os argumentos que ele preenche numa ferramenta, podem ser guiados por qualquer coisa que ele leu "
                "(uma página, um arquivo, a mensagem de alguém). Usar isso direto transforma uma injeção de prompt em {impact}.",
                "Trate a saída do modelo como entrada de usuário: {fix}"),

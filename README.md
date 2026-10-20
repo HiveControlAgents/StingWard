@@ -58,7 +58,7 @@ No account, no telemetry, no dependencies: pure Python 3.9+ on Linux, macOS and 
 All 49 rules, with severity, examples and fixes: [docs/rules.md](docs/rules.md).
 
 <p align="center">
-  <img alt="stingward ./my-saas: OpenAI key exposed through NEXT_PUBLIC_, next 14.1.0 with CVE-2025-29927 (99% EPSS), Supabase table without RLS, open CORS. Grade F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-en.gif" width="820">
+  <img alt="stingward ./my-saas: OpenAI key exposed through NEXT_PUBLIC_, the model's answer run as a shell command, next 14.1.0 with CVE-2025-29927 (99% EPSS), SQL and a file path built from the request, a server that fetches any URL, a Supabase table without RLS, requests whose lowest allowed version has known flaws. Grade F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-en.gif" width="820">
 </p>
 
 <p align="center"><sub>A typical AI-built Next.js + Supabase app. Try both demos from a clone of this repo: <code>python scripts/demo/fixtures.py demo</code>, then <code>stingward skill demo/pdf-helper</code> and <code>stingward demo/my-saas</code>.</sub></p>

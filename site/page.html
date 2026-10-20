@@ -66,6 +66,10 @@ ${why_facts}
     <div class="report__names" role="tablist" aria-labelledby="report-h" data-reveal>
 ${report_names}
     </div>
+    <div class="report__more" data-reveal>
+      <p>${report_more}</p>
+      <a class="button" href="${sample_href}">${report_sample}</a>
+    </div>
   </div>
   <div class="report__stage">
 ${report_sheets}
@@ -90,7 +94,7 @@ ${stage_panes}
 
 <section class="finds" id="finds" aria-labelledby="finds-h">
   <div class="board">
-    <div class="tile tile--head" data-reveal><h2 class="head" id="finds-h">${finds_h2}</h2></div>
+    <div class="tile tile--head" data-reveal><h2 class="head" id="finds-h">${finds_h2}</h2><p class="tile__lead">${finds_p}</p></div>
     ${find_mask}
     ${find_kev}
     ${find_hidden}
@@ -99,6 +103,13 @@ ${stage_panes}
     ${find_curl}
     ${find_bypass}
     ${find_ssh}
+    ${find_sqli}
+    ${find_ssrf}
+    ${find_shell}
+    ${find_xss}
+    ${find_path}
+    ${find_limit}
+    ${find_floor}
   </div>
 </section>
 
@@ -132,11 +143,32 @@ ${price_lines}
     </ul>
     <a class="button" href="#where" data-reveal>${price_button}</a>
   </div>
+</section>
+
+<section class="audit" id="audit" aria-labelledby="audit-h">
+  <div class="audit__words" data-reveal>
+    <h2 class="head audit__head" id="audit-h">${audit_h2}</h2>
+    <p class="audit__lead">${audit_p}</p>
+  </div>
+  <p class="figure audit__figure" data-reveal><span class="figure__cur">${audit_currency}</span><span class="figure__num">${audit_price}</span><span class="figure__per">${audit_per}</span></p>
+  <div class="audit__act" data-reveal>${audit_button}<a class="link-plain" href="${sample_href}">${report_sample}</a></div>
+  <div class="audit__list" data-reveal>
+    <h3>${audit_gets_h}</h3>
+    <ul class="audit__gets">
+${audit_gets}
+    </ul>
+  </div>
+  <div class="audit__list" data-reveal>
+    <h3>${audit_not_h}</h3>
+    <ul class="audit__not">
+${audit_not}
+    </ul>
+  </div>
   <div class="soon" data-reveal>
     <span class="soon__tab">${soon_tab}</span>
     <h3 class="soon__title">${soon_h3}</h3>
     <p>${soon_p}</p>
-    <a class="soon__link link-plain" href="${repo}/releases">${soon_link}</a>
+    <div class="soon__act">${soon_button}<a class="soon__link link-plain" href="${repo}/releases">${soon_link}</a></div>
   </div>
 </section>
 
