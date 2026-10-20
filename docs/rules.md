@@ -36,6 +36,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [APP011](#app011) | AI endpoint with no login and no rate limit | 🟡 |
 | [APP012](#app012) | Loading the model can run code | 🟠 |
 | [APP013](#app013) | Agent can run whatever the model writes | 🟠 |
+| [APP014](#app014) | Tool argument written by the model reaches a shell, code, SQL, a path or a URL | 🔴 |
 | [COD001](#cod001) | SQL query built from outside input | 🟠 |
 | [COD002](#cod002) | Shell command built from outside input | 🔴 |
 | [COD003](#cod003) | Code built from outside input is executed | 🔴 |
@@ -202,7 +203,7 @@ Firestore or Storage rules with `allow read, write: if true` (or the test-mode d
 <a id="app009"></a>
 ### APP009 · Model output reaches code, a shell, SQL or HTML
 
-The answer of an LLM call (OpenAI, Anthropic, Gemini, LangChain, the AI SDK...) or the arguments of an MCP or AI SDK tool reach `eval`/`exec`, a shell command, a template, a SQL query, or `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. A prompt injection in anything the model read turns into code on your server or scripts in your users' browsers. Critical when the answer is executed, high for tool arguments and SQL, medium for HTML. `JSON.parse`, `json.loads` and DOMPurify break the chain.
+The answer of an LLM call (OpenAI, Anthropic, Gemini, LangChain, the AI SDK...) reaches `eval`/`exec`, a shell command, a template, a SQL query, or `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. A prompt injection in anything the model read turns into code on your server or scripts in your users' browsers. Critical when the answer is executed, high for SQL, medium for HTML. `JSON.parse`, `json.loads` and DOMPurify break the chain. The arguments the model writes for a tool are covered by [APP014](#app014).
 
 **Fix:** treat model output like user input: ask for JSON and validate it, map it to a fixed list of actions, pass shell arguments as a list, run SQL with a read-only user, and clean HTML with DOMPurify.
 **Standards:** `CWE-1426` · `LLM10:2026`
@@ -239,6 +240,20 @@ LangChain `PythonREPLTool`, `ShellTool` and `load_tools(["python_repl"])`, `allo
 **Fix:** remove the tool, or run it in a sandbox (a container with no secrets and no network) and confirm each run. Give SQL agents a read-only database user.
 **Standards:** `CWE-94` · `LLM03:2026` · `ASI05`
 
+<a id="app014"></a>
+### APP014 · Tool argument written by the model reaches a shell, code, SQL, a path or a URL
+
+An MCP server or agent tool passes one of its arguments to a dangerous call. The AI model fills in those arguments, not you or your code, and anything it read before the call (a web page, a file, an issue, an email) can hide instructions that change what it writes. Read as tool arguments: the parameters of FastMCP `@mcp.tool()`/`@server.tool()` functions and of `mcp.add_tool(f)`, the `arguments` of a low-level `@server.call_tool()` handler, `server.tool(...)`, `server.registerTool(...)` and `setRequestHandler(CallToolRequestSchema, ...)` handlers in TypeScript, LangChain `@tool` and `BaseTool._run`, AI SDK `tool({ execute })`, and `tool_call.function.arguments` or `block.input` read from an OpenAI or Anthropic response. A value passed to a helper in the same file, to a function the tool imports from another file of the project (two levels deep), or through a `{"name": function}` table, is followed.
+
+Severity follows the sink. Critical when the argument is mixed into a shell command or code written in the code (`os.system("git log " + ref)`, `` exec(`ls ${dir}`) ``, `["sh", "-c", f"..."]`). High when the tool runs the whole command or code it receives, for SQL built with the argument, for pickle or unsafe YAML, and for a path joined to a folder of the code (`os.path.join(BASE, name)`, where `../` leaves it). Medium for any other path, for a URL the server fetches and for HTML. In skills the finding keeps its full severity; in tests and examples it drops to low like the other code findings.
+
+Not reported: parameters typed as numbers, booleans, `Literal`, a local `Enum` or `Field(pattern=...)`, Zod `z.number()`/`z.enum()`, parameters the framework injects (`ctx: Context`), argument lists with no shell whose program is written in the code, an argument passed first to a check such as `validate_name(arg)` or `check_path(arg)` (in TypeScript, path checks such as `validatePath(p)`), `shlex.quote`, query parameters, `basename`, `resolve()` plus an `is_relative_to`/`startsWith` check, a fixed file name inside a folder the model picks, a fixed host, an allow list of hosts, and code that runs in the browser. A tool that runs a whole SQL query it receives is a SQL tool by design and is not reported. A JSON Schema with only `"type": "string"` does not count as validation.
+
+The CWE and the OWASP Top 10 for Agentic Applications entry depend on the sink: CWE-78 and ASI05 for shell commands, CWE-94 and ASI05 for code and templates, CWE-502 and ASI05 for pickle and YAML, CWE-89 and ASI02 for SQL, CWE-22 and ASI02 for paths, CWE-918 and ASI02 for URLs, CWE-79 for HTML.
+
+**Fix:** treat every tool argument as untrusted input: run programs with an argument list and no shell, pass SQL values as parameters, keep paths inside one folder (resolve them and check the prefix), allow only the hosts the tool needs, and type arguments as narrowly as you can (numbers, enums, patterns). If the tool must run commands, ask the user to confirm each one.
+**Standards:** `LLM03:2026`
+
 ## Code
 
 Python files are read with `ast` and JavaScript/TypeScript (also the `<script>` of `.vue`, `.svelte` and `.astro`) with tight patterns, following where each value came from inside the function: the request (Flask, FastAPI, Django, Express, Next.js, Hono...), a function argument, or another server. A call to your own helper (`get_file_by_id(id)`) is not followed, because it returns something else, and neither is a parameter the framework already turned into a number, boolean or UUID (`item_id: int`, `<int:id>`). Minified bundles are skipped, and tests, examples and fixtures drop to low.
@@ -254,7 +269,7 @@ An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, 
 <a id="cod002"></a>
 ### COD002 · Shell command built from outside input
 
-`os.system`, `subprocess.run(..., shell=True)`, `exec`/`execSync` from `child_process` and similar with request data in the command (critical), or a function argument mixed into the command text in a web app (medium). An argument list with no shell (`subprocess.run(["ping", host])`, `execFile`) and command-line tools (click, typer) are not reported.
+`os.system`, `subprocess.run(..., shell=True)`, `["sh", "-c", ...]`, `exec`/`execSync` from `child_process`, `spawn(cmd, { shell: true })`, `spawn("sh", ["-c", cmd])`, execa with `shell: true` and similar with request data in the command (critical), or a function argument mixed into the command text in a web app (medium). An argument list with no shell (`subprocess.run(["ping", host])`, `execFile`, `spawn("ls", [dir])`) and command-line tools (click, typer) are not reported.
 
 **Fix:** run the program with an argument list and no shell, and accept only values from a known list.
 **Standards:** `CWE-78`
@@ -278,7 +293,7 @@ An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, 
 <a id="cod005"></a>
 ### COD005 · HTML inserted without sanitizing
 
-`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, `{@html}`, `set:html`, `Markup()` or an HTML string returned by a Flask route, with data from the URL or the request (medium). In JavaScript, HTML built from other variables is low. `DOMPurify.sanitize`, `textContent`, plain JSX and constant HTML are not reported.
+`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, `{@html}`, `set:html`, `Markup()`, `res.send`/`res.write`/`res.end` in Express, `c.html` in Hono, or an HTML string returned by a Flask route or a FastAPI route with `response_class=HTMLResponse`, with data from the URL or the request (medium). In JavaScript, HTML built from other variables is low. `DOMPurify.sanitize`, `escapeHtml`, `textContent`, plain JSX, constant HTML, `res.json` and text with no HTML tag are not reported.
 
 **Fix:** show it as text (`textContent`, or the variable straight in JSX) or clean it first with `DOMPurify.sanitize` (sanitize-html or bleach on the server).
 **Standards:** `CWE-79`
@@ -318,7 +333,7 @@ An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, 
 <a id="cod010"></a>
 ### COD010 · Predictable random number used for a secret
 
-`Math.random()` or Python's `random` assigned to (or returned by) something named like a secret: `reset_token`, `apiKey`, `password`, `otp`, `verification_code`. Names like `token_count`, `delay` or `session_id` are not reported, and neither are tests.
+`Math.random()` or Python's `random` assigned to (or returned by) something named like a secret: `reset_token`, `apiKey`, `password`, `otp`, `verification_code`, also at module level and when the value is built in a callback (`[...Array(32)].map(() => ...Math.random()...)`). A session id (`session_id`, `sessionId`, `sid`) counts when it goes into a cookie. Names like `token_count` or `delay`, a session id that never reaches a cookie, and tests are not reported.
 
 **Fix:** use `crypto.randomUUID()` or `crypto.getRandomValues` in JavaScript, and the `secrets` module in Python (`secrets.token_urlsafe`).
 **Standards:** `CWE-338`
