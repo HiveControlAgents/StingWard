@@ -45,6 +45,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - In SARIF, each rule's description and help described the first problem found for that rule, so in GitHub code scanning an alert for `axios` came with "Upgrade next to 15.5.24 or later." The rule now has its generic name from the rules reference, its explanation and fix when they do not depend on the problem, and otherwise a line saying that each alert says what to change. Each alert keeps its own text. In Portuguese, the rule links to `docs/rules.pt-BR.md`.
 - A PGP private key block (`PRIVATE KEY BLOCK`) is now hidden whole in the HTML report's excerpts and in review comments and notes, like other private keys. Before, each of its lines was masked on its own, and the short last line of the key could show.
 - On the website, the pull request preview listed the demo app's public OpenAI key twice, once for `.env` and once for the chat route, while the real comment shows it as one row with both places. The preview is now built from the first rows of the real Markdown comment, in the same order and with the same places.
+- The code excerpts in the HTML report now come from the text the checks read, instead of opening each file again. A file changed on disk after the scan, or a step the reader applies such as dropping a byte order mark, no longer makes an excerpt differ from the line the finding points at.
 
 ## [0.1.5] - 2026-10-20
 
