@@ -21,10 +21,10 @@ RULES = {
         "group": "deps",
         "pt": ("{pkg} {version} é um pacote malicioso ({vuln_id})",
                "O pacote foi publicado para roubar dados ou executar código. Não é um bug: é ataque.",
-               "Remova o pacote agora, apague node_modules/venv e troque todas as chaves e senhas da máquina e do projeto."),
+               "{fix}"),
         "en": ("{pkg} {version} is a malicious package ({vuln_id})",
                "This package was published to steal data or run code. It is not a bug, it is an attack.",
-               "Remove it now, delete node_modules/venv, and rotate every key and password on this machine and project."),
+               "{fix}"),
     },
     "DEP003": {
         "group": "deps",

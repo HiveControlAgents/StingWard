@@ -238,9 +238,15 @@ def check(ctx):
                           "epss": None, "fixed": None, "details": False})
         return vulns, malware
 
-    def malicious(name, version, rel, line, advisories, severity="critical"):
+    def malicious(name, version, rel, line, advisories, floor_of=None):
+        """DEP002. floor_of: a faixa sem lockfile cujo piso (version) é malicioso sem que toda versão dela seja."""
+        if floor_of is None:
+            severity, (fix_pt, fix_en) = "critical", _REMOVE
+        else:
+            severity = "high"
+            fix_pt, fix_en = (t.format(req=floor_of.req, floor=version) for t in _RAISE_FLOOR)
         return Finding("DEP002", severity, rel, line, {"pkg": name, "version": version, "vuln_id": advisories[0],
-                                                       "advisories": advisories},
+                                                       "advisories": advisories, "fix_pt": fix_pt, "fix_en": fix_en},
                        [f"https://osv.dev/vulnerability/{advisories[0]}"], ["malicious"])
 
     for (eco, name, version, rel, line), ids in zip(pkgs, ids_per_pkg):
@@ -261,7 +267,7 @@ def check(ctx):
             # (release sequestrado, já trocado) quase nunca é a instalada: alto, para revisar a faixa.
             whole = any(vulndb.affects_whole_range(docs.get(m, {}), r.eco, r.name, r.floor, r.upper, r.inclusive)
                         for m in malware)
-            out.append(malicious(r.name, r.floor, r.file, r.line, malware, "critical" if whole else "high"))
+            out.append(malicious(r.name, r.floor, r.file, r.line, malware, None if whole else r))
         if vulns:
             vulns = [dict(x, spans=vulndb.affects_whole_range(docs.get(x["osv"], {}), r.eco, r.name, r.floor, r.upper, r.inclusive))
                      for x in vulns]
@@ -325,6 +331,19 @@ def _with_missing(vulns, fix_pt, fix_en, alone):
     return (pt, en) if alone else (f"{fix_pt} {pt}", f"{fix_en} {en}")
 
 
+# DEP002. A versão maliciosa é a instalada (fixada, no lockfile, ou toda versão da faixa é maliciosa): remover já.
+_REMOVE = ("Remova o pacote agora, apague node_modules/venv e troque todas as chaves e senhas da máquina e do projeto.",
+           "Remove it now, delete node_modules/venv, and rotate every key and password on this machine and project.")
+# Só o piso da faixa (e talvez outras versões, não todas) é malicioso: a instalada provavelmente é outra. Remover o
+# pacote não é a correção; subir o piso é, e limpar a máquina só se a instalada for uma das maliciosas.
+_RAISE_FLOOR = ("Suba a versão mínima em {req} para depois da {floor}, numa versão que não esteja marcada como maliciosa, "
+                "e faça commit do lockfile: assim a versão maliciosa não é instalada. Confira qual versão está instalada "
+                "(no lockfile, em node_modules ou no virtualenv). Se for uma das maliciosas, apague node_modules/venv e "
+                "troque todas as chaves e senhas da máquina e do projeto.",
+                "Raise the minimum in {req} past {floor}, to a version not marked as malicious, and commit a lockfile, "
+                "so the malicious version is never installed. Check which version is installed (in the lockfile, "
+                "node_modules or the virtualenv). If it is a malicious one, delete node_modules/venv and rotate every "
+                "key and password on this machine and project.")
 _UNFIXED = (" {n} falha(s) ainda sem correção: veja se dá para trocar de pacote.",
             " {n} issue(s) still unfixed: consider replacing the package.")
 _NO_FIX = ("Ainda não há versão corrigida. Veja se dá para trocar de pacote ou aplicar a mitigação do aviso.",

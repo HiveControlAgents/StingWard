@@ -81,7 +81,7 @@ Consulta no OSV.dev cada pacote e versão dos seus lockfiles (npm, Yarn, pnpm, B
 
 Registros `MAL-*` do OSV e alertas de "malware" do GitHub: pacotes publicados para roubar dados ou executar código. É ataque, não bug. Versão fixada ou travada no lockfile é crítica. Quando é a menor versão de uma faixa sem lockfile (veja o DEP004), só é crítica se toda versão aceita pela faixa é maliciosa; quando o registro cita só algumas versões, a instalada provavelmente é uma posterior e o achado é alto.
 
-**Como corrigir:** remova o pacote, apague `node_modules`/virtualenvs e troque todas as chaves e senhas da máquina e do projeto.
+**Como corrigir:** remova o pacote, apague `node_modules`/virtualenvs e troque todas as chaves e senhas da máquina e do projeto. Quando só a menor versão de uma faixa é maliciosa (alto), suba a versão mínima da faixa para depois dela e faça commit do lockfile; limpe a máquina e troque as chaves só se a versão instalada for uma das maliciosas.
 **Padrões:** `CWE-506` · `LLM04:2026` · `AST02`
 
 <a id="dep003"></a>
