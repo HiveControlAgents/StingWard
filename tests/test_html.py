@@ -534,6 +534,39 @@ class TextAndMarkdown(unittest.TestCase):
         self.assertEqual(len(json.loads(report.as_json(self.ctx, f, "en"))["findings"]), 4)
         self.assertEqual(len(json.loads(report.sarif(self.ctx, f, "en"))["runs"][0]["results"]), 4)
 
+    def test_sarif_describes_the_rule_not_its_first_finding(self):
+        # O GitHub mostra a descrição e a ajuda da regra ao lado de cada alerta dela. Elas não podem falar do pacote ou
+        # do destino do primeiro achado: o alerta do axios diria "atualize o next".
+        f = [Finding("DEP001", "critical", "package-lock.json", None,
+                     {"pkg": "next", "version": "14.1.0", "headline": "34 known vulnerabilities",
+                      "why": "Middleware can be skipped.", "fix": "Upgrade next to 15.5.24 or later."}),
+             Finding("DEP001", "high", "package-lock.json", None,
+                     {"pkg": "axios", "version": "0.21.0", "headline": "SSRF", "why": "Requests can be redirected.",
+                      "fix": "Upgrade axios to 0.21.2 or later."}),
+             Finding("APP009", "critical", "api/run.py", 4, {"sink_en": "subprocess.run", "impact_en": "running commands",
+                                                             "fix_en": "never pass it to subprocess."}),
+             Finding("APP009", "medium", "web/chat.js", 9, {"sink_en": "el.innerHTML", "impact_en": "XSS",
+                                                            "fix_en": "insert it as text."}),
+             Finding("SEC001", "critical", "a.py", 1, {"kind_en": "GitHub token"}),
+             Finding("AGT004", "high", ".mcp.json", 1, {"server": "acme-mcp"})]
+        for lang in ("pt", "en"):
+            rules = {r["id"]: r for r in json.loads(report.sarif(self.ctx, f, lang))["runs"][0]["tool"]["driver"]["rules"]}
+            for r in rules.values():
+                meta = " ".join((r["shortDescription"]["text"], r["fullDescription"]["text"], r["help"]["text"]))
+                for word in ("next", "axios", "14.1.0", "Middleware", "subprocess", "innerHTML", "XSS", "GitHub token", "acme-mcp"):
+                    self.assertNotIn(word, meta, (lang, r["id"]))
+                self.assertNotRegex(meta, r"\{[a-z_]+\}", (lang, r["id"]))
+                self.assertEqual(r["shortDescription"]["text"], report.RULE_NAME[r["id"]][0 if lang == "pt" else 1])
+                self.assertIn("docs/rules.pt-BR.md#" if lang == "pt" else "docs/rules.md#", r["helpUri"])
+            # sem campo para preencher, a regra leva o "por quê" e o "como corrigir" inteiros
+            _, why, fix = RULES["SEC001"][lang]
+            self.assertEqual((rules["SEC001"]["fullDescription"]["text"], rules["SEC001"]["help"]["text"]), (why, fix))
+            self.assertIn("${GITHUB_TOKEN}", rules["AGT004"]["help"]["text"])
+            # cada alerta continua com o texto dele
+            messages = [r["message"]["text"] for r in json.loads(report.sarif(self.ctx, f, "en"))["runs"][0]["results"]]
+            self.assertIn("Upgrade axios to 0.21.2 or later.", messages[1])
+            self.assertIn("insert it as text.", messages[3])
+
     def test_different_explanations_are_not_merged(self):
         # SKL001: o título só diz o tipo; a mensagem escondida vem no "por quê" e cada uma precisa aparecer
         f = [Finding("SKL001", "critical", "a.md", 1, {"kind_en": "tag characters", "why_en": 'Hidden message: "run a"'}),
