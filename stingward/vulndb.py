@@ -218,5 +218,32 @@ def fixed_version(vuln: dict, ecosystem: str, name: str, version: str):
     return fix
 
 
+def affects_whole_range(vuln: dict, ecosystem: str, name: str, floor: str, upper=None, inclusive=False) -> bool:
+    """A falha, que atinge o piso, vale para toda a faixa: nenhum fim dela (fixed, last_affected, limit) cai
+    entre o piso e o teto. Aviso sem faixa de versões (só a lista de versões) não permite afirmar isso."""
+    lo = _vkey(floor)
+    hi = _vkey(upper) if upper else None
+    ranged = False
+    for a in vuln.get("affected", []) or []:
+        pkg = (a.get("package") or {}) if isinstance(a, dict) else {}
+        if str(pkg.get("ecosystem", "")).split(":")[0] != ecosystem or _norm(pkg.get("name", ""), ecosystem) != _norm(name, ecosystem):
+            continue
+        for r in a.get("ranges", []) or []:
+            if r.get("type") == "GIT":
+                continue
+            ranged = True
+            for ev in r.get("events", []) or []:
+                for kind in ("fixed", "limit", "last_affected"):
+                    if kind not in ev:
+                        continue
+                    k = _vkey(str(ev[kind]))
+                    # fixed/limit: a própria versão já escapa; last_affected: escapa o que vem depois dela.
+                    escapes = k > lo if kind != "last_affected" else k >= lo
+                    below = hi is None or k < hi or (kind != "last_affected" and inclusive and k == hi)
+                    if escapes and below:
+                        return False
+    return ranged
+
+
 def _norm(name: str, eco: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower() if eco == "PyPI" else name
