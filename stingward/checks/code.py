@@ -986,6 +986,9 @@ class _Py:
             self.returned(st, env, fn)
         for b in _bodies(st):
             self.body(b, env, fn)
+        if isinstance(st, ast.If) and _exits(st.body):
+            for key in self.guarded(st.test, env):
+                env[key] = set()  # if x not in ALLOWED: abort(400): daqui em diante x é um dos permitidos
 
     def function(self, node, outer, tool=False, seeds=None):
         decos = [self._dot(d.func if isinstance(d, ast.Call) else d) for d in node.decorator_list]
@@ -1029,6 +1032,42 @@ class _Py:
             self.llm_funcs.add(node.name)
         self.body(node.body, env, fn)
         self.strs, self.vals, self.path_env = saved
+
+    def guarded(self, test, env):
+        """Nomes que o teste de um if que sai da função confere: x not in ALLOWED, not x.isdigit(),
+        not re.fullmatch(padrão, x), not validate_x(x). Com "or", vale cada parte (o if sai se qualquer uma falhar)."""
+        if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.Or):
+            return [k for v in test.values for k in self.guarded(v, env)]
+        if isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], ast.NotIn):
+            # A lista de permitidos é do código (constante, ALLOWED, do banco), não de quem chama.
+            if not self.origins(test.comparators[0], env) & (REQ_ANY | MODEL | {TOOL}):
+                return [k for k in [_guard_key(test.left)] if k]
+            return []
+        if not (isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not) and isinstance(test.operand, ast.Call)):
+            return []
+        call = test.operand
+        f = call.func
+        if isinstance(f, ast.Attribute) and f.attr in _STR_CHECKS and not call.args:
+            return [k for k in [_guard_key(f.value)] if k]
+        d = self._dot(f)
+        last = d.rsplit(".", 1)[-1] if d else ""
+        if last in ("fullmatch", "match", "search"):
+            # re.fullmatch(p, x), PADRAO.fullmatch(x), re.match(r"^[a-z_]+$", x): match só vale com o fim ancorado
+            # ($ ou \Z) e search com os dois, num padrão que se vê no código.
+            if d.startswith("re."):
+                pat, arg = (list(call.args) + [None, None])[:2]
+            elif isinstance(f, ast.Attribute):
+                v = self.vals.get(f.value.id) if isinstance(f.value, ast.Name) else None
+                pat = v.args[0] if isinstance(v, ast.Call) and self._dot(v.func) == "re.compile" and v.args else None
+                arg = call.args[0] if call.args else None
+            else:
+                return []
+            if last == "fullmatch" or _anchored(pat.value if _const_str(pat) else None, last == "search"):
+                return [k for k in [_guard_key(arg)] if k]
+            return []
+        if _VALIDATOR.match(last) and not _NOT_VALIDATOR.search(last) and call.args:
+            return [k for k in [_guard_key(call.args[0])] if k]
+        return []
 
     def ext_expr(self, n):
         """os.path.splitext(nome)[1] (ou [-1]), com .lower() ou .strip() em cima: a extensão não tem / nem .., então num
@@ -1639,6 +1678,38 @@ def _lit_before(parts, i, keep=200):
             size += len(parts[j][1])
         j -= 1
     return "".join(reversed(out))[-keep:]
+
+
+# Conferências de texto que deixam só dígitos ou letras: depois de "if not x.isdigit(): return", x não muda o SQL.
+_STR_CHECKS = {"isdigit", "isnumeric", "isdecimal", "isalnum", "isalpha", "isidentifier"}
+
+
+def _anchored(pattern, start=True):
+    """O padrão confere o texto inteiro: termina em $ ou \\Z e, com start, começa em ^ ou \\A."""
+    if not pattern or not re.search(r"(?:(?<!\\)\$|\\Z)\Z", pattern):
+        return False
+    return not start or pattern.startswith(("^", "\\A"))
+
+
+def _exits(body):
+    """O bloco sai da função ou do laço: return, raise, continue, break, abort(400), sys.exit()."""
+    last = body[-1] if body else None
+    if isinstance(last, (ast.Return, ast.Raise, ast.Continue, ast.Break)):
+        return True
+    if isinstance(last, ast.Expr) and isinstance(last.value, ast.Call):
+        f = last.value.func
+        name = f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else ""
+        return name in ("abort", "exit", "_exit")
+    return False
+
+
+def _guard_key(node):
+    """A chave do ambiente para o valor conferido: x, ou body.sort (como _attr_key)."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return _attr_key(node)
+    return None
 
 
 def _attr_key(node):

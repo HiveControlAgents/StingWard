@@ -98,6 +98,42 @@ class CodeRules(Checks):
         self.check({"main.py": src}, [("COD002", "main.py", 13, "critical"), ("COD001", "main.py", 16, "high"),
                                       ("COD008", "main.py", 19, "high"), ("COD002", "main.py", 23, "medium")])
 
+    def test_cod001_python_guards_before_the_query(self):
+        """if x not in ALLOWED: abort(400), if not x.isdigit(): return, if not re.fullmatch(...): raise: depois do if, o
+        valor é um dos permitidos. Um if que não sai da função, ou uma lista que vem da requisição, não protege."""
+        src = FLASK + ("import sqlite3, re\nconn = sqlite3.connect('d')\nALLOWED = {'name', 'date'}\n"
+                       "@app.get('/a')\ndef a():\n"
+                       "    sort = request.args.get('sort')\n"
+                       "    if not sort or sort not in ALLOWED:\n"
+                       "        abort(400)\n"
+                       "    uid = request.args['id']\n"
+                       "    if not uid.isdigit():\n"
+                       "        return 'bad', 400\n"
+                       "    t = request.args['table']\n"
+                       "    if not re.fullmatch(r'[a-z_]+', t):\n"
+                       "        raise ValueError('bad')\n"
+                       "    conn.execute(f'SELECT * FROM {t} WHERE id = {uid} ORDER BY {sort}')\n"
+                       "    c = request.args['c']\n"
+                       "    if not re.match(r'^[a-z_]+$', c) or not validate_column(c):\n"
+                       "        return 'bad', 400\n"
+                       "    d = request.args['d']\n"
+                       "    if not re.match(r'[a-z_]+', d):\n"
+                       "        return 'bad', 400\n"
+                       "    conn.execute(f'SELECT {c}, {d} FROM t')\n"
+                       "    e = request.args['e']\n"
+                       "    if not re.search(r'[a-z_]+$', e):\n"
+                       "        return 'bad', 400\n"
+                       "    conn.execute(f'SELECT {c}, {e} FROM t')\n"
+                       "    w = request.args['w']\n"
+                       "    if w not in request.args.getlist('ok'):\n"
+                       "        abort(400)\n"
+                       "    x = request.args['x']\n"
+                       "    if x not in ALLOWED:\n"
+                       "        print('odd')\n"
+                       "    return str(conn.execute(f\"SELECT * FROM t WHERE w = '{w}' AND x = '{x}'\").fetchall())\n")
+        self.check({"app.py": src}, [("COD001", "app.py", 24, "high"), ("COD001", "app.py", 28, "high"),
+                                     ("COD001", "app.py", 35, "high")])
+
     def test_cod001_function_argument_in_value_position_is_medium(self):
         src = "def find(conn, name):\n    return conn.execute(f\"SELECT * FROM t WHERE name = '{name}'\")\n"
         f = run({"db.py": src})
