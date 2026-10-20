@@ -1,5 +1,5 @@
-// Stingward site: copy buttons, the report picker, the stage slider, the index preview and the entrances.
-// Everything on the page is readable without this file.
+// Stingward site: copy buttons, the report picker and its grade marker, the stage slider, the index preview and the
+// entrances. Everything on the page is readable without this file.
 
 (() => {
   document.querySelectorAll("[data-copy]").forEach((button) => {
@@ -17,11 +17,17 @@
   });
 })();
 
-// Three real reports: a tab list with arrow keys, one sheet shown at a time.
+// Three real reports: a tab list with arrow keys, one sheet shown at a time, and the marker on the label moved to the
+// grade the chosen report got. A pointer sees it slide there; a key press puts it there at once.
 (() => {
   const tabs = [...document.querySelectorAll(".report__name")];
+  const marker = document.querySelector(".report [data-marker]");
   if (!tabs.length) return;
-  const select = (index, focus) => {
+  const grades = "ABCDF";
+  let current = tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true");
+  const select = (index, byKey) => {
+    if (index === current) return;
+    current = index;
     tabs.forEach((tab, i) => {
       const on = i === index;
       tab.setAttribute("aria-selected", String(on));
@@ -30,10 +36,18 @@
       sheet.hidden = !on;
       if (on) sheet.scrollTop = 0;
     });
-    if (focus) tabs[index].focus();
+    if (byKey) tabs[index].focus();
+    if (!marker) return;
+    const tab = tabs[index];
+    marker.classList.toggle("is-instant", Boolean(byKey));
+    marker.style.setProperty("--row", String(grades.indexOf(tab.dataset.grade)));
+    marker.querySelector(".scale__g").textContent = tab.dataset.grade;
+    // the project's name, with the same break points after each slash that the page was built with
+    marker.querySelector(".scale__what").replaceChildren(...tab.dataset.project.split("/").flatMap((part, i) =>
+      (i ? ["/", document.createElement("wbr"), part] : [part])));
   };
   tabs.forEach((tab, i) => {
-    tab.addEventListener("click", () => select(i));
+    tab.addEventListener("click", (event) => select(i, event.detail === 0));
     tab.addEventListener("keydown", (event) => {
       const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
       if (step) { event.preventDefault(); select((i + step + tabs.length) % tabs.length, true); }
@@ -57,9 +71,11 @@
   const names = how.querySelectorAll(".how__names li");
   const calm = matchMedia("(prefers-reduced-motion: reduce)");
   let current = 0;
+  let byKey = false;
   const set = (i) => {
-    if (i !== current && !calm.matches && clause.animate) {
-      clause.animate([{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }], { duration: 240, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
+    if (i !== current && !byKey && !calm.matches && clause.animate) {
+      clause.animate([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }],
+        { duration: 220, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
     }
     current = i;
     clause.textContent = clauses[i];
@@ -69,8 +85,10 @@
     control.style.setProperty("--p", String(i / Number(range.max)));
     range.setAttribute("aria-valuetext", clauses[i]);
   };
+  range.addEventListener("keydown", () => { byKey = true; });
+  range.addEventListener("pointerdown", () => { byKey = false; });
   range.addEventListener("input", () => set(Number(range.value)));
-  names.forEach((name) => name.addEventListener("click", () => { range.value = name.dataset.stage; set(Number(range.value)); }));
+  names.forEach((name) => name.addEventListener("click", () => { byKey = false; range.value = name.dataset.stage; set(Number(range.value)); }));
   set(0);
 })();
 
@@ -99,7 +117,7 @@
 // Entrances: the parts of each section rise in turn, once. Content is never left hidden.
 (() => {
   document.querySelectorAll("main > section").forEach((section) => {
-    section.querySelectorAll("[data-reveal]").forEach((el, i) => el.style.setProperty("--i", String(Math.min(i, 8))));
+    section.querySelectorAll("[data-reveal]").forEach((el, i) => el.style.setProperty("--d", `${Math.min(i, 5) * 70}ms`));
   });
   const targets = document.querySelectorAll("[data-reveal]");
   if (!("IntersectionObserver" in window)) { targets.forEach((el) => el.classList.add("is-in")); return; }
