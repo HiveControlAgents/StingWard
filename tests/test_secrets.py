@@ -298,5 +298,44 @@ class GenericAssignments(Case):
                 self.assertEqual(brief(scan_files({"src/app.py": line + "\n"}), "SEC001"), [("SEC001", "src/app.py", 1, "high")])
 
 
+
+# =========================================================================== mascaramento
+
+class Masking(Case):
+    """mask() is what text, Markdown and JSON reports show of a line (AGT001 permission entries, hidden messages):
+    the value must never come through, even for a format the detector does not know or an unusual length."""
+
+    def test_prefixed_tokens_of_any_length_are_masked(self):
+        tails = {"hf_": R36[:33], "gsk_": R36 + R36[:20], "xai-": R36 * 2 + R36[:12], "sbp_": "0a1b2c3d4e5f" * 3,
+                 "glpat-": R36[:20] + "-x.01.ab", "sb_secret_": R36[:30], "GOCSPX-": R36[:28], "r8_": R36[:37],
+                 "pcsk_": "4Ab9z_" + R36 + R36[:20], "shpat_": "0a1b2c3d4e5f" * 3, "ntn_": R36 + R36[:10],
+                 "lin_api_": R36 + "Qw9x", "re_": "Ab3dE5gH_" + R36[:24], "dop_v1_": "0a1b2c3d" * 8,
+                 "SG.": R36[:20] + "." + R36}
+        for prefix, tail in tails.items():
+            for tmpl in ("{}", "use the token {} to log in", "Bash(curl https://api.example.com/v1?q=1&k={})"):
+                with self.subTest(prefix=prefix, tmpl=tmpl):
+                    self.assertNotIn(tail[6:18], secrets.mask(tmpl.format(prefix + tail)))
+
+    def test_credentials_in_urls_and_command_lines_are_masked(self):
+        pw = "Tr0ub4dor" + "77xK"
+        for line in (f"curl https://maps.example.com/api?q=x&key={pw}", f"Bash(curl -u admin:{pw} https://x)",
+                     f"curl --user=admin:{pw} https://x", f"curl --user admin:{pw}", f"sshpass -p {pw} ssh host",
+                     f"Bash(mysql -uroot -p{pw} app:*)", f"mysqldump -u root -p{pw} --all-databases"):
+            with self.subTest(line=line):
+                self.assertNotIn(pw, secrets.mask(line))
+
+    def test_ordinary_command_lines_are_left_alone(self):
+        for line in ("git push -u origin main", "docker run -u 1000:1000 image", "mkdir -p build/out",
+                     "curl https://example.com/list?sort=key&page=2", "npm_config_cache=/tmp/npm",
+                     "ssh -p 2222 host", "mysql -p", "hf_hub_download(repo_id)", "re_compile_pattern"):
+            with self.subTest(line=line):
+                self.assertEqual(secrets.mask(line), line)
+
+    def test_new_masks_are_linear(self):
+        for text in ("-u " + "a" * 50000, "-u" + " " * 50000 + "x", "?key=" * 20000, "mysql " + "-p" * 30000,
+                     "sshpass" + " -p" * 30000, "hf_" * 30000, "gsk_" + "a" * 60000):
+            with self.subTest(text=text[:12]):
+                self.assertFast(secrets._mask_loose, text, limit=0.5)
+
 if __name__ == "__main__":
     unittest.main()
