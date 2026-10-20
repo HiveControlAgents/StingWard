@@ -35,6 +35,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A file with thousands of hard-coded values (generated config, fixtures) is scanned for secrets in linear time: 40 000 such lines took 44 seconds.
 - SEC001 no longer reports a "password in URL" (high) where code builds the URL: `f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@..."`, `"{}:{}@{}".format(...)`, `"%s:%s@%s"`, `%(password)s`, Ruby `#{password}` and Swift `\(password)`. Translated examples such as `https://usuario:contraseña@servidor` or `https://uzivatel:heslo@hostitel:port` (a non-ASCII password, or a port written as a word) are not reported either; a real password next to a host and port the code fills in still is.
 - SEC001 reports a private key only when its body is there (on the same line, as in a service account JSON, or on the next lines). Code that only writes the header, such as `key.replace('-----BEGIN PRIVATE KEY-----', '')`, `startsWith(...)`, a `placeholder="-----BEGIN PRIVATE KEY-----"` or an example with `\n...\n`, was a critical finding.
+- SEC001 now reads key files that were never scanned: `id_rsa` (and the `dsa`, `ecdsa` and `ed25519` ones), `*.pem`, `*.key` and Apple's `*.p8`. A committed private key in one of them was missed; a certificate, which only holds the public part, is not reported.
 
 ## [0.1.5] - 2026-10-20
 

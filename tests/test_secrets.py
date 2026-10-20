@@ -170,5 +170,16 @@ class PrivateKeys(Case):
         self.assertEqual(brief(scan_files(files, tracked=files), "SEC002"), [("SEC002", ".env", None, "high")])
 
 
+    def test_key_files_are_read(self):
+        ssh = "-----BEGIN OPENSSH " + "PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA" + R36 + "\n-----END OPENSSH " + "PRIVATE KEY-----\n"
+        pem = BEGIN + "\n" + "\n".join(BODY) + "\n" + END + "\n"
+        cert = "-----BEGIN CERTIFICATE-----\n" + BODY[0] + "\n-----END CERTIFICATE-----\n"
+        files = {"deploy/id_rsa": ssh, "deploy/id_rsa.pub": "ssh-ed25519 AAAAC3Nza" + R36 + " me@host\n",
+                 "certs/server.key": pem, "certs/server.pem": cert, "keys/AuthKey_7QW3ER5TY8.p8": pem}
+        self.assertEqual(brief(scan_files(files), "SEC001"), [
+            ("SEC001", "certs/server.key", 1, "critical"), ("SEC001", "deploy/id_rsa", 1, "critical"),
+            ("SEC001", "keys/AuthKey_7QW3ER5TY8.p8", 1, "critical")])
+
+
 if __name__ == "__main__":
     unittest.main()
