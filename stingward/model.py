@@ -40,9 +40,11 @@ class Context:
     _cache: dict = field(default_factory=dict)
 
     def read(self, rel: str) -> str:
+        # utf-8-sig: o BOM que o Bloco de Notas e o PowerShell gravam no início quebraria o json.loads do .mcp.json
+        # e as regras ancoradas no começo do arquivo, e o arquivo sairia da auditoria calado.
         if rel not in self._cache:
             try:
-                with open(os.path.join(self.root, rel), encoding="utf-8", errors="replace") as fh:
+                with open(os.path.join(self.root, rel), encoding="utf-8-sig", errors="replace") as fh:
                     self._cache[rel] = fh.read()
             except OSError:
                 self._cache[rel] = ""

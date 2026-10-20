@@ -373,5 +373,30 @@ class SourceFailuresAreAlwaysSaid(unittest.TestCase):
         self.assertEqual(err, "")
 
 
+
+class TextWithABom(unittest.TestCase):
+    """Bloco de Notas e PowerShell gravam UTF-8 com BOM: o arquivo tem que ser lido como sem ele."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _write(self, rel, text, bom=True):
+        with open(os.path.join(self.tmp.name, rel), "wb") as fh:
+            fh.write((b"\xef\xbb\xbf" if bom else b"") + text.encode("utf-8"))
+
+    def test_mcp_config_with_a_bom_is_audited(self):
+        self._write(".mcp.json", json.dumps({"mcpServers": {"x": {"command": "npx", "args": ["-y", "some-mcp-server"]}}}))
+        for mode in ("project", "skill"):
+            with self.subTest(mode=mode):
+                _, findings = scan.run(self.tmp.name, mode=mode, offline=True)
+                self.assertIn(("AGT003", ".mcp.json"), [(f.rule, f.file) for f in findings])
+
+    def test_read_drops_only_a_leading_bom(self):
+        self._write("a.txt", "x = 1\n\ufeffy\n")
+        ctx = scan.Context(self.tmp.name, ["a.txt"])
+        self.assertEqual(ctx.read("a.txt"), "x = 1\n\ufeffy\n")
+
+
 if __name__ == "__main__":
     unittest.main()
