@@ -11,7 +11,7 @@
   <a href="https://www.npmjs.com/package/stingward"><img alt="npm" src="https://img.shields.io/npm/v/stingward?color=f5b83d"></a>
   <a href="https://pypi.org/project/stingward/"><img alt="Python 3.9+" src="https://img.shields.io/pypi/pyversions/stingward"></a>
   <img alt="Zero dependências" src="https://img.shields.io/badge/depend%C3%AAncias-0-brightgreen">
-  <a href="LICENSE"><img alt="Licença Apache 2.0" src="https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue"></a>
+  <a href="https://github.com/HiveControlAgents/StingWard/blob/main/LICENSE"><img alt="Licença Apache 2.0" src="https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue"></a>
   <a href="#qualidade"><img alt="stingward: A" src="https://img.shields.io/badge/stingward-A-brightgreen"></a>
 </p>
 
@@ -55,7 +55,7 @@ Sem cadastro, sem telemetria, sem dependências: Python 3.9+ puro, no Linux, mac
 | **Agentes e MCP** | `bypassPermissions`, `Bash(*)`, hook com `curl \| sh`, `enableAllProjectMcpServers`, MCP sem versão fixa, token no `.mcp.json`, MCP remoto sem HTTPS, pacote MCP vulnerável como o `mcp-remote` (CVE-2025-6514). |
 | **Skills e prompts** | Caracteres invisíveis (tags Unicode, Trojan Source, largura zero), "ignore as instruções anteriores", "não conte ao usuário", leitura de `~/.ssh` ou `~/.aws` com chamada à internet, `curl \| bash`, reverse shell, código ofuscado, serviços de captura (webhook.site, ngrok...), scripts de instalação, `allowed-tools: Bash`, instrução escondida na descrição de ferramentas MCP. |
 
-As 50 regras, com severidade, exemplos e correção: [docs/rules.pt-BR.md](docs/rules.pt-BR.md).
+As 50 regras, com severidade, exemplos e correção: [docs/rules.pt-BR.md](https://github.com/HiveControlAgents/StingWard/blob/main/docs/rules.pt-BR.md).
 
 <p align="center">
   <img alt="stingward ./my-saas: chave da OpenAI exposta por NEXT_PUBLIC_, resposta do modelo executada como comando de shell, next 14.1.0 com a CVE-2025-29927 (EPSS de 99%), SQL e caminho de arquivo montados com dados da requisição, servidor que busca qualquer URL, tabela do Supabase sem RLS, requests cuja menor versão aceita tem falhas conhecidas. Nota F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-pt.gif" width="820">
@@ -72,7 +72,7 @@ As 50 regras, com severidade, exemplos e correção: [docs/rules.pt-BR.md](docs/
 
 Só nome e versão dos pacotes saem da sua máquina (para `api.osv.dev`, `www.cisa.gov`, `api.first.org` e `services.nvd.nist.gov`). O código nunca sai. As respostas ficam em cache por algumas horas em `~/.cache/stingward`.
 
-O Stingward lê conteúdo hostil por natureza, então trata esse conteúdo com cuidado: o git nunca descobre um repositório dentro dos arquivos auditados, os inicializadores nunca importam código da pasta auditada, e segredos, códigos de terminal e markdown são neutralizados em todos os formatos de relatório. Veja o [SECURITY.md](SECURITY.md).
+O Stingward lê conteúdo hostil por natureza, então trata esse conteúdo com cuidado: o git nunca descobre um repositório dentro dos arquivos auditados, os inicializadores nunca importam código da pasta auditada, e segredos, códigos de terminal e markdown são neutralizados em todos os formatos de relatório. Veja o [SECURITY.md](https://github.com/HiveControlAgents/StingWard/blob/main/SECURITY.md).
 
 ## GitHub Action
 
@@ -101,7 +101,8 @@ Ela comenta o relatório no PR (e atualiza o mesmo comentário a cada execução
 | `fail-on` | `high` | Falha o job nesta severidade ou acima: `critical`, `high`, `medium`, `low`, `never` |
 | `lang` | `en` | Idioma do relatório: `en` ou `pt` |
 | `comment` | `true` | Comenta nos pull requests (precisa de `pull-requests: write`) |
-| `sarif` | `true` | Envia SARIF para o code scanning (precisa de `security-events: write`) |
+| `sarif` | `true` | Envia SARIF para o code scanning (precisa de `security-events: write` e, em repositório privado, de `actions: read`) |
+| `category` | `stingward` | Categoria do SARIF no code scanning. Use uma diferente em cada execução quando o mesmo workflow audita várias pastas |
 
 ## Referência da linha de comando
 
@@ -142,7 +143,7 @@ Ambiente: `STINGWARD_LANG` define o idioma padrão, `NVD_API_KEY` aumenta o limi
 ## Qualidade
 
 - **Mais de 400 testes automáticos**, e ainda testes online que consultam de verdade o OSV, o KEV, o EPSS e o NVD em seis ecossistemas. A cobertura de linhas passa de 90%.
-- **Cada push roda 21 jobs de CI**: testes no Linux, macOS e Windows com Python 3.9 a 3.13, os pacotes do PyPI e do npm montados e instalados do zero nos três sistemas, o plugin do Claude Code validado e a Action rodando em projetos de exemplo.
+- **Cada push roda 24 jobs de CI**: testes no Linux, macOS e Windows com Python 3.9 a 3.14, os pacotes do PyPI e do npm montados e instalados do zero nos três sistemas, o plugin do Claude Code validado e a Action rodando em projetos de exemplo.
 - **O Stingward audita a si mesmo** no CI e não pode ter achado alto ou crítico; a nota dele é o selo A lá em cima.
 - **Alarme falso é medido** em coleções populares de skills e servidores MCP públicos: nenhum achado crítico ou alto que não seja real, e poucos médios por repositório. Cada alarme falso corrigido vira teste de regressão.
 - **Revisão de segurança do próprio Stingward**, por exemplo para garantir que uma pasta de skill montada como repositório git não executa comandos, e que um segredo nunca chega ao relatório. Cada problema encontrado é corrigido com um teste que falha no código antigo.
@@ -160,7 +161,7 @@ STINGWARD_ONLINE=1 python -m unittest discover -s tests -t .    # consulta tamb�
 
 **Qual a diferença para o `npm audit`, o Dependabot ou um scanner de segredos?** Cada um cobre uma parte. O Stingward junta dependências, segredos e os erros típicos de apps feitos com IA, agentes, skills e servidores MCP num relatório só, escrito para quem construiu o projeto, e audita uma skill antes de você instalar.
 
-**Por que o `npx stingward` precisa de Python?** O motor é um único pacote em Python puro, sem dependências; o pacote do npm só dá a partida, para quem usa JavaScript rodar sem `pip`.
+**Por que o `npx stingward` precisa de Python?** O motor é um único pacote em Python puro, sem dependências; o pacote do npm só dá a partida, para quem usa JavaScript rodar sem `pip`. No Windows, o `npx` não acha os atalhos `.bat` do pyenv-win: instale o Python pelo python.org ou use `pip install stingward`.
 
 **Dá para verificar um repositório privado ou uma skill no meu disco?** Dá. Aponte para uma pasta, ou para `dono/repo` com as suas credenciais do git de sempre.
 
@@ -170,8 +171,8 @@ O aviso vai para quem roda a ferramenta, sobre o código que essa pessoa escolhe
 
 ## Contribuir
 
-Relatos de bug, alarmes falsos e regras novas são bem-vindos. Leia o [CONTRIBUTING.pt-BR.md](CONTRIBUTING.pt-BR.md) para preparar o ambiente, e relate problemas de segurança do próprio Stingward em particular, como explica o [SECURITY.md](SECURITY.md).
+Relatos de bug, alarmes falsos e regras novas são bem-vindos. Leia o [CONTRIBUTING.pt-BR.md](https://github.com/HiveControlAgents/StingWard/blob/main/CONTRIBUTING.pt-BR.md) para preparar o ambiente, e relate problemas de segurança do próprio Stingward em particular, como explica o [SECURITY.md](https://github.com/HiveControlAgents/StingWard/blob/main/SECURITY.md).
 
 Dados de vulnerabilidades: [OSV.dev](https://osv.dev) (que reúne GitHub Advisories, NVD, PyPA, RustSec, Go e os pacotes maliciosos da OpenSSF), [KEV da CISA](https://www.cisa.gov/known-exploited-vulnerabilities-catalog), [EPSS da FIRST](https://www.first.org/epss/) e [NVD](https://nvd.nist.gov).
 
-[Apache 2.0](LICENSE) © Isaque Moutta
+[Apache 2.0](https://github.com/HiveControlAgents/StingWard/blob/main/LICENSE) © Isaque Moutta
