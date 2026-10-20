@@ -512,6 +512,14 @@ class AgentRules(RuleTest):
                 hit = self.assertFires(f, "AGT001", ".claude/settings.local.json", 4, sev)
                 self.assertEqual(hit.params["what"], entry)
 
+    def test_agt001_star_prefixed_bash_is_broad(self):
+        # Um comando que começa com "*" libera tudo: "Bash(* *)" permite qualquer comando que receba um argumento.
+        for entry in ("Bash(* *)", "Bash(* --write)", "Bash( * )"):
+            with self.subTest(entry=entry):
+                text = '{\n  "permissions": {\n    "allow": [\n      "%s"\n    ]\n  }\n}\n' % entry
+                hit = self.assertFires(self.scan({".claude/settings.json": text}), "AGT001", ".claude/settings.json", 4, "high")
+                self.assertEqual(hit.params["what"], entry)
+
     def test_agt001_codex_config(self):
         toml = 'model = "o3"\napproval_policy = "never"\nsandbox_mode = "danger-full-access"\n'
         f = self.scan({".codex/config.toml": toml})

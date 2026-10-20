@@ -494,7 +494,9 @@ def _list(o, key):
     return v if isinstance(v, list) else []
 
 
-_BROAD_BASH = re.compile(r"^Bash(?:\(\s*(?:\*|:\*|\*\*)\s*\))?$")
+# Bash sozinho, ou Bash(...) cujo comando começa com "*" (ou ":" + "*"): libera qualquer comando. "Bash(* *)" é tão
+# amplo quanto "Bash(*)".
+_BROAD_BASH = re.compile(r"^Bash(?:\(\s*(?:\*|:\s*\*)[^)]*\))?$")
 _RISKY_BASH = re.compile(r"^Bash\(\s*(?:sudo|curl|wget|rm|sh|bash|zsh|python3?|node|npx|bunx|uvx|eval|chmod|ssh|scp|powershell|pwsh|docker)\b")
 
 
