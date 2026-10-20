@@ -325,7 +325,7 @@ f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `rea
 <a id="cod009"></a>
 ### COD009 · Redirecionamento para um endereço que veio da requisição
 
-`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` com um parâmetro da URL e parecidos. Caminho que começa com um `/...` fixo, `url_for` e checagem do host não entram. Começo feito só de barras (`"/" + next`, `` `/${next}` ``, `"//" + host`) entra: com `next = "/evil.com"`, o navegador vai para `//evil.com`, outro site.
+`redirect(request.args["next"])`, `res.redirect(req.query.returnTo)`, `NextResponse.redirect`, `location.href =` com um parâmetro da URL e parecidos. Caminho que começa com um `/...` fixo, `url_for` e checagem do host não entram. Começo feito só de barras (`"/" + next`, `` `/${next}` ``, `"//" + host`) entra: com `next = "/evil.com"`, o navegador vai para `//evil.com`, outro site. Também entra o host vindo da requisição logo depois de um esquema fixo (`"https://" + request.args["host"]`, `` `https://${req.body.host}/home` ``), mas não o do cabeçalho `Host` ou `X-Forwarded-Host`: esse é o host do próprio site, que o navegador de outra pessoa não escolhe.
 
 **Como corrigir:** redirecione só para caminhos relativos que começam com uma única `/` ou para domínios de uma lista conhecida.
 **Padrões:** `CWE-601`

@@ -1626,8 +1626,13 @@ class _Py:
             key.value.lower() in _HOST_HEADERS
 
     def start_controlled(self, node, env):
-        """A requisição decide o começo do endereço (esquema e host), não só um pedaço do caminho."""
-        return REQ in self.lead_origins(node, env, slash=True)
+        """A requisição decide o começo do endereço (esquema e host), não só um pedaço do caminho. Vale também o host
+        depois de um "https://" fixo ("https://" + request.args["host"]), menos o cabeçalho Host ou X-Forwarded-Host:
+        esse é o host do próprio site, que o navegador de outra pessoa não escolhe."""
+        if REQ in self.lead_origins(node, env, slash=True):
+            return True
+        part = self.lead_part(node, env, 0, True, True)
+        return part is not None and REQ in self.origins(part, env) and not self.host_header(part)
 
     def urls(self, call, d, last, env, fn, ln):
         f = call.func
@@ -3845,7 +3850,11 @@ class _Js:
         return bool(m) and (m.group(2) or m.group(4) or m.group(6) or "host").lower() in _HOST_HEADERS
 
     def start_controlled(self, a, b):
-        return REQ in self.lead_origins(a, b, slash=True)
+        """Como _Py.start_controlled: o host depois de um "https://" fixo conta, menos o cabeçalho Host."""
+        if REQ in self.lead_origins(a, b, slash=True):
+            return True
+        span = self.lead_span(a, b, 0, True, True)
+        return span is not None and REQ in self.origins(*span) and not self.host_header(*span)
 
     def fetch(self, m):
         if not self.lead_ok(m.start(), not _JS_BARE_FETCH.match(m.group(0))):

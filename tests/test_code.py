@@ -829,6 +829,31 @@ class CodeRules(Checks):
                    [("COD009", "app.py", 5, "medium"), ("COD009", "app.py", 8, "medium"), ("COD009", "app.py", 11, "medium"),
                     ("COD009", "server.js", 3, "medium"), ("COD009", "server.js", 4, "medium")])
 
+    def test_cod009_host_from_the_request_after_a_fixed_scheme(self):
+        """redirect("https://" + request.args["host"]): quem monta o link escolhe o site. O host do cabeçalho Host ou
+        X-Forwarded-Host é o do próprio site (o navegador de outra pessoa não escolhe), e um host fixo prende o endereço."""
+        py = FLASK + ("@app.get('/a')\ndef a():\n    return redirect('https://' + request.args['host'])\n"
+                      "@app.post('/b')\ndef b():\n    return redirect(f\"https://{request.form['host']}/home\")\n"
+                      "@app.get('/c')\ndef c():\n    return redirect('https://{}.example.com/'.format(request.args['tenant']))\n"
+                      "@app.post('/d')\ndef d():\n    host = request.json.get('host')\n    return redirect('https://' + host + '/x')\n"
+                      "@app.get('/e')\ndef e():\n    return redirect('https://' + request.headers['Host'] + '/login')\n"
+                      "@app.get('/f')\ndef f():\n    return redirect(f\"https://{request.headers.get('X-Forwarded-Host')}/x\")\n"
+                      "@app.get('/g')\ndef g():\n    return redirect('https://example.com/' + request.args['path'])\n"
+                      "@app.get('/h')\ndef h():\n    return redirect(f\"https://example.com/{request.args['path']}\")\n")
+        js = EXPRESS + ("app.get('/a', (req, res) => res.redirect('https://' + req.query.host))\n"
+                        "app.post('/b', (req, res) => res.redirect(`https://${req.body.host}/home`))\n"
+                        "app.get('/c', (req, res) => {\n  const host = req.query.host\n  res.redirect(302, `https://${host}/x`)\n})\n"
+                        "app.get('/d', (req, res) => res.redirect(`https://${req.headers.host}/login`))\n"
+                        "app.get('/e', (req, res) => res.redirect('https://' + req.get('x-forwarded-host') + '/x'))\n"
+                        "app.get('/f', (req, res) => res.redirect(`https://${req.headers['x-forwarded-host']}/x`))\n"
+                        "app.get('/g', (req, res) => res.redirect('https://example.com/' + req.query.path))\n"
+                        "app.get('/h', (req, res) => res.redirect(`https://example.com/${req.query.path}`))\n")
+        self.check({"app.py": py, "server.js": js},
+                   [("COD009", "app.py", 5, "medium"), ("COD009", "app.py", 8, "medium"), ("COD009", "app.py", 11, "medium"),
+                    ("COD009", "app.py", 15, "medium"),
+                    ("COD009", "server.js", 3, "medium"), ("COD009", "server.js", 4, "medium"),
+                    ("COD009", "server.js", 7, "medium")])
+
     # ------------------------------------------------------------------ COD010 aleatório
 
     def test_cod010_weak_random_for_secrets(self):
