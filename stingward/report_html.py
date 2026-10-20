@@ -498,9 +498,11 @@ def _level(findings):
     return "bad" if worst >= SEV_RANK["high"] else "mid" if worst == SEV_RANK["medium"] else "ok"
 
 
-def _verdict(findings, mode, lang, t):
+def _verdict(findings, mode, lang, t, ctx=None):
     level = _level(findings)
-    if mode == "skill":  # o mesmo veredito do texto, sem o emoji
+    if mode == "skill":  # o mesmo veredito do texto, sem o emoji; com arquivo sem ler, "incompleta" (report.verdict)
+        if level != "bad" and report.incomplete(ctx):
+            return "incomplete", report.incomplete_verdict(ctx, lang).split(" ", 1)[1]
         return level, report.T[lang]["verdict_" + level].split(" ", 1)[1]
     return level, t["verdict"]["agents" if mode == "agents" else "project"][level]
 
@@ -550,7 +552,7 @@ def _status_chip(status, t):
 def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, audit, findings):
     empty = report.nothing_read(ctx, findings)  # nada lido: sem nota e sem veredito verde
     g = "–" if empty else report.grade(valid)
-    level, verdict = ("none", report.nothing_read_text(ctx, lang)) if empty else _verdict(valid, ctx.mode, lang, t)
+    level, verdict = ("none", report.nothing_read_text(ctx, lang)) if empty else _verdict(valid, ctx.mode, lang, t, ctx)
     label = report.T[lang]["no_grade"] if empty else f'{t["grade"]} {g}'
     rows = []
     if audit is not None and audit.client:
@@ -589,7 +591,7 @@ def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, 
 <h1 class="title">{_h(name)}</h1>
 <div class="verdict">
 <div class="grade grade-{"none" if empty else g}" role="img" aria-label="{_html.escape(label)}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
-<p class="verdict-text verdict-{level}">{_html.escape(verdict)}</p>
+<p class="verdict-text verdict-{level}">{_h(verdict)}</p>
 </div>
 {warn}
 <dl class="meta">{meta}</dl>
@@ -1009,6 +1011,7 @@ code{font-family:var(--mono);font-size:.88em;unicode-bidi:isolate;overflow-wrap:
 .title{margin-top:10px;font-size:46px;line-height:1.08;letter-spacing:-.025em;overflow-wrap:anywhere}
 .verdict{display:flex;align-items:center;gap:26px;margin-top:40px;padding:22px 24px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}
 .verdict-text{font-size:19px;line-height:1.4;font-weight:600}
+.verdict-incomplete{color:var(--high)}
 .grade{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;width:112px;height:112px;border:4px solid var(--g);
 border-radius:16px;background:#fff;color:var(--g)}
 .grade-k{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}

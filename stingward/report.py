@@ -40,6 +40,10 @@ T = {
         "verdict_bad": "🔴 Não instale ainda: há problemas graves.",
         "verdict_mid": "🟡 Instale só depois de ler os itens abaixo.",
         "verdict_ok": "🟢 Nada grave encontrado. Leia o código mesmo assim: nenhuma ferramenta pega tudo.",
+        "verdict_incomplete": "⚠️ Auditoria incompleta: {why}, então isto não mostra que a skill é segura. Leia o que ficou "
+                              "de fora antes de instalar.",
+        "why_big": "o limite de {mb} MB deixou {n} arquivo(s) sem ler ({files})", "why_many": "a leitura parou em {n} arquivos",
+        "and": " e ",
         "more": "e mais {n} item(ns) de severidade baixa",
         "more_md": "e mais {n} item(ns): {counts}",
         "first": "Corrija primeiro", "and_more": "e mais {n}",
@@ -75,6 +79,10 @@ T = {
         "verdict_bad": "🔴 Do not install yet: serious problems found.",
         "verdict_mid": "🟡 Install only after reading the items below.",
         "verdict_ok": "🟢 Nothing serious found. Still read the code: no tool catches everything.",
+        "verdict_incomplete": "⚠️ Incomplete audit: {why}, so this does not show the skill is safe. Read what was left out "
+                              "before you install it.",
+        "why_big": "the {mb} MB size limit left {n} file(s) unread ({files})", "why_many": "reading stopped at {n} files",
+        "and": " and ",
         "more": "and {n} more low-severity item(s)",
         "more_md": "and {n} more item(s): {counts}",
         "first": "Fix these first", "and_more": "and {n} more",
@@ -167,10 +175,31 @@ def badge_md(g):
     return f"[![stingward: {g}](https://img.shields.io/badge/stingward-{g}-{GRADE_COLOR[g]})]({REPO_URL})"
 
 
-def verdict(findings, lang):
+def verdict(findings, lang, ctx=None):
+    """O veredito de `stingward skill`. Com arquivo sem ler (ctx), "nada grave" e "leia os itens abaixo" viram "auditoria
+    incompleta": o que não foi lido pode ser justamente o que a skill faz. Problema grave continua com o veredito grave.
+    A nota não muda: ela é das severidades encontradas."""
     worst = max((SEV_RANK[f.severity] for f in findings), default=0)
     key = "verdict_bad" if worst >= SEV_RANK["high"] else "verdict_mid" if worst == SEV_RANK["medium"] else "verdict_ok"
+    if key != "verdict_bad" and incomplete(ctx):
+        return incomplete_verdict(ctx, lang)
     return T[lang][key]
+
+
+def incomplete(ctx):
+    """A varredura deixou arquivos sem ler: acima do limite de tamanho ou depois do limite de arquivos."""
+    return ctx is not None and bool(ctx.too_big or ctx.truncated)
+
+
+def incomplete_verdict(ctx, lang):
+    """O veredito de auditoria incompleta, com o limite e os arquivos. Os nomes saem crus: cada formato limpa ou escapa."""
+    from . import scan
+    t, why = T[lang], []
+    if ctx.too_big:
+        why.append(t["why_big"].format(mb=size_cap(ctx.mode) // 1_000_000, n=len(ctx.too_big), files=_file_list(ctx.too_big, lang)))
+    if ctx.truncated:
+        why.append(t["why_many"].format(n=thousands(scan.MAX_FILES, lang)))
+    return t["verdict_incomplete"].format(why=t["and"].join(why))
 
 
 def _where(f):
@@ -210,12 +239,16 @@ def not_read_lines(ctx, lang, limit=5):
     from . import scan
     t, out = T[lang], []
     if ctx.too_big:
-        extra = len(ctx.too_big) - limit
-        files = ", ".join(ctx.too_big[:limit]) + (" " + t["and_more"].format(n=extra) if extra > 0 else "")
-        out.append(t["too_big"].format(n=len(ctx.too_big), mb=size_cap(ctx.mode) // 1_000_000, files=files))
+        out.append(t["too_big"].format(n=len(ctx.too_big), mb=size_cap(ctx.mode) // 1_000_000, files=_file_list(ctx.too_big, lang, limit)))
     if ctx.truncated:
         out.append(t["truncated"].format(n=thousands(scan.MAX_FILES, lang)))
     return out
+
+
+def _file_list(files, lang, limit=5):
+    """a.js, b.js e mais 3: os primeiros pelo nome, como no stderr."""
+    extra = len(files) - limit
+    return ", ".join(files[:limit]) + (" " + T[lang]["and_more"].format(n=extra) if extra > 0 else "")
 
 
 def thousands(n, lang):
@@ -511,7 +544,7 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
         out += [f"  {_clean(line)}" if line else "" for line in plain(audit.notes, gap=True)]
         out.append("")
     if show_verdict and not empty:
-        out += [verdict(valid, lang), ""]
+        out += [_clean(verdict(valid, lang, ctx)), ""]
     first = _fix_first(shown)
     if first:
         out.append(f"{t['first']}:")
@@ -627,7 +660,7 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
     if audit and audit.notes:
         out += [f"**{_esc(t['notes'])}**", ""] + _md_blocks(audit.notes)
     if show_verdict and not empty:
-        out += [verdict(valid, lang), ""]
+        out += [_esc(verdict(valid, lang, ctx)), ""]
     unread = [f"⚠️ {_esc(x)}" for x in not_read_lines(ctx, lang)]  # perto da linha das bases, em todo caso
     if empty:
         out += ["⚠️ " + nothing_read_text(ctx, lang), ""] + ([*unread, ""] if unread else [])
