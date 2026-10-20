@@ -33,6 +33,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A committed `.env` with a long run of spaces inside a value no longer slows the scan down quadratically (60 000 spaces took 15 seconds).
 - Masking of command-line options such as `--api-key` in code excerpts is linear: a long hyphenated word made it quadratic.
 - A file with thousands of hard-coded values (generated config, fixtures) is scanned for secrets in linear time: 40 000 such lines took 44 seconds.
+- SEC001 no longer reports a "password in URL" (high) where code builds the URL: `f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@..."`, `"{}:{}@{}".format(...)`, `"%s:%s@%s"`, `%(password)s`, Ruby `#{password}` and Swift `\(password)`. Translated examples such as `https://usuario:contraseña@servidor` or `https://uzivatel:heslo@hostitel:port` (a non-ASCII password, or a port written as a word) are not reported either; a real password next to a host and port the code fills in still is.
 
 ## [0.1.5] - 2026-10-20
 
