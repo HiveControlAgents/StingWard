@@ -417,6 +417,15 @@ class CodeRules(Checks):
 
     # ------------------------------------------------------------------ APP014 argumento de ferramenta
 
+    def test_app014_portuguese_titles_read_right(self):
+        """O lugar vem com a preposição: "chega à página", nunca "chega a a página"."""
+        titles = {kind: texts("APP014", "pt", code._tool_params(kind.replace("_any", ""), "_any" not in kind))[0]
+                  for kind in code._TOOL_SINK}
+        self.assertEqual(titles["html"], "Argumento que o modelo escreve na ferramenta chega à página como HTML")
+        self.assertEqual(titles["shell_any"], "Argumento que o modelo escreve na ferramenta chega a um comando de shell")
+        for kind, title in titles.items():
+            self.assertNotRegex(title, r"\ba a\b|chega (?!à |a )", kind)
+
     def test_app014_tool_argument_runs(self):
         py = ("from mcp.server.fastmcp import FastMCP\nimport subprocess\nmcp = FastMCP('x')\n"
               "@mcp.tool()\n"
