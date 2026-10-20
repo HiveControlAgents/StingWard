@@ -196,7 +196,7 @@ Firestore or Storage rules with `allow read, write: if true` (or the test-mode d
 The answer of an LLM call (OpenAI, Anthropic, Gemini, LangChain, the AI SDK...) or the arguments of an MCP or AI SDK tool reach `eval`/`exec`, a shell command, a template, a SQL query, or `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. A prompt injection in anything the model read turns into code on your server or scripts in your users' browsers. Critical when the answer is executed, high for tool arguments and SQL, medium for HTML. `JSON.parse`, `json.loads` and DOMPurify break the chain.
 
 **Fix:** treat model output like user input: ask for JSON and validate it, map it to a fixed list of actions, pass shell arguments as a list, run SQL with a read-only user, and clean HTML with DOMPurify.
-**Standards:** `CWE-1426` · `LLM05:2026`
+**Standards:** `CWE-1426` · `LLM10:2026`
 
 <a id="app010"></a>
 ### APP010 · Request input goes into the system prompt
@@ -212,7 +212,7 @@ A request value written in the middle of the instructions: `{"role": "system", "
 A server route that calls a model (Next.js `app/api/**/route.ts`, a server action, an Express or Hono handler, a FastAPI or Flask route) with no sign of login and no rate limit in the file, in `middleware.ts`, in a global `app.use(...)` or in router dependencies. Anyone can call it in a loop on your account. Not reported in skills, tests and examples.
 
 **Fix:** require a signed-in user, rate limit per user or IP (`@upstash/ratelimit`, `express-rate-limit`, `slowapi`), set `max_tokens`, and add a spending limit in the provider's dashboard.
-**Standards:** `CWE-306` · `CWE-770` · `LLM10:2026`
+**Standards:** `CWE-306` · `CWE-770` · `LLM06:2026`
 
 <a id="app012"></a>
 ### APP012 · Loading the model can run code
@@ -220,7 +220,7 @@ A server route that calls a model (Next.js `app/api/**/route.ts`, a server actio
 `from_pretrained(..., trust_remote_code=True)` runs Python from the model's repository; `FAISS.load_local(..., allow_dangerous_deserialization=True)` and `torch.load` without `weights_only=True` unpickle the file. High when the file comes from the request, medium when the unsafe option is written out, low for a plain `torch.load` (safe by default since PyTorch 2.6).
 
 **Fix:** pin `revision=` to a commit you reviewed, pass `weights_only=True` or use safetensors, and only load indexes you created.
-**Standards:** `CWE-502` · `CWE-829` · `LLM03:2026`
+**Standards:** `CWE-502` · `CWE-829` · `LLM04:2026`
 
 <a id="app013"></a>
 ### APP013 · Agent can run whatever the model writes
@@ -228,7 +228,7 @@ A server route that calls a model (Next.js `app/api/**/route.ts`, a server actio
 LangChain `PythonREPLTool`, `ShellTool` and `load_tools(["python_repl"])`, `allow_dangerous_code=True`, AutoGen `use_docker: False`, Open Interpreter `auto_run = True` and similar: one hidden instruction in a document, page or message becomes code running on your machine. Medium for SQL agents (`create_sql_agent`, `SQLDatabaseChain`), which run the model's SQL on your database, and for `allow_dangerous_requests=True`. Tool classes count only when they come from the agent library.
 
 **Fix:** remove the tool, or run it in a sandbox (a container with no secrets and no network) and confirm each run. Give SQL agents a read-only database user.
-**Standards:** `CWE-94` · `LLM06:2026` · `ASI05`
+**Standards:** `CWE-94` · `LLM03:2026` · `ASI05`
 
 ## Code
 
