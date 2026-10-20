@@ -381,8 +381,10 @@ def ranges(root: Path, rel: str, requirements=False):
         if name == "package.json":
             return list(_npm_ranges(text, rel))
         if name == "pyproject.toml":
-            items = pyproject_requirements(text)
-        elif requirements or is_requirements(rel):
+            out = [r for r in (_python_range(req, rel, ln) for req, ln in pyproject_requirements(text)) if r]
+            out += [r for r in (_poetry_range(*item, rel) for item in poetry_requirements(text)) if r]
+            return sorted(out, key=lambda r: r.line)
+        if requirements or is_requirements(rel):
             items = _requirement_lines(text)
         else:
             return []
@@ -837,17 +839,86 @@ class _Toml:
 
 
 def pyproject_requirements(text: str):
-    """(requisito, linha) de [project] dependencies e [project.optional-dependencies] de um pyproject.toml."""
+    """(requisito, linha) das listas PEP 508 de um pyproject.toml: [project] dependencies, [project.optional-dependencies],
+    [dependency-groups] (PEP 735; o {include-group} não é requisito) e o dev-dependencies do [tool.uv]."""
     out = []
 
     def walk(path, value):
         if isinstance(value, dict):
             for k, v in value.items():
                 walk(path + k, v)
-        elif isinstance(value, list) and (path == ("project", "dependencies") or
-                                          (len(path) == 3 and path[:2] == ("project", "optional-dependencies"))):
+        elif isinstance(value, list) and (path in (("project", "dependencies"), ("tool", "uv", "dev-dependencies")) or
+                                          (len(path) == 3 and path[:2] == ("project", "optional-dependencies")) or
+                                          (len(path) == 2 and path[0] == "dependency-groups")):
             out.extend((str(x), x.line) for x in value if isinstance(x, _Str))
 
     for path, value in _Toml(text).statements():
         walk(path, value)
     return out
+
+
+# Dependência do Poetry que não vem do índice de pacotes: não há versão do PyPI para consultar.
+_POETRY_LOCAL = ("git", "path", "url", "file")
+# Depois do número vem letra, + ou -: sem isso o resto ([A-Za-z0-9.+-]*) também casava dígitos, e um ^111...1! longo
+# voltava atrás de um em um (quadrático).
+_POETRY_CARET = re.compile(r"([\^~])(\d+)(?:\.(\d+))?(?:\.(\d+))?(?![\d.])(?:[A-Za-z+-][A-Za-z0-9.+-]*)?")
+
+
+def poetry_requirements(text: str):
+    """(nome, faixa, linha, prefixo) de [tool.poetry.dependencies], [tool.poetry.dev-dependencies] e
+    [tool.poetry.group.<g>.dependencies]. Ficam de fora o python, a lista de faixas por marcador e o que vem de
+    git, path, url ou file. O prefixo mais a faixa nova reescrevem a linha (requests = " ou version = ")."""
+    deps = {}
+
+    def walk(path, value):
+        if isinstance(value, dict):
+            for k, v in value.items():
+                walk(path + k, v)
+            return
+        if path[:3] in (("tool", "poetry", "dependencies"), ("tool", "poetry", "dev-dependencies")):
+            rest = path[3:]
+        elif path[:3] == ("tool", "poetry", "group") and len(path) > 4 and path[4] == "dependencies":
+            rest = path[5:]
+        else:
+            return
+        if not rest:
+            return
+        d = deps.setdefault(path[:len(path) - len(rest) + 1], {"name": rest[0]})
+        if len(rest) == 1:
+            d["spec"], d["prefix"] = value, f'{rest[0]} = "'
+        elif len(rest) == 2 and rest[1] == "version":
+            d["spec"], d["prefix"] = value, 'version = "'
+        elif rest[1] in _POETRY_LOCAL:
+            d["local"] = True
+
+    for path, value in _Toml(text).statements():
+        walk(path, value)
+    out = [(d["name"], str(d["spec"]), d["spec"].line, d["prefix"]) for d in deps.values()
+           if isinstance(d.get("spec"), _Str) and not d.get("local") and d["name"].lower() != "python"]
+    return sorted(out, key=lambda x: x[2])
+
+
+def _poetry_pep440(spec):
+    """Faixa do Poetry em PEP 440: ^2.28 vira >=2.28,<3.0.0, ~1.2 vira >=1.2,<1.3.0, 2.0.1 vira ==2.0.1 e
+    o * some. None para || (mais de uma faixa) ou faixa vazia."""
+    if "|" in spec:
+        return None
+    parts = []
+    for c in re.sub(r"(~=|===|==|!=|<=|>=|<|>|\^|~)\s+", r"\1", spec).replace(",", " ").split():
+        m = _POETRY_CARET.fullmatch(c)
+        if m:
+            major, minor, patch = (int(g) if g else None for g in m.groups()[1:])
+            upper = _caret_upper(major, minor, patch) if m.group(1) == "^" else _tilde_upper(major, minor)
+            parts += [">=" + c[1:], "<" + upper]
+        elif c != "*":
+            parts.append(c if c[0] in "<>=!~" else "==" + c)
+    return ",".join(parts) or None
+
+
+def _poetry_range(name, spec, line, prefix, rel):
+    pep = _poetry_pep440(spec) if _PY_REQ.fullmatch(name) else None
+    f = python_floor(name + pep) if pep else None
+    if not f:
+        return None
+    floor, upper, inclusive = f[3:]
+    return Range("PyPI", name, spec, prefix + spec + '"', floor, upper, inclusive, prefix, '"', rel, line)
