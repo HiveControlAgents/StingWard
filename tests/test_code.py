@@ -1325,6 +1325,19 @@ class CodeEngine(unittest.TestCase):
         self.assertEqual([(f.rule, f.line) for f in found], [("COD003", 2)])
         self.assertEqual(code._opaque_calls("a(b) + c.d(e, f(g)) + h"), "a( ) + c.d(       ) + h")
 
+    def test_return_math_random_finds_its_function_fast(self):
+        """return Math.random(): o nome da função vem de um índice do arquivo, não de uma busca nos 1500 caracteres antes
+        de cada return (com milhares deles, segundos por arquivo)."""
+        src = ("function makeToken() {\n  return Math.random().toString(36)\n}\n"
+               "const makeSecret = async () => {\n  return Math.random().toString(36)\n}\n"
+               "class K {\n  generateApiKey(): string {\n    return Math.random().toString(36)\n  }\n}\n"
+               "function delay() {\n  return Math.random() * 100\n}\n")
+        self.assertEqual([(f.rule, f.line) for f in code.scan_js("lib/k.ts", src)], [("COD010", 2), ("COD010", 5), ("COD010", 9)])
+        js = code._Js("a.js", "a():\nreturn Math.random()\n" * 6000, {})
+        t = time.time()
+        js.run()
+        self.assertLess(time.time() - t, 1)
+
     def test_line_numbers_follow_comments_and_strings(self):
         src = EXPRESS + ("/* a comment\n   eval(req.body.a)\n*/\n"
                          "const s = `multi\nline ${1}\ntext`\n"

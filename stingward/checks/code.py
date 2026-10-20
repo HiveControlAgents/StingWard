@@ -2277,6 +2277,11 @@ _JS_GUARD_REDIRECT = re.compile(r"startsWith\s*\(\s*['\"]/|isSafe|safeRedirect|i
 _JS_GUARD_URL = re.compile(r"(?i)allowed|whitelist|allowlist|isPrivate|private_?(?:ip|address|network|range|host|cidr)|isPublic|"
                            r"\.hostname\s*[!=]==|\.host\s*[!=]==|startsWith\s*\(")
 _JS_RANDOM = re.compile(r"Math\s*\.\s*random\s*\(")
+# Começo de função com nome: function f(, const f = (...) =>, método f(...) {. Lido uma vez por arquivo (procurar nos 1500
+# caracteres antes de cada return custava segundos com milhares deles), com tetos e ^[ \t]* para não ler o arquivo de novo.
+_JS_FN_HEAD = re.compile(r"(?:function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?"
+                         r"(?:\([^()]{0,300}\)|[\w$]+)\s*(?::[^=]{0,200})?=>|^[ \t]*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\([^()]{0,300}\)\s*"
+                         r"(?::[^{]{0,200})?\{)", re.M)
 # Quem recebe o valor na linha do Math.random(): const x =, this.x =, x: (chave), const x: string =. Os espaços do tipo
 # só aparecem entre palavras, para a busca não ter dois jeitos de casar os mesmos espaços (ficava cúbica).
 _JS_RANDOM_NAME = re.compile(r"(?:(?:const|let|var)\s+|this\s*\.\s*|\.)?(?<![\w$])([A-Za-z_$][\w$]*)[ \t]*"
@@ -3426,7 +3431,7 @@ class _Js:
             self.out.add("COD006", "medium", self.line(m.start()), {"what": "NODE_TLS_REJECT_UNAUTHORIZED=0"})
 
     def weak_random(self):
-        decls = starts = None
+        decls = starts = heads = ends = None
         for m in _JS_RANDOM.finditer(self.mask):
             start = max(self.mask.rfind("\n", 0, m.start()) + 1, m.start() - 300)
             head = self.mask[start:m.start()]
@@ -3435,12 +3440,12 @@ class _Js:
             if d:
                 name = d.group(1)
             elif re.match(r"\s*return\b", head):
-                fn = None
-                for f in re.finditer(r"(?:function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?"
-                                     r"(?:\([^()]*\)|[\w$]+)\s*(?::[^=]+)?=>|^\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*(?::[^{]+)?\{)",
-                                     self.mask[max(0, m.start() - 1500):m.start()], re.M):
-                    fn = f.group(1) or f.group(2) or f.group(3)
-                name = fn
+                # A última função declarada até 1500 caracteres antes do return.
+                if heads is None:
+                    heads = [(f.start(), f.end(), f.group(1) or f.group(2) or f.group(3)) for f in _JS_FN_HEAD.finditer(self.mask)]
+                    ends = [h[1] for h in heads]
+                i = bisect.bisect_right(ends, m.start()) - 1
+                name = heads[i][2] if i >= 0 and heads[i][0] >= m.start() - 1500 else None
             else:
                 # const token = [...Array(32)].map(() => chars[Math.floor(Math.random() * n)]).join(""), ou o valor
                 # na linha de baixo: a declaração em volta decide.
