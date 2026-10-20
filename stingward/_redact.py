@@ -21,8 +21,12 @@ def _ph(kind: str) -> str:
     return f"[REDACTED:{kind}]"
 
 
+# "[REDACTED]" sem tipo é o que o mask() das verificações já pôs antes: lido como valor, ganharia um segundo marcador.
+_PH_PREFIXES = ("[REDACTED:", "[REDACTED]")
+
+
 def _is_ph(value: str) -> bool:
-    return value.startswith("[REDACTED:")
+    return value.startswith(_PH_PREFIXES)
 
 
 def _note(findings, kind):
@@ -265,7 +269,7 @@ def _read_value(s: str, i: int):
             j += 1
         return min(j, len(s))
     j = i
-    if s.startswith("[REDACTED:", i):
+    if s.startswith(_PH_PREFIXES, i):
         end = s.find("]", i)
         return end + 1 if end != -1 else len(s)
     while j < len(s) and s[j] not in _UNQUOTED_STOP:
