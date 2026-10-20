@@ -1258,6 +1258,18 @@ class DepRules(RuleTest):
         self.assertIn("replace requests[socks]>=2.25 with requests[socks]>=2.32.4", f[2].params["fix_en"])
         self.assertSilent(f, "DEP003")  # libraries declare ranges on purpose
 
+    def test_dep004_poetry_and_dependency_groups(self):
+        doc = '[tool.poetry.dependencies]\npython = "^3.10"\nPillow = "^10.0"\n\n' \
+              '[dependency-groups]\ndev = ["requests>=2.25"]\n'
+        req = _pyadv("GHSA-req", "requests", "2.32.4", database_specific={"severity": "MODERATE"})
+        docs = dict(self.PIL, **{"GHSA-req": req})
+        _, f, q = self.deps({"pyproject.toml": doc}, {"Pillow": sorted(self.PIL), "requests": ["GHSA-req"]}, docs)
+        self.assertEqual(q.call_args[0][0], [("PyPI", "Pillow", "10.0"), ("PyPI", "requests", "2.25")])
+        # ^10.0 stops before 11.0.0, so the 12.3.0 fix is outside it: every version it allows is affected.
+        self.assertEqual(brief(f), [("DEP004", "pyproject.toml", 3, "high"), ("DEP004", "pyproject.toml", 6, "low")])
+        self.assertEqual((f[0].params["spec"], f[0].params["upper"]), ("^10.0", "11.0.0"))
+        self.assertIn('replace Pillow = "^10.0" with Pillow = ">=12.3.0"', f[0].params["fix_en"])
+
     def test_dep004_same_range_in_two_files_is_one_query(self):
         files = {"requirements.txt": "Pillow>=10\n", "pyproject.toml": '[project]\ndependencies = ["pillow>=10"]\n'}
         _, f, q = self.deps(files, {"Pillow": sorted(self.PIL), "pillow": sorted(self.PIL)}, self.PIL)
@@ -1295,7 +1307,9 @@ class DepRules(RuleTest):
                                    "package.json": '{"dependencies": {"a": "*", "b": "latest", "c": "^1 || ^2", "d": "file:../d"}}\n'},
                                    None),
             ("other tables of pyproject.toml", {"pyproject.toml": '[build-system]\nrequires = ["setuptools>=40"]\n'
-                                                                  '[tool.poetry.dependencies]\nPillow = "^10"\n'}, None),
+                                                                  '[tool.hatch.envs.default]\ndependencies = ["Pillow>=10"]\n'}, None),
+            ("Poetry pyproject.toml beside poetry.lock", {"pyproject.toml": '[tool.poetry.dependencies]\nPillow = "^10"\n',
+                                                          "poetry.lock": poetry}, [("PyPI", "pillow", "12.3.0")]),
         ]
         for name, files, queried in cases:
             with self.subTest(name=name):

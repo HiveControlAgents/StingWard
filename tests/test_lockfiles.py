@@ -1474,6 +1474,13 @@ class HostileRanges(unittest.TestCase):
         self.assertEqual(lockfiles.python_floor("foo>=1.0+local.7")[3], "1.0+local.7")
         self.assertEqual(lockfiles.npm_floor(">=1.0.0-20210101-abc"), ("1.0.0-20210101-abc", None, False))
 
+    def test_long_poetry_caret_that_fails_to_parse_is_linear(self):
+        for spec in ("^" + "1" * 20000 + "!", "~" + "1" * 20000 + "!", "^1.2." + "3" * 20000 + "!"):
+            self.assertFast(lockfiles._poetry_pep440, spec)
+            self.assertIsNone(lockfiles.python_floor("x" + lockfiles._poetry_pep440(spec)))
+        self.assertEqual(lockfiles._poetry_pep440("^1.2.3b1"), ">=1.2.3b1,<2.0.0")
+        self.assertEqual(lockfiles._poetry_pep440("~=1.4"), "~=1.4")
+
     def test_long_whitespace_in_requirements_is_linear(self):
         # Cutting the pip options (--hash...) off a line was quadratic in a long run of spaces.
         tmp = tempfile.TemporaryDirectory()
@@ -1547,6 +1554,21 @@ class PyprojectRequirements(unittest.TestCase):
             with self.subTest(doc=doc[:50]):
                 self.assertEqual(lockfiles.pyproject_requirements(doc), want)
 
+    def test_dependency_groups_and_uv_dev_dependencies(self):
+        doc = D('''\
+            [dependency-groups]
+            test = ["pytest>=8", "coverage[toml]>=7.4"]
+            dev = [{include-group = "test"}, "ruff>=0.4"]
+
+            [tool.uv]
+            dev-dependencies = ["mypy>=1.8"]
+
+            [tool.uv.sources]
+            mylib = { path = "../mylib" }
+            ''')
+        self.assertEqual(lockfiles.pyproject_requirements(doc), [
+            ("pytest>=8", 2), ("coverage[toml]>=7.4", 2), ("ruff>=0.4", 3), ("mypy>=1.8", 6)])
+
     def test_malformed_lines_are_skipped_not_fatal(self):
         doc = D('''\
             [project]
@@ -1616,6 +1638,58 @@ class Ranges(LockfileCase):
             ("PyPI", "Pillow", ">=10", "Pillow>=10", "10", None, False, 4),
             ("PyPI", "attrs", "==23.1.0", "attrs==23.1.0", "23.1.0", "23.1.0", True, 6),
             ("PyPI", "pytest", "~=7.4", "pytest~=7.4", "7.4", "8", False, 9)])
+
+    def test_poetry_dependencies(self):
+        doc = D('''\
+            [tool.poetry.dependencies]
+            python = "^3.9"
+            requests = "^2.28"
+            Django = "~4.2.1"
+            attrs = "23.1.0"
+            numpy = ">= 1.24, < 2"
+            urllib3 = { version = "^1.26", extras = ["socks"] }
+            anything = "*"
+            either = "^1.0 || ^2.0"
+            mylib = { path = "../mylib", develop = true }
+            fork = { git = "https://github.com/acme/fork.git", tag = "v1.0" }
+            multi = [{ version = "^1.0", python = "<3.10" }, { version = "^2.0", python = ">=3.10" }]
+            zerover = "^0.2.3"
+            wild = "1.4.*"
+
+            [tool.poetry.dependencies.boto3]
+            version = "~1.34"
+            optional = true
+
+            [tool.poetry.dev-dependencies]
+            black = "^23.1"
+
+            [tool.poetry.group.test.dependencies]
+            pytest = "^7.4"
+
+            [tool.poetry.group.test]
+            optional = true
+            ''')
+        self.assertEqual(self.got("pyproject.toml", doc), [
+            ("PyPI", "requests", "^2.28", 'requests = "^2.28"', "2.28", "3.0.0", False, 3),
+            ("PyPI", "Django", "~4.2.1", 'Django = "~4.2.1"', "4.2.1", "4.3.0", False, 4),
+            ("PyPI", "attrs", "23.1.0", 'attrs = "23.1.0"', "23.1.0", "23.1.0", True, 5),
+            ("PyPI", "numpy", ">= 1.24, < 2", 'numpy = ">= 1.24, < 2"', "1.24", "2", False, 6),
+            ("PyPI", "urllib3", "^1.26", 'version = "^1.26"', "1.26", "2.0.0", False, 7),
+            ("PyPI", "zerover", "^0.2.3", 'zerover = "^0.2.3"', "0.2.3", "0.3.0", False, 13),
+            ("PyPI", "wild", "1.4.*", 'wild = "1.4.*"', "1.4", "1.5", False, 14),
+            ("PyPI", "boto3", "~1.34", 'version = "~1.34"', "1.34", "1.35.0", False, 17),
+            ("PyPI", "black", "^23.1", 'black = "^23.1"', "23.1", "24.0.0", False, 21),
+            ("PyPI", "pytest", "^7.4", 'pytest = "^7.4"', "7.4", "8.0.0", False, 24)])
+        self.assertTrue(lockfiles.ranges(self.root, "pyproject.toml")[2].exact)
+        self.assertEqual(lockfiles.raised(lockfiles.ranges(self.root, "pyproject.toml")[0], "2.32.4"),
+                         'requests = ">=2.32.4,<3.0.0"')
+
+    def test_poetry_and_project_dependencies_together_keep_file_order(self):
+        doc = '[project]\ndependencies = ["flask>=2"]\n[tool.poetry.dependencies]\nrequests = "^2.28"\n' \
+              '[dependency-groups]\ndev = ["ruff>=0.4"]\n'
+        self.write("pyproject.toml", doc)
+        self.assertEqual([(r.name, r.line) for r in lockfiles.ranges(self.root, "pyproject.toml")],
+                         [("flask", 2), ("requests", 4), ("ruff", 6)])
 
     def test_other_and_broken_files(self):
         self.assertEqual(self.got("go.mod", "require x v1.0.0\n"), [])
@@ -1715,6 +1789,16 @@ class Collect(LockfileCase):
             ("coverage", "7.4.0", "ci/test-requirements.txt"), ("pytest", "7.0.0", "dev-requirements.txt")])
         self.assertEqual([(r.name, r.floor) for r in ranges], [("ruff", "0.4")])
         self.assertEqual(open_manifests, [("dev-requirements.txt", 1)])
+
+    def test_poetry_and_dependency_groups_are_read_without_a_lockfile(self):
+        doc = '[tool.poetry.dependencies]\npython = "^3.9"\nrequests = "^2.28"\nattrs = "23.1.0"\n' \
+              '[dependency-groups]\ndev = ["ruff>=0.4"]\n[tool.uv]\ndev-dependencies = ["mypy>=1.8"]\n'
+        pkgs, open_manifests, ranges = self.collect({"pyproject.toml": doc})
+        self.assertEqual([p[:4] for p in pkgs], [("PyPI", "attrs", "23.1.0", "pyproject.toml")])
+        self.assertEqual([(r.name, r.floor) for r in ranges], [("requests", "2.28"), ("ruff", "0.4"), ("mypy", "1.8")])
+        self.assertEqual(open_manifests, [])
+        pkgs, _, ranges = self.collect({"poetry.lock": ""})
+        self.assertEqual((pkgs, ranges), ([], []))
 
     def test_requirements_folder_and_included_files_are_read(self):
         pkgs, open_manifests, ranges = self.collect({
