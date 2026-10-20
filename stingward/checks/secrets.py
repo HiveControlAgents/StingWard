@@ -334,6 +334,11 @@ def _is_sample(rel, roots):
     return bool(m) and any(r == "" or rel.startswith(r + "/") for r in roots)
 
 
+# Arquivo de chave (id_rsa, server.key, cert.pem, AuthKey_X.p8) fica fora das extensões de texto, mas é nele que a chave
+# privada costuma ir para o git. Só os formatos conhecidos: um certificado (só a parte pública) não dá achado.
+_KEY_FILE = re.compile(r"(?i)^id_(?:rsa|dsa|ecdsa|ed25519)$|\.(?:pem|key|p8)$")
+
+
 def check(ctx):
     findings = []
     roots = _sample_dirs(ctx)
@@ -349,6 +354,8 @@ def check(ctx):
                 findings.append(Finding("SEC003", "medium", rel, None, {"name": name}))
             continue
         if not is_text_source(rel, ctx.mode):
+            if _KEY_FILE.search(name):
+                findings.extend(scan_text(ctx.read(rel), rel, generic=False))
             continue
         findings.extend(scan_text(ctx.read(rel), rel, sample=_is_sample(rel, roots)))
     return drop_inline_ignored(ctx, findings)
