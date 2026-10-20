@@ -317,7 +317,7 @@ f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `rea
 <a id="cod008"></a>
 ### COD008 · Servidor busca uma URL que veio da requisição
 
-`requests.get`, `httpx`, `urlopen`, `fetch`, `axios` e parecidos no servidor quando a requisição decide para onde a URL aponta (a URL inteira ou o começo dela). Host fixo com um valor da requisição no caminho, checagem do host (`urlparse(...).hostname`, lista de permitidos) e código que roda no navegador não entram.
+`requests.get`, `httpx`, `urlopen`, `fetch`, `axios` e parecidos no servidor quando a requisição decide para onde a URL aponta (a URL inteira ou o começo dela). Host fixo com um valor da requisição no caminho, checagem do host (`urlparse(...).hostname`, lista de permitidos) e código que roda no navegador não entram. Alto, ou médio quando o host vem do próprio cabeçalho `Host` ou `X-Forwarded-Host` da requisição (`f"https://{request.headers['Host']}/api"`): o navegador de outra pessoa não escolhe esse valor e o proxy na frente costuma conferir, mas quem chama o servidor direto consegue trocar.
 
 **Como corrigir:** aceite só os domínios de que você precisa, bloqueie endereços privados e locais e não siga redirecionamentos sem conferir.
 **Padrões:** `CWE-918`

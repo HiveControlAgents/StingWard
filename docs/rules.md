@@ -317,7 +317,7 @@ An f-string, `+`, `%` or `.format()` with SQL that goes to `execute`, `text()`, 
 <a id="cod008"></a>
 ### COD008 · Server fetches a URL taken from the request
 
-`requests.get`, `httpx`, `urlopen`, `fetch`, `axios` and similar on the server when the request decides where the URL points (the whole URL or its start). A fixed host with a request value in the path, a check of the host (`urlparse(...).hostname`, an allow list) and code that runs in the browser are not reported.
+`requests.get`, `httpx`, `urlopen`, `fetch`, `axios` and similar on the server when the request decides where the URL points (the whole URL or its start). A fixed host with a request value in the path, a check of the host (`urlparse(...).hostname`, an allow list) and code that runs in the browser are not reported. High, or medium when the host comes from the request's own `Host` or `X-Forwarded-Host` header (`f"https://{request.headers['Host']}/api"`): another person's browser cannot set it, and the proxy in front usually checks it, but whoever calls the server directly can.
 
 **Fix:** allow only the domains you need, block private and local addresses, and do not follow redirects without checking them.
 **Standards:** `CWE-918`

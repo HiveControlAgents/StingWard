@@ -740,6 +740,37 @@ class CodeRules(Checks):
                                   ("COD008", "app/api/proxy/route.ts", 5, "high")])
         self.assertEqual([x.params["kind"] for x in f if x.rule == "APP014"], ["url"])
 
+    def test_cod008_host_from_the_host_header_is_medium(self):
+        """Host tirado do cabeçalho Host ou X-Forwarded-Host: o navegador de outra pessoa não escolhe esse cabeçalho e
+        o proxy na frente costuma conferir, mas quem chama o servidor direto pode trocar (médio). Host vindo da busca,
+        do corpo ou de outro cabeçalho continua alto, também quando o cabeçalho Host só é a segunda opção."""
+        py = FLASK + ("import requests\n"
+                      "@app.get('/a')\ndef a():\n"
+                      "    r = requests.get(f\"https://{request.headers['Host']}/api/x\")\n"
+                      "    host = request.headers.get('x-forwarded-host') or request.headers.get('host')\n"
+                      "    s = requests.get(f'https://{host}/api/y')\n"
+                      "    t = requests.get(f\"https://{request.args['h']}/api/z\")\n"
+                      "    u = requests.get(f\"https://{request.headers['X-Tenant']}.example.com/\")\n"
+                      "    h2 = request.args.get('h') or request.headers.get('host')\n"
+                      "    v = requests.get(f'https://{h2}/api/w')\n"
+                      "    return r.text + s.text + t.text + u.text + v.text\n")
+        js = ("export async function GET(request) {\n"
+              "  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host')\n"
+              "  const a = await fetch(`https://${host}/api/a`)\n"
+              "  const b = await fetch(`https://${request.headers.get('host')}/api/b`)\n"
+              "  const { searchParams } = new URL(request.url)\n"
+              "  const c = await fetch(`https://${searchParams.get('h')}/api/c`)\n"
+              "  return new Response((await a.text()) + (await b.text()) + (await c.text()))\n}\n")
+        express = EXPRESS + ("const axios = require('axios')\n"
+                             "app.get('/p', async (req, res) => {\n"
+                             "  const r = await axios.get('https://' + req.headers.host + '/internal')\n"
+                             "  res.json(r.data)\n})\n")
+        self.check({"app.py": py, "app/api/proxy/route.ts": js, "web.js": express},
+                   [("COD008", "app.py", 6, "medium"), ("COD008", "app.py", 8, "medium"), ("COD008", "app.py", 9, "high"),
+                    ("COD008", "app.py", 10, "high"), ("COD008", "app.py", 12, "high"),
+                    ("COD008", "app/api/proxy/route.ts", 3, "medium"), ("COD008", "app/api/proxy/route.ts", 4, "medium"),
+                    ("COD008", "app/api/proxy/route.ts", 6, "high"), ("COD008", "web.js", 5, "medium")])
+
     def test_cod008_search_params_held_in_a_variable(self):
         """const sp = new URL(req.url).searchParams; sp.get('url'): a busca da requisição com outro nome. A busca de um
         endereço escrito no código não é da requisição."""
