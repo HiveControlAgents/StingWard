@@ -267,6 +267,9 @@ _VALUE_POS = re.compile(r"""(?:'|%|(?:[=<>]|\blike|\bilike|\bin\s*\(|\bvalues\s*
 # Começo de endereço que para onde o host ou a porta começa: "https://", "//", "http://localhost:". O que vem depois
 # decide o servidor ("evil.com/?", "@evil.com"). "https://api.example.com" + caminho é a base do código mais o caminho.
 _IN_HOST = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*:)?//(?:[^/?#\\\s]*[.:@])?\Z")
+# Cabeçalhos que dizem o host da própria requisição: o navegador de outra pessoa não escolhe o valor (o SSRF por eles
+# depende de chamar o servidor direto ou de um proxy que repassa o que chega).
+_HOST_HEADERS = {"host", "x-forwarded-host", "x-original-host", "x-forwarded-server", "forwarded"}
 # Começo de redirect feito só de barras ("/", "\\", "//"): o que vem depois pode ser o host de outro site.
 _ONLY_SLASHES = re.compile(r"[/\\]{1,8}\Z")
 _SQL_DDL = re.compile(r"\s*\(?\s*(?:pragma|create|drop|alter|truncate)\b", re.I)
@@ -1571,35 +1574,56 @@ class _Py:
             return True
         return isinstance(v, ast.Call) and self._dot(v.func).endswith(("Path", "PurePath", "os.path.join", "joinpath"))
 
-    def lead_origins(self, node, env, depth=0, host=False, slash=False):
+    def lead_origins(self, node, env, host=False, slash=False):
         """Origens do começo do endereço (esquema e host), não de um pedaço do caminho. host: o host escrito depois de um
         "https://" fixo também conta (para buscar no servidor; num redirect para https://{Host}/ ninguém de fora manda o
         cabeçalho Host pelo navegador de outra pessoa). slash: só barras na frente ("/" + next) não prendem o redirect no
         site, porque next = "/evil.com" vira //evil.com."""
+        part = self.lead_part(node, env, 0, host, slash)
+        return set() if part is None else self.origins(part, env)
+
+    def lead_part(self, node, env, depth, host, slash):
+        """O valor que decide o começo do endereço (o host em f"https://{host}/x"), ou None quando o começo é fixo."""
         if isinstance(node, ast.BoolOp):
-            return self.lead_origins(node.values[0], env, depth, host, slash)
+            return self.lead_part(node.values[0], env, depth, host, slash)
         v = self.vals.get(node.id) if isinstance(node, ast.Name) and node.id not in self.strs else None
         if depth < 3 and isinstance(v, ast.BinOp) and isinstance(v.op, ast.Add):
             # full = BASE + caminho; requests.get(full): o começo é o do valor declarado.
-            return self.lead_origins(v, env, depth + 1, host, slash)
+            return self.lead_part(v, env, depth + 1, host, slash)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add) and not _builds_string(node):
             while isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
                 node = node.left  # BASE + caminho: o começo é o da esquerda
-            return self.lead_origins(node, env, depth + 1, host, slash)
+            return self.lead_part(node, env, depth + 1, host, slash)
         if isinstance(node, ast.Name) and node.id in self.strs:
             parts = self.pieces(node, env)
         elif _builds_string(node):
             parts = self.pieces(node, env)
         else:
-            return self.origins(node, env)
+            return node
         parts = [p for p in parts if not (p[0] == "lit" and p[1] == "")]
         if host and len(parts) > 1 and parts[0][0] == "lit" and _IN_HOST.match(parts[0][1]):
             parts = parts[1:]  # f"https://{host}/x": o texto fixo para onde o host começa
         if slash and len(parts) > 1 and parts[0][0] == "lit" and _ONLY_SLASHES.match(parts[0][1]):
             parts = parts[1:]
-        if parts and parts[0][0] == "expr" and parts[0][1] is not None:
-            return self.origins(parts[0][1], env)
-        return set()
+        if parts and parts[0][0] == "expr":
+            return parts[0][1]
+        return None
+
+    def host_header(self, node, depth=0):
+        """O valor é o cabeçalho Host (ou X-Forwarded-Host) da requisição: request.headers["Host"],
+        request.headers.get("x-forwarded-host") or ..., também guardado numa variável antes."""
+        if isinstance(node, ast.BoolOp):
+            return self.host_header(node.values[0], depth)
+        if isinstance(node, ast.Name) and depth < 3 and node.id in self.vals and node.id not in self.strs:
+            return self.host_header(self.vals[node.id], depth + 1)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get" and node.args:
+            box, key = node.func.value, node.args[0]
+        elif isinstance(node, ast.Subscript):
+            box, key = node.value, node.slice
+        else:
+            return False
+        return isinstance(box, ast.Attribute) and box.attr == "headers" and _const_str(key) and \
+            key.value.lower() in _HOST_HEADERS
 
     def start_controlled(self, node, env):
         """A requisição decide o começo do endereço (esquema e host), não só um pedaço do caminho."""
@@ -1613,9 +1637,12 @@ class _Py:
         if http:
             url = _arg(call, 1 if last == "request" else 0, "url")
             if url is not None and not _const_str(url) and not fn.guard_url and not fn.admin:
-                o = self.lead_origins(url, env, host=True)
+                part = self.lead_part(url, env, 0, True, False)
+                o = set() if part is None else self.origins(part, env)
                 if REQ in o:
-                    self.out.add("COD008", "high", ln, {"sink": d + "()"})
+                    # Host tirado do cabeçalho Host: o navegador de outra pessoa não escolhe e o proxy costuma conferir.
+                    sev = "medium" if self.host_header(part) else "high"
+                    self.out.add("COD008", sev, ln, {"sink": d + "()"})
                 elif TOOL in o:
                     self.out.tool("url", False, ln)
             return
@@ -2435,6 +2462,16 @@ def _opaque_calls(m):
         return m
     parts.append(m[pos:])
     return "".join(parts)
+
+
+# req.headers.host, req.headers['x-forwarded-host'], request.headers.get('host'), c.req.header('host').
+_JS_HOST_HEADER = re.compile(r"""[\w$.]{1,100}?\s*\??\.\s*(?:headers\s*\??\.\s*(?:host|get\s*\(\s*(['"`])([\w-]{1,40})\1\s*\))|"""
+                             r"""headers\s*\[\s*(['"`])([\w-]{1,40})\3\s*\]|header\s*\(\s*(['"`])([\w-]{1,40})\5\s*\))""")
+
+
+def _first_option(s):
+    """O texto antes do primeiro ||, ?? ou ? (a primeira opção de a || b e a ?? b; em c ? a : b, a condição)."""
+    return re.split(r"\s*(?:\|\||\?\?|\?(?!\.))\s*", s.strip(), maxsplit=1)[0]
 
 
 def _close_bracket(m, i):
@@ -3761,9 +3798,14 @@ class _Js:
             return True, fixed
         return TOOL not in self.origins(*parts[0][1]), fixed
 
-    def lead_origins(self, a, b, depth=0, host=False, slash=False):
+    def lead_origins(self, a, b, host=False, slash=False):
         """Origens do começo do endereço (esquema e host), não de um pedaço do caminho. host e slash: como em
         _Py.lead_origins."""
+        span = self.lead_span(a, b, 0, host, slash)
+        return set() if span is None else self.origins(*span)
+
+    def lead_span(self, a, b, depth, host, slash):
+        """Onde está o valor que decide o começo do endereço, ou None quando o começo é fixo."""
         a, b = self.trim(a, b)
         s = self.mask[a:b]
         if depth < 3 and s in self.vals and s not in self.strs:
@@ -3772,12 +3814,12 @@ class _Js:
             x, y = self.trim(*self.vals[s])
             if re.match(r"new\s+URL\s*\(", self.mask[x:y]) and self.close(self.mask.index("(", x)) == y - 1 or \
                     len(self.split_plus(x, y)) > 1:
-                return self.lead_origins(x, y, depth + 1, host, slash)
+                return self.lead_span(x, y, depth + 1, host, slash)
         w = re.match(r"(?:new\s+URL|decodeURIComponent|decodeURI|String|encodeURI)\s*\(", s)
         if w and self.close(a + w.end() - 1) == b - 1:
             inner = self.args(a + w.end())
             if not inner:
-                return set()
+                return None
             a, b = inner[0]
         parts = self.pieces(a, b)
         parts = [p for p in parts if not (p[0] == "lit" and not p[1])]
@@ -3786,10 +3828,21 @@ class _Js:
         if slash and len(parts) > 1 and parts[0][0] == "lit" and _ONLY_SLASHES.match(parts[0][1]):
             parts = parts[1:]  # `/${next}`
         if not parts or parts[0][0] != "expr":
-            return set()
+            return None
         x, y = parts[0][1]
-        first = re.split(r"\s*(?:\|\||\?\?|\?(?!\.))\s*", self.mask[x:y].strip(), maxsplit=1)[0]
-        return self.origins(x, x + len(first)) if first else set()
+        first = _first_option(self.mask[x:y])
+        return (x, x + len(first)) if first else None
+
+    def host_header(self, a, b, depth=0):
+        """Como _Py.host_header: req.headers.host, request.headers.get('x-forwarded-host') ?? ..., c.req.header('host')."""
+        a, b = self.trim(a, b)
+        s = self.mask[a:b]
+        if depth < 3 and s in self.vals and s not in self.strs:
+            x, y = self.trim(*self.vals[s])
+            first = _first_option(self.mask[x:y])
+            return bool(first) and self.host_header(x, x + len(first), depth + 1)
+        m = _JS_HOST_HEADER.fullmatch(self.code[a:b].strip())
+        return bool(m) and (m.group(2) or m.group(4) or m.group(6) or "host").lower() in _HOST_HEADERS
 
     def start_controlled(self, a, b):
         return REQ in self.lead_origins(a, b, slash=True)
@@ -3802,9 +3855,11 @@ class _Js:
             return
         if _JS_GUARD_URL.search(self.mask, self.guard_start(m.start(), 800), m.start()):
             return
-        o = self.lead_origins(*args[0], host=True)
+        span = self.lead_span(*args[0], 0, True, False)
+        o = set() if span is None else self.origins(*span)
         if REQ in o and self.server:
-            self.out.add("COD008", "high", self.line(m.start()), {"sink": re.sub(r"\s", "", m.group(0)).rstrip("(") + "()"})
+            sev = "medium" if self.host_header(*span) else "high"  # como em _Py.urls
+            self.out.add("COD008", sev, self.line(m.start()), {"sink": re.sub(r"\s", "", m.group(0)).rstrip("(") + "()"})
         elif TOOL in o and not self.use_client:
             self.out.tool("url", False, self.line(m.start()))
 
