@@ -58,7 +58,7 @@ Sem cadastro, sem telemetria, sem dependências: Python 3.9+ puro, no Linux, mac
 As 49 regras, com severidade, exemplos e correção: [docs/rules.pt-BR.md](docs/rules.pt-BR.md).
 
 <p align="center">
-  <img alt="stingward ./my-saas: chave da OpenAI exposta por NEXT_PUBLIC_, next 14.1.0 com a CVE-2025-29927 (EPSS de 99%), tabela do Supabase sem RLS, CORS aberto. Nota F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-pt.gif" width="820">
+  <img alt="stingward ./my-saas: chave da OpenAI exposta por NEXT_PUBLIC_, resposta do modelo executada como comando de shell, next 14.1.0 com a CVE-2025-29927 (EPSS de 99%), SQL e caminho de arquivo montados com dados da requisição, servidor que busca qualquer URL, tabela do Supabase sem RLS, requests cuja menor versão aceita tem falhas conhecidas. Nota F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-pt.gif" width="820">
 </p>
 
 <p align="center"><sub>Um app típico feito com IA, em Next.js e Supabase. Rode as duas demonstrações num clone deste repositório: <code>python scripts/demo/fixtures.py demo</code>, depois <code>stingward skill demo/pdf-helper</code> e <code>stingward demo/my-saas</code>.</sub></p>

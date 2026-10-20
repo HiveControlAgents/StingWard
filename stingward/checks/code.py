@@ -40,21 +40,21 @@ def _src(origin):
 
 
 _LLM_SINK = {
-    # tipo: (onde chega pt, en, o que vira pt, en, como corrigir pt, en)
-    "code": ("eval/exec", "eval/exec", "código rodando no seu servidor", "code running on your server",
+    # tipo: (onde chega pt, com a preposição ("à página", não "a a página"), en, o que vira pt, en, como corrigir pt, en)
+    "code": ("a eval/exec", "eval/exec", "código rodando no seu servidor", "code running on your server",
              "não execute a resposta; peça JSON, valide os campos e chame só funções de uma lista fixa.",
              "do not run the answer; ask for JSON, validate it and call only functions from a fixed list."),
-    "shell": ("um comando de shell", "a shell command", "comandos rodando no seu servidor", "commands running on your server",
+    "shell": ("a um comando de shell", "a shell command", "comandos rodando no seu servidor", "commands running on your server",
               "mapeie a resposta para comandos de uma lista fixa e passe os argumentos em lista, sem shell.",
               "map the answer to commands from a fixed list and pass arguments as a list, without a shell."),
-    "template": ("um template", "a template", "código rodando no seu servidor", "code running on your server",
+    "template": ("a um template", "a template", "código rodando no seu servidor", "code running on your server",
                  "use um template fixo e passe a resposta como variável.", "use a fixed template and pass the answer as a variable."),
-    "sql": ("uma consulta SQL", "a SQL query", "leitura ou exclusão dos seus dados", "reading or deleting your data",
+    "sql": ("a uma consulta SQL", "a SQL query", "leitura ou exclusão dos seus dados", "reading or deleting your data",
             "rode com um usuário de banco só de leitura, limitado às tabelas necessárias, ou deixe o modelo só preencher "
             "parâmetros de consultas escritas por você.",
             "run it with a read-only database user limited to the tables it needs, or let the model only fill parameters "
             "of queries you wrote."),
-    "html": ("a página como HTML", "the page as HTML", "scripts rodando no navegador de quem usa o app",
+    "html": ("à página como HTML", "the page as HTML", "scripts rodando no navegador de quem usa o app",
              "scripts running in your users' browsers",
              "mostre como texto, ou converta o Markdown e limpe com DOMPurify.sanitize antes de inserir.",
              "show it as text, or convert the Markdown and clean it with DOMPurify.sanitize before inserting it."),

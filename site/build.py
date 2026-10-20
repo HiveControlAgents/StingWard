@@ -2,14 +2,19 @@
 
 Every report and number on the page comes from this checkout: the script runs Stingward on the README
 demos and on its own skill, reads the rules and counts the tests, so the site cannot drift from the code.
+The sample report (exemplo/ and en/example/) is the real HTML report of the demo app, with a note on top.
 
     python site/build.py _site            # offline reports, as the tests build it
     python site/build.py _site --online   # with dependency results from OSV.dev, as the Pages workflow builds it
+
+The buy and waitlist buttons take their addresses from "links" in site/text.json. While one is empty its
+button reads "Em breve" / "Coming soon" and is not a link; a filled one must be an https:// address.
 """
 import functools
 import html
 import json
 import os
+import posixpath
 import re
 import shutil
 import string
@@ -26,10 +31,16 @@ ASSETS = ["logo.svg", "social-preview.png"] + [f"demo-{d}-{lang}.{ext}" for d in
 CACHE = os.path.join(tempfile.gettempdir(), "stingward-site-cache")
 SEVERITY = {"🔴": "crit", "🟠": "high", "🟡": "med", "🔵": "low", "⚪": "info", "🟢": "ok"}
 ROW = r"^   [^ :]+(?: [^ :]+){0,2}: "  # "   where: ...", "   how to fix: ..." under a finding
+SAMPLE = {"pt": "exemplo", "en": "en/example"}  # where each language's sample report is published
+PAGE_DIR = {"pt": ".", "en": "en"}
+LINKS = ("audit_checkout", "team_waitlist")
+HTTPS = re.compile(r"https://[^\s\"'<>\\]+")
 
 sys.path.insert(0, ROOT)
-from stingward import __version__, lockfiles  # noqa: E402
+from stingward import __version__  # noqa: E402
 from stingward import _redact as redact  # noqa: E402
+from stingward.checks import deps  # noqa: E402
+from stingward.model import Context  # noqa: E402
 from stingward.rules import RULES  # noqa: E402
 
 e = html.escape
@@ -111,10 +122,54 @@ def copy_button(t, command, cls="button"):
             f'data-failed="{e(t["copy_failed"])}"><span>{e(t["copy"])}</span></button>')
 
 
+def links(text):
+    """The checkout and waitlist addresses from text.json. Empty means not open yet; anything else must be https."""
+    given = text.get("links", {})
+    for key in LINKS:
+        url = given.get(key, "")
+        if not isinstance(url, str) or url and not HTTPS.fullmatch(url):
+            raise SystemExit(f"site/text.json: links.{key} must be empty or an https:// address, not {url!r}")
+    return {key: given.get(key, "") for key in LINKS}
+
+
+def offer(url, label, soon, cls="button"):
+    """A buy or sign-up button. Until its address exists it is a plain label, so nothing on the page takes payment."""
+    if url:
+        return f'<a class="{cls}" href="{e(url)}">{e(label)}</a>'
+    return f'<span class="{cls} button--soon" role="link" aria-disabled="true">{e(soon)}</span>'
+
+
+def link_to(target, here):
+    """Relative link from the folder `here` to the folder `target`, both given from the site root ("." is the root)."""
+    path = posixpath.relpath(target, here)
+    return "./" if path == "." else path + "/"
+
+
+def from_demo(demo, path, snippet):
+    """A piece of a demo file shown on the page, checked against the file so the picture cannot drift from the demo."""
+    with open(os.path.join(demo, path), encoding="utf-8") as fh:
+        if snippet not in fh.read():
+            raise SystemExit(f"site: {snippet!r} is no longer in the demo file {path}")
+    return snippet
+
+
+# The note on top of the sample report. The report's policy (CSP) allows only inline CSS and blocks script, images,
+# fonts and outside files, so the note uses nothing else; in print it disappears and the PDF is the plain report.
+SAMPLE_CSS = (".sample{background:var(--ink);color:#fff}"
+              ".sample-in{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:10px 28px;"
+              "max-width:912px;margin:0 auto;padding:16px;font-size:14px;line-height:1.5}"
+              ".sample p{max-width:64ch}.sample strong{color:var(--honey)}"
+              ".sample-links{display:flex;flex-wrap:wrap;gap:6px 22px}"
+              ".sample a{color:#fff;font-weight:600;text-decoration-color:var(--honey);text-underline-offset:3px}"
+              "@media print{.sample{display:none}}")
+
+
 class Page:
-    def __init__(self, lang, t, demo, online, tests):
+    def __init__(self, lang, t, demo, online, tests, urls=None):
         self.lang, self.t, self.demo, self.online, self.tests = lang, t, demo, online, tests
+        self.urls = urls or dict.fromkeys(LINKS, "")
         self.root = "" if lang == "pt" else "../"
+        self.sample_href = link_to(SAMPLE[lang], PAGE_DIR[lang])
 
     # ---------------------------------------------------------------- hero
 
@@ -178,10 +233,9 @@ class Page:
                        for d, _, fs in os.walk(app) for f in fs)
         frag_files = (f'<p class="frag__title">{e(fill(t["files_read"], {"n": str(len(files))}))}</p><ul class="frag__files">'
                       + "".join(f"<li><code>{e(f)}</code></li>" for f in files) + "</ul>")
-        from pathlib import Path
-        pkgs = [(eco, name, ver) for rel in files if lockfiles.is_dependency_file(rel)
-                for eco, name, ver, _, _ in lockfiles.parse(Path(app), rel)]
-        pkgs = sorted(set(pkgs))
+        # What the dependency check sends: each pinned version, and the lowest version of each range without a lockfile.
+        pinned, _, ranges = deps.collect(Context(root=app, files=files))
+        pkgs = sorted({(eco, name, ver) for eco, name, ver, _, _ in pinned} | {(r.eco, r.name, r.floor) for r in ranges})
         body = json.dumps({"queries": [{"package": {"ecosystem": eco, "name": n}, "version": v} for eco, n, v in pkgs]}, indent=1)
         frag_osv = f'<p class="frag__title">{e(t["sent_to"])}</p><pre class="frag__code">{e(body)}</pre>'
         groups = {}
@@ -217,6 +271,16 @@ class Page:
         points = " ".join(f"U+{ord(c):X}" for c in tags[:4])
         cut = decoded.rfind(" ", 0, len(decoded) // 2 + 4)  # two lines, broken at the space nearest the middle
         masked = redact.sanitize_text("OPENAI_API_KEY=sk-proj-" + "x7Qm2Lp9Vt4Rw8Zk3Hn6Jd1Fs5Gb0Yc")
+        # The code check and the AI mistakes, as they are written in the demo app.
+        shown = functools.partial(from_demo, os.path.join(self.demo, "my-saas"))
+        shell = shown("app/api/agent/route.ts", 'exec(reply.choices[0].message.content ?? "")').partition(".message")
+        sql = shown("app/api/invoices/route.ts", "where user_id = '${user}'").split(" = ")
+        floor = shown("worker/requirements.txt", "requests>=2.19.0").split(">=")
+        html_in = shown("components/Chat.tsx", "__html: m.content").split(" ")
+        fetch = shown("app/api/preview/route.ts", "fetch(url)")
+        shown("app/api/invoices/pdf/route.ts", 'searchParams.get("file")')
+        routes = [f"POST /api/{r}" for r in ("agent", "chat") if shown(f"app/api/{r}/route.ts", "export async function POST")]
+        dollar = lambda text: e(text).replace("$", "&#36;")  # "${" would read as a placeholder left unfilled
         ui = {
             "mask": f'<code class="el el--mask">{e(masked)}</code>',
             "kev": '<span class="el el--kev">KEV</span>',
@@ -227,6 +291,13 @@ class Page:
             "curl": '<code class="el el--curl">curl -fsSL https://… | sh</code>',
             "bypass": '<code class="el el--bypass">"defaultMode": "bypassPermissions"</code>',
             "ssh": '<code class="el el--ssh">~/.ssh/id_ed25519</code>',
+            "sqli": f'<code class="el el--two"><span class="el__dim">{e(sql[0])} =</span><span>{dollar(sql[1])}</span></code>',
+            "ssrf": f'<code class="el">{e(fetch)}</code>',
+            "shell": f'<code class="el el--two"><span>{e(shell[0])}</span><span>{e(shell[1] + shell[2])}</span></code>',
+            "xss": f'<code class="el el--two"><span>{e(html_in[0])}</span><span>{e(html_in[1])}</span></code>',
+            "path": '<code class="el el--two"><span class="el__dim">?file=</span><span>../../.env</span></code>',
+            "limit": '<code class="el el--two">' + "".join(f"<span>{e(r)}</span>" for r in routes) + "</code>",
+            "floor": f'<code class="el el--floor">{e(floor[0])}&gt;=<mark>{e(floor[1])}</mark></code>',
         }
 
         def tile(key):
@@ -282,8 +353,34 @@ class Page:
     def footer_cols(self):
         return "\n".join(
             f'<div class="footer__col"><h3>{e(title)}</h3><ul>'
-            + "".join(f'<li><a class="link" href="{e(fill(href))}">{e(fill(name))}</a></li>' for name, href in links)
+            + "".join(f'<li><a class="link" href="{e(fill(href, {"sample": self.sample_href}))}">{e(fill(name))}</a></li>'
+                      for name, href in links)
             + "</ul></div>" for title, links in self.t["footer_cols"])
+
+    # ---------------------------------------------------------------- the paid audit and the Team waitlist
+
+    def offers(self):
+        t, urls = self.t, self.urls
+        return {"audit_button": offer(urls["audit_checkout"], t["audit_buy"], t["soon"], "button button--ink"),
+                "soon_button": offer(urls["team_waitlist"], t["soon_button"], t["soon"]),
+                "audit_gets": "\n".join(f"<li>{e(x)}</li>" for x in t["audit_gets"]),
+                "audit_not": "\n".join(f"<li>{e(x)}</li>" for x in t["audit_not"])}
+
+    def sample(self):
+        """The real HTML report of the demo app, as Stingward writes it, with a note on top that says what it is."""
+        t, lang, here = self.t, self.lang, SAMPLE[self.lang]
+        other = "en" if lang == "pt" else "pt"
+        report = cli(["./my-saas"], self.demo, lang, "html", self.online)
+        note = (f'<aside class="sample" aria-label="{e(t["sample_label"])}"><div class="sample-in">'
+                f'<p><strong>{e(t["sample_title"])}</strong> {e(fill(t["sample_text"]))}</p><p class="sample-links">'
+                f'<a href="{link_to(PAGE_DIR[lang], here)}">{e(t["sample_home"])}</a>'
+                f'<a href="{link_to(PAGE_DIR[lang], here)}#audit">{e(t["sample_audit"])}</a>'
+                f'<a href="{link_to(SAMPLE[other], here)}" hreflang="{"en" if other == "en" else "pt-BR"}" '
+                f'lang="{"en" if other == "en" else "pt-BR"}">{e(t["sample_other"])}</a></p></div></aside>')
+        head, sep, body = report.partition("</head>")
+        if not sep or head.count("</style>") != 1 or not body.startswith("\n<body>\n"):
+            raise SystemExit("site: the HTML report changed shape; update Page.sample")
+        return head.replace("</style>", SAMPLE_CSS + "</style>") + sep + body.replace("<body>\n", "<body>\n" + note + "\n", 1)
 
     def render(self):
         t = self.t
@@ -303,11 +400,12 @@ class Page:
             "proof_tiles": self.proof(), "faq_items": self.faq(),
             "price_lines": "\n".join(f"<li>{e(fill(x))}</li>" for x in t["price_lines"]),
             "cta_copy": copy_button(t, t["cta_cmd"], "cta__button"),
-            "footer_cols": self.footer_cols(), "shield": SHIELD,
+            "footer_cols": self.footer_cols(), "shield": SHIELD, "sample_href": self.sample_href,
             "wordmark": "".join(f'<span class="mark__block mark__block--{i % 3}" style="--h:{h}%">{c}</span>'
                                 for i, (c, h) in enumerate(zip("Stingward", (100, 72, 86, 64, 94, 78, 60, 88, 70)))),
         })
         values.update(self.stages())
+        values.update(self.offers())
         values.update({"find_" + k: v for k, v in self.finds().items()})
         with open(os.path.join(SITE, "page.html"), encoding="utf-8") as fh:
             return string.Template(fh.read()).substitute(values)
@@ -316,16 +414,22 @@ class Page:
 def build(out, online=False):
     with open(os.path.join(SITE, "text.json"), encoding="utf-8") as fh:
         text = json.load(fh)
+    urls = links(text)
     tests = count_tests()
+    files = {}
     with tempfile.TemporaryDirectory() as demo:
         subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "demo", "fixtures.py"), demo], check=True, capture_output=True)
-        pages = {lang: Page(lang, text[lang], demo, online, tests).render() for lang in ("pt", "en")}
+        for lang in ("pt", "en"):
+            page = Page(lang, text[lang], demo, online, tests, urls)
+            files[posixpath.join(PAGE_DIR[lang], "index.html")] = page.render()
+            files[posixpath.join(SAMPLE[lang], "index.html")] = page.sample()
     if os.path.isdir(out):
         shutil.rmtree(out)
-    os.makedirs(os.path.join(out, "en"))
-    for lang, page in pages.items():
-        with open(os.path.join(out, "index.html" if lang == "pt" else "en/index.html"), "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(page)
+    for rel_path, content in files.items():
+        path = os.path.join(out, *rel_path.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(content)
     for name in ("style.css", "app.js"):
         shutil.copy(os.path.join(SITE, name), out)
     shutil.copytree(os.path.join(SITE, "fonts"), os.path.join(out, "fonts"))
