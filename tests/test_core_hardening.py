@@ -877,5 +877,26 @@ class VersionOrderByEcosystem(unittest.TestCase):
         self.assertTrue(vulndb.affects_whole_range(v, "PyPI", "demo", "1.0", "1.0.post1.dev3"))
 
 
+class FixPrefersAFinalRelease(unittest.TestCase):
+    """A correção sugerida é uma versão final quando o aviso lista uma acima da atual; rc só quando não há outra."""
+
+    @staticmethod
+    def vuln(eco, *fixes):
+        ranges = [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": f}]} for f in fixes]
+        return {"id": "GHSA-1", "affected": [{"package": {"ecosystem": eco, "name": "demo"}, "ranges": ranges}]}
+
+    def test_final_release_wins_over_a_pre_release(self):
+        cases = [("PyPI", "26.3.0", ["26.4.0rc2", "26.4.1"], "26.4.1"),
+                 ("npm", "1.0.0", ["1.1.0-beta.1", "1.1.0"], "1.1.0"),
+                 ("RubyGems", "5.0.0", ["5.2.0.rc1", "5.2.1"], "5.2.1"),
+                 ("PyPI", "1.5.0", ["1.6.0rc1", "2.0.0"], "2.0.0"),
+                 ("PyPI", "1.0", ["1.1rc1", "1.0.post1"], "1.0.post1"),
+                 ("PyPI", "26.3.0", ["26.4.0rc2"], "26.4.0rc2"),
+                 ("npm", "1.0.0", ["2.0.0-rc.1", "1.2.0", "1.1.0"], "1.1.0")]
+        for eco, cur, fixes, want in cases:
+            with self.subTest(eco=eco, cur=cur, fixes=fixes):
+                self.assertEqual(vulndb.fixed_version(self.vuln(eco, *fixes), eco, "demo", cur), want)
+
+
 if __name__ == "__main__":
     unittest.main()

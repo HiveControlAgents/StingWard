@@ -331,13 +331,24 @@ def _generic_vkey(v: str):
     return _int(epoch) if epoch.isdigit() else 0, release, phase, tags
 
 
+def _is_prerelease(v: str, eco) -> bool:
+    """dev, alpha, beta, rc... (pós-lançamento é final). Pela PEP 440 no PyPI e pelo semver em npm, Go e crates.io."""
+    if eco == "PyPI" and _pep440(v) is not None:
+        _, _, pre, _, dev = _pep440(v)
+        return pre[0] < 3 or dev[0] == 0
+    if eco in _SEMVER_ECOS and _semver(v) is not None:
+        return _semver(v)[1][0] == 0
+    _, _, phase, tags = _generic_vkey(v)
+    return phase == 0 and any(t[0] == 1 and t[2] in _PRE for t in tags)
+
+
 def _major(v: str):
     m = re.match(r"\d+", v.strip().lstrip("vV"))
     return _int(m.group()) if m else None
 
 
 def fixed_version(vuln: dict, ecosystem: str, name: str, version: str):
-    """Menor versão corrigida acima da atual, preferindo a mesma versão major."""
+    """Menor versão corrigida acima da atual, preferindo uma final e, entre elas, a mesma versão major."""
     fixes = []
     for a in vuln.get("affected", []) or []:
         pkg = a.get("package", {})
@@ -353,8 +364,10 @@ def fixed_version(vuln: dict, ecosystem: str, name: str, version: str):
     above = sorted({f for f in fixes if _vkey(f, ecosystem) > cur}, key=lambda f: _vkey(f, ecosystem))
     if not above:
         return None
-    same = [f for f in above if _major(f) == _major(version)]
-    fix = (same or above)[0]
+    # Um rc listado como correção não é o que se instala em produção: a final acima da atual vem antes.
+    pool = [f for f in above if not _is_prerelease(f, ecosystem)] or above
+    same = [f for f in pool if _major(f) == _major(version)]
+    fix = (same or pool)[0]
     # O OSV guarda as versões do Go sem o "v", mas go get exige: go get mod@v0.17.0
     if ecosystem == "Go" and version.startswith("v") and not fix.startswith("v"):
         fix = "v" + fix
