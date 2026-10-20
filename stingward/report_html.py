@@ -52,6 +52,7 @@ H = {
         },
         "warn_offline": "Modo offline: as dependências não foram checadas contra as bases de falhas conhecidas.",
         "warn_osv": "O OSV.dev não respondeu: as dependências não foram checadas contra as bases de falhas conhecidas.",
+        "warn_kev": "A lista CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com severidade abaixo da real.",
         "warn_only": "Só parte das verificações rodou: {checks}.",
         "toc": "Conteúdo",
         "s_summary": "Resumo executivo", "s_plan": "Plano de correção", "s_findings": "Achados em detalhe", "s_scope": "Escopo e método",
@@ -164,6 +165,7 @@ H = {
         },
         "warn_offline": "Offline mode: dependencies were not checked against the vulnerability databases.",
         "warn_osv": "OSV.dev did not respond: dependencies were not checked against the vulnerability databases.",
+        "warn_kev": "The CISA KEV list did not respond: a vulnerability attackers already exploit may show a lower severity than it should.",
         "warn_only": "Only some checks ran: {checks}.",
         "toc": "Contents",
         "s_summary": "Executive summary", "s_plan": "Remediation plan", "s_findings": "Findings in detail", "s_scope": "Scope and method",
@@ -560,6 +562,8 @@ def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, 
         warns.append(t["warn_offline"])
     elif "deps" in checks and ctx.sources.get("osv_error"):
         warns.append(t["warn_osv"])
+    elif "deps" in checks and ctx.sources.get("kev_error"):
+        warns.append(t["warn_kev"])
     warn = "".join(f'<p class="warn">{_html.escape(w)}</p>' for w in warns)
     toc = "".join(f'<li><a href="#{a}"><span class="toc-n">{n}</span>{_html.escape(label)}</a></li>' for a, n, label in toc_items)
     return f"""<section class="cover" id="cover">

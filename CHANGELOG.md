@@ -46,6 +46,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - A PGP private key block (`PRIVATE KEY BLOCK`) is now hidden whole in the HTML report's excerpts and in review comments and notes, like other private keys. Before, each of its lines was masked on its own, and the short last line of the key could show.
 - On the website, the pull request preview listed the demo app's public OpenAI key twice, once for `.env` and once for the chat route, while the real comment shows it as one row with both places. The preview is now built from the first rows of the real Markdown comment, in the same order and with the same places.
 - The code excerpts in the HTML report now come from the text the checks read, instead of opening each file again. A file changed on disk after the scan, or a step the reader applies such as dropping a byte order mark, no longer makes an excerpt differ from the line the finding points at.
+- When the CISA KEV list does not respond, the text and Markdown reports now say so in the sources line, next to OSV.dev, and the HTML report warns on its cover, in Portuguese and English: without that list, a vulnerability attackers exploit now is not raised to critical. Before, only the sources table of the HTML report said it. The pull request comment also keeps its sources line when nothing was found but a source failed, so an OSV.dev outage no longer reads as a plain "Nothing found".
 
 ## [0.1.5] - 2026-10-20
 
