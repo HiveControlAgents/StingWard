@@ -257,7 +257,67 @@ def _int(digits: str) -> int:
         return 0
 
 
-def _vkey(v: str):
+# PEP 440 (apêndice B), sem diferenciar maiúsculas: as grafias alternativas (alpha, c, pre, -1, rev...) valem o mesmo.
+_PEP440 = re.compile(
+    r"v?(?:(?P<epoch>[0-9]+)!)?(?P<release>[0-9]+(?:\.[0-9]+)*)"
+    r"(?:[-_.]?(?P<pre_l>alpha|a|beta|b|preview|pre|c|rc)[-_.]?(?P<pre_n>[0-9]+)?)?"
+    r"(?:-(?P<post_n1>[0-9]+)|[-_.]?(?P<post_l>post|rev|r)[-_.]?(?P<post_n2>[0-9]+)?)?"
+    r"(?:[-_.]?(?P<dev_l>dev)[-_.]?(?P<dev_n>[0-9]+)?)?"
+    r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?")
+_PEP_PRE = {"a": 0, "alpha": 0, "b": 1, "beta": 1, "c": 2, "rc": 2, "pre": 2, "preview": 2}
+# semver 2.0: o que vem depois do "-" é pré-lançamento, com identificadores separados por ponto; "+..." é build.
+_SEMVER = re.compile(r"v?(?P<release>[0-9]+(?:\.[0-9]+)*)(?:-(?P<pre>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]*)?")
+_SEMVER_ECOS = {"npm", "Go", "crates.io"}
+
+
+def _release(text: str):
+    release = [_int(x) for x in text.split(".")]
+    while release and release[-1] == 0:  # 1.0 == 1.0.0
+        release.pop()
+    return release
+
+
+def _pep440(v: str):
+    """(época, release, pré, pós, dev) da PEP 440, ou None se a versão não segue a PEP."""
+    m = _PEP440.fullmatch(v.strip().lower())
+    if not m:
+        return None
+
+    def n(group):
+        return _int(m[group]) if m[group] else 0
+
+    pre = (_PEP_PRE[m["pre_l"]], n("pre_n")) if m["pre_l"] else None
+    post = n("post_n1") if m["post_n1"] else n("post_n2") if m["post_l"] else None
+    dev = n("dev_n") if m["dev_l"] else None
+    if pre is None:
+        # 1.0.dev1 vem antes de 1.0a1; sem pré, a versão final vem depois de todos os pré-lançamentos.
+        pre = (-1, 0) if post is None and dev is not None else (3, 0)
+    # Sem dev, depois de qualquer dev do mesmo ponto: 1.0a1.dev1 < 1.0a1 e 1.0.post1.dev1 < 1.0.post1.
+    return (n("epoch"), _release(m["release"]), pre, -1 if post is None else post, (1, 0) if dev is None else (0, dev))
+
+
+def _semver(v: str):
+    """(release, pré-lançamento) do semver 2.0, ou None se a versão não segue o semver."""
+    m = _SEMVER.fullmatch(v.strip())
+    if not m:
+        return None
+    if not m["pre"]:
+        return _release(m["release"]), (1,)
+    ids = [(0, _int(i), "") if i.isdigit() else (1, 0, i) for i in m["pre"].split(".")]
+    return _release(m["release"]), (0, ids)
+
+
+def _vkey(v: str, eco=None):
+    """Chave para ordenar versões. Com o ecossistema, PyPI segue a PEP 440 e npm, Go e crates.io o semver (lá,
+    "1.0-1" é pós-lançamento; aqui, pré-lançamento); versão fora dessas regras fica abaixo das que seguem e é
+    comparada pela ordem genérica. Sem ecossistema (ou nos outros), vale só a ordem genérica."""
+    if eco is None:
+        return _generic_vkey(v)
+    k = _pep440(v) if eco == "PyPI" else _semver(v) if eco in _SEMVER_ECOS else None
+    return (1, k) if k is not None else (0, _generic_vkey(v))
+
+
+def _generic_vkey(v: str):
     """Ordem de semver, PEP 440, RubyGems e Go: pré-lançamento (dev, alpha, rc...) antes da final, post depois."""
     v = v.strip().lstrip("vV").split("+", 1)[0].lower()
     epoch, _, v = v.rpartition("!")
@@ -289,8 +349,8 @@ def fixed_version(vuln: dict, ecosystem: str, name: str, version: str):
             for ev in r.get("events", []):
                 if "fixed" in ev:
                     fixes.append(ev["fixed"])
-    cur = _vkey(version)
-    above = sorted({f for f in fixes if _vkey(f) > cur}, key=_vkey)
+    cur = _vkey(version, ecosystem)
+    above = sorted({f for f in fixes if _vkey(f, ecosystem) > cur}, key=lambda f: _vkey(f, ecosystem))
     if not above:
         return None
     same = [f for f in above if _major(f) == _major(version)]
@@ -304,8 +364,8 @@ def fixed_version(vuln: dict, ecosystem: str, name: str, version: str):
 def affects_whole_range(vuln: dict, ecosystem: str, name: str, floor: str, upper=None, inclusive=False) -> bool:
     """A falha, que atinge o piso, vale para toda a faixa: nenhum fim dela (fixed, last_affected, limit) cai
     entre o piso e o teto. Aviso sem faixa de versões (só a lista de versões) não permite afirmar isso."""
-    lo = _vkey(floor)
-    hi = _vkey(upper) if upper else None
+    lo = _vkey(floor, ecosystem)
+    hi = _vkey(upper, ecosystem) if upper else None
     ranged = False
     for a in vuln.get("affected", []) or []:
         pkg = (a.get("package") or {}) if isinstance(a, dict) else {}
@@ -319,7 +379,7 @@ def affects_whole_range(vuln: dict, ecosystem: str, name: str, floor: str, upper
                 for kind in ("fixed", "limit", "last_affected"):
                     if kind not in ev:
                         continue
-                    k = _vkey(str(ev[kind]))
+                    k = _vkey(str(ev[kind]), ecosystem)
                     # fixed/limit: a própria versão já escapa; last_affected: escapa o que vem depois dela.
                     escapes = k > lo if kind != "last_affected" else k >= lo
                     below = hi is None or k < hi or (kind != "last_affected" and inclusive and k == hi)

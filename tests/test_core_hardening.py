@@ -828,5 +828,54 @@ class AlreadyMasked(unittest.TestCase):
         self.assertTrue(out.startswith("foo-token=[REDACTED"), out)
 
 
+class VersionOrderByEcosystem(unittest.TestCase):
+    """PyPI segue a PEP 440 e npm, Go e crates.io o semver: "1.0-1" é pós-lançamento num e pré-lançamento no outro."""
+
+    def key(self, v, eco):
+        return vulndb._vkey(v, eco)
+
+    def test_pep440_order(self):
+        # Exemplo da própria PEP 440 (sem a versão local, que não entra na ordem).
+        pep = ["1.dev0", "1.0.dev456", "1.0a1", "1.0a2.dev456", "1.0a12.dev456", "1.0a12", "1.0b1.dev456", "1.0b2",
+               "1.0b2.post345.dev456", "1.0b2.post345", "1.0rc1.dev456", "1.0rc1", "1.0", "1.0.post456.dev34",
+               "1.0.post456", "1.0.15", "1.1.dev1", "1!0.5"]
+        self.assertEqual(sorted(reversed(pep), key=lambda v: self.key(v, "PyPI")), pep)
+        self.assertLess(self.key("1.0.post1.dev1", "PyPI"), self.key("1.0.post1", "PyPI"))
+        self.assertLess(self.key("1.0a1.dev1", "PyPI"), self.key("1.0a1", "PyPI"))
+        for same in ("1.0c1", "1.0-rc1", "1.0.rc.1", "1.0RC1", "1.0pre1", "1.0preview1"):
+            with self.subTest(same=same):
+                self.assertEqual(self.key(same, "PyPI"), self.key("1.0rc1", "PyPI"))
+        self.assertEqual(self.key("1.0-1", "PyPI"), self.key("1.0.post1", "PyPI"))
+        self.assertGreater(self.key("1.0-1", "PyPI"), self.key("1.0", "PyPI"))
+        self.assertEqual(self.key("1.0+local.7", "PyPI"), self.key("1.0", "PyPI"))
+        self.assertEqual(self.key("1.0alpha2", "PyPI"), self.key("1.0a2", "PyPI"))
+
+    def test_semver_order(self):
+        semver = ["1.0.0-1", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2",
+                  "1.0.0-beta.11", "1.0.0-post.1", "1.0.0-rc.1", "1.0.0-rc.1.1", "1.0.0", "1.0.1"]
+        for eco in ("npm", "Go", "crates.io"):
+            with self.subTest(eco=eco):
+                self.assertEqual(sorted(reversed(semver), key=lambda v: self.key(v, eco)), semver)
+        self.assertLess(self.key("1.0.0-1", "npm"), self.key("1.0.0", "npm"))
+        self.assertEqual(self.key("v1.2.3+incompatible", "Go"), self.key("1.2.3", "Go"))
+        self.assertLess(self.key("v0.0.0-20220722155237-a158d28d115b", "Go"), self.key("v0.1.0", "Go"))
+
+    def test_odd_versions_still_sort(self):
+        odd = ["1.0.0", "1.0.x", "1.a", "", "1..2", "1.0+build", "1_0", "latest", "2.0.0-beta.1.abc", "1.0-1", "9" * 5000]
+        for eco in ("PyPI", "npm", "Go", "RubyGems", None):
+            with self.subTest(eco=eco):
+                sorted(odd, key=lambda v: self.key(v, eco))
+        self.assertLess(self.key("not a version", "PyPI"), self.key("0.0.1", "PyPI"))
+
+    def test_fix_and_range_checks_use_the_ecosystem_order(self):
+        v = {"id": "PYSEC-1", "affected": [{"package": {"ecosystem": "PyPI", "name": "demo"},
+                                           "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.0.post1"}]}]}]}
+        # 1.0-1 é o mesmo 1.0.post1 da PEP 440: já tem a correção. Na ordem genérica, ficava abaixo de 1.0.
+        self.assertIsNone(vulndb.fixed_version(v, "PyPI", "demo", "1.0-1"))
+        self.assertEqual(vulndb.fixed_version(v, "PyPI", "demo", "1.0"), "1.0.post1")
+        self.assertFalse(vulndb.affects_whole_range(v, "PyPI", "demo", "1.0", "1.0-2"))
+        self.assertTrue(vulndb.affects_whole_range(v, "PyPI", "demo", "1.0", "1.0.post1.dev3"))
+
+
 if __name__ == "__main__":
     unittest.main()
