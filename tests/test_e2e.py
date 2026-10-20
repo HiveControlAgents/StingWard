@@ -483,3 +483,20 @@ class SupportedPythons(unittest.TestCase):
             with self.subTest(doc=doc):
                 said = re.search(pattern, _read(doc)).groups()
                 self.assertEqual(said, (str(sum(runs.values())), pythons[0], pythons[-1]))
+
+
+class PinnedTools(unittest.TestCase):
+    def test_workflows_run_exact_npm_versions(self):
+        """`npm@latest` roda no job que publica com id-token, e o `npx` do CI baixa o que saiu por último: uma versão
+        comprometida rodaria aqui no mesmo dia. Pacote do registro só com versão exata."""
+        workflows = os.path.join(ROOT, ".github", "workflows")
+        seen = []
+        for name in sorted(os.listdir(workflows)):
+            text = _read(".github", "workflows", name)
+            for spec in re.findall(r"\b(?:npm install -g|npm i -g|npx -y|npx --yes) (\S+)", text):
+                if spec.startswith((".", "/")):
+                    continue  # o pacote recém-montado, do disco
+                seen.append(spec)
+                with self.subTest(workflow=name, package=spec):
+                    self.assertRegex(spec, r"^(@[a-z0-9-]+/)?[a-z0-9.-]+@\d+\.\d+\.\d+$")
+        self.assertGreaterEqual(len(seen), 2, seen)
