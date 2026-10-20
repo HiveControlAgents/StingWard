@@ -98,13 +98,14 @@ class Dispatch(LockfileCase):
                         data = b"\xfe\xff" + data
                     (self.root / rel).write_bytes(data)
                     self.assertEqual([x[:3] for x in lockfiles.parse(self.root, rel)], want)
-        self.write("requirements.txt", "requests==2.19.0\r\nflask>=0.12\r\n", encoding="utf-16")
+        # Bytes, not write_text: on Windows text mode would turn each \r\n into \r\r\n.
+        (self.root / "requirements.txt").write_bytes("requests==2.19.0\r\nflask>=0.12\r\n".encode("utf-16"))
         self.assertEqual([(r.name, r.floor, r.line) for r in lockfiles.ranges(self.root, "requirements.txt")], [("flask", "0.12", 2)])
         self.assertEqual(lockfiles.open_ranges(self.root, "requirements.txt"), 1)
 
     def test_utf16_requirements_are_audited_by_a_scan(self):
         from stingward import scan
-        self.write("requirements.txt", "requests==2.19.0\r\nflask==0.12\r\n", encoding="utf-16")
+        (self.root / "requirements.txt").write_bytes("requests==2.19.0\r\nflask==0.12\r\n".encode("utf-16"))
         self.assertEqual(scan.run(str(self.root), offline=True)[0].sources["packages"], 2)
 
     def test_deeply_nested_json_does_not_crash(self):
