@@ -856,6 +856,167 @@ class TomlLocks(LockfileCase):
 # --------------------------------------------------------------------------- Pipfile.lock
 
 
+class NonRegistrySources(LockfileCase):
+    """Git and local-folder packages do not come from the registry: a private package that shares its name with a
+    public one must not inherit the public one's advisories (or its MAL- record). npm v1 and Gemfile.lock already
+    skip them; every other lockfile has to as well."""
+
+    def test_npm_v3_git_and_local_tarball_entries_skipped(self):
+        lock = {"lockfileVersion": 3, "packages": {
+            "": {"name": "app", "dependencies": {"private-lib": "github:acme/private-lib", "vendored": "file:vendor/vendored-1.0.0.tgz"}},
+            "node_modules/private-lib": {"version": "1.0.0", "resolved": "git+ssh://git@github.com/acme/private-lib.git#0123abcd"},
+            "node_modules/vendored": {"version": "1.0.0", "resolved": "file:vendor/vendored-1.0.0.tgz"},
+            "node_modules/lodash": {"version": "4.17.21", "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz"},
+        }}
+        self.assertEqual(self.pkgs("package-lock.json", json.dumps(lock, indent=2)), [("npm", "lodash", "4.17.21")])
+
+    def test_yarn_classic_git_github_and_tarball_entries_skipped(self):
+        lock = D('''\
+            # yarn lockfile v1
+
+
+            "private-lib@git+ssh://git@github.com/acme/private-lib.git#v1.0.0":
+              version "1.0.0"
+              resolved "git+ssh://git@github.com/acme/private-lib.git#0123abcd"
+
+            forked@github:acme/forked#main:
+              version "2.0.0"
+              resolved "https://codeload.github.com/acme/forked/tar.gz/0123abcd"
+
+            shorthand@acme/shorthand:
+              version "3.0.0"
+              resolved "https://codeload.github.com/acme/shorthand/tar.gz/0123abcd"
+
+            "tarball@https://example.com/tarball-1.0.0.tgz":
+              version "1.0.0"
+              resolved "https://example.com/tarball-1.0.0.tgz"
+
+            lodash@^4.17.21:
+              version "4.17.21"
+            ''')
+        self.assertEqual(self.pkgs("yarn.lock", lock), [("npm", "lodash", "4.17.21")])
+
+    def test_yarn_berry_git_entry_skipped(self):
+        lock = D('''\
+            __metadata:
+              version: 8
+
+            "private-lib@git+ssh://git@github.com/acme/private-lib.git#commit=0123abcd":
+              version: 1.0.0
+              resolution: "private-lib@git+ssh://git@github.com/acme/private-lib.git#commit=0123abcd"
+
+            "lodash@npm:^4.17.21":
+              version: 4.17.21
+              resolution: "lodash@npm:4.17.21"
+            ''')
+        self.assertEqual(self.pkgs("yarn.lock", lock), [("npm", "lodash", "4.17.21")])
+
+    def test_poetry_git_directory_and_file_sources_skipped_private_index_kept(self):
+        lock = D('''\
+            [[package]]
+            name = "private-lib"
+            version = "1.0.0"
+            optional = false
+            python-versions = "*"
+            files = []
+            develop = false
+
+            [package.source]
+            type = "git"
+            url = "https://github.com/acme/private-lib.git"
+            reference = "HEAD"
+            resolved_reference = "0123abcd"
+
+            [[package]]
+            name = "shared"
+            version = "0.1.0"
+            files = []
+            develop = true
+
+            [package.dependencies]
+            requests = ">=2"
+
+            [package.source]
+            type = "directory"
+            url = "../shared"
+
+            [[package]]
+            name = "vendored"
+            version = "1.0.0"
+            files = [
+                {file = "vendored-1.0.0-py3-none-any.whl", hash = "sha256:aaa"},
+            ]
+
+            [package.source]
+            type = "file"
+            url = "vendor/vendored-1.0.0-py3-none-any.whl"
+
+            [[package]]
+            name = "internal-sdk"
+            version = "2.1.0"
+            files = []
+
+            [package.source]
+            type = "legacy"
+            url = "https://pypi.acme.example/simple"
+            reference = "acme"
+
+            [[package]]
+            name = "requests"
+            version = "2.31.0"
+            files = []
+            ''')
+        self.assertEqual(self.pkgs("poetry.lock", lock), [("PyPI", "internal-sdk", "2.1.0"), ("PyPI", "requests", "2.31.0")])
+
+    def test_uv_git_source_skipped(self):
+        lock = 'version = 1\n\n[[package]]\nname = "private-lib"\nversion = "1.0.0"\n' \
+               'source = { git = "https://github.com/acme/private-lib?rev=v1#0123abcd" }\n\n' \
+               '[[package]]\nname = "idna"\nversion = "3.7"\nsource = { registry = "https://pypi.org/simple" }\n'
+        self.assertEqual(self.pkgs("uv.lock", lock), [("PyPI", "idna", "3.7")])
+
+    def test_pdm_git_and_path_packages_skipped(self):
+        lock = D('''\
+            [[package]]
+            name = "private-lib"
+            version = "1.0.0"
+            git = "https://github.com/acme/private-lib.git"
+            ref = "main"
+            revision = "0123abcd"
+            groups = ["default"]
+
+            [[package]]
+            name = "shared"
+            version = "0.1.0"
+            path = "./libs/shared"
+            editable = true
+            groups = ["default"]
+
+            [[package]]
+            name = "certifi"
+            version = "2024.2.2"
+            files = [
+                {file = "certifi-2024.2.2.tar.gz", hash = "sha256:aaa"},
+            ]
+            ''')
+        self.assertEqual(self.pkgs("pdm.lock", lock), [("PyPI", "certifi", "2024.2.2")])
+
+    def test_cargo_git_source_skipped(self):
+        lock = D('''\
+            version = 3
+
+            [[package]]
+            name = "bincode"
+            version = "2.0.1"
+            source = "git+https://github.com/acme/bincode.git?branch=patches#0123abcd"
+
+            [[package]]
+            name = "itoa"
+            version = "1.0.10"
+            source = "registry+https://github.com/rust-lang/crates.io-index"
+            ''')
+        self.assertEqual(self.pkgs("Cargo.lock", lock), [("crates.io", "itoa", "1.0.10")])
+
+
 class PipfileLock(LockfileCase):
     def test_default_and_develop(self):
         lock = {
