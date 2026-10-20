@@ -265,6 +265,14 @@ _SQL_LOOK = re.compile(r"""(?isx)
 # O valor entra onde vai um dado ('...', = x, LIKE '%x', IN (x)), não um nome de tabela ou coluna ("tabela", ORDER BY x).
 _VALUE_POS = re.compile(r"""(?:'|%|(?:[=<>]|\blike|\bilike|\bin\s*\(|\bvalues\s*\()\s*["'%]*)$""", re.I)
 _SQL_DDL = re.compile(r"\s*\(?\s*(?:pragma|create|drop|alter|truncate)\b", re.I)
+# Nome de variável que costuma guardar placeholders (",".join("?" * n)) ou um pedaço de SQL escrito no código (tabela,
+# coluna, ORDER BY, WHERE montado). O pedaço só conta fora da posição de dado: '{query}' é o texto da busca.
+_PY_PLACEHOLDER = re.compile(r"(?i)placeholder|marks|^ph$|^qs$|params?_?(?:str|sql|list)|bind")
+_PY_SQL_PART = re.compile(r"(?i)^(?:table|tables|table_name|tablename|schema|columns?|cols|fields|col|column_name|order|"
+                          r"direction|sort_dir|where|where_clause|conditions?|clause|set_clause|joins?|filters?_sql|sql|query|"
+                          r"select|limit|offset|n|i|idx|count)$")
+_JS_SQL_PART = re.compile(r"(?i)^(?:table|tableName|schema|columns?|cols|fields|order|direction|sortDir|where|whereClause|"
+                          r"conditions?|clause|setClause|joins?|sql|query|select|limit|offset|i|idx|n|count)$")
 
 
 # Uma string que começa como SQL (para saber se vale procurar consultas no arquivo).
@@ -838,19 +846,18 @@ class _Py:
             return out
         return [("expr", node)]
 
-    def static(self, node):
-        """Valor que não vem de fora: constante, número, placeholder (",".join("?" * n)), nome de tabela do próprio código."""
+    def static(self, node, value=False):
+        """Valor que não vem de fora: constante, número, placeholder (",".join("?" * n)), nome de tabela do próprio código.
+        value: o valor veio de fora e está onde vai um dado ('{x}', = {x}, LIKE, IN (...)); ali query, count ou item.name
+        são o próprio dado, e só constante e placeholder contam."""
         if isinstance(node, ast.Constant):
             return True
         if isinstance(node, ast.Name):
-            return node.id.isupper() or bool(re.search(r"(?i)placeholder|marks|^ph$|^qs$|params?_?(?:str|sql|list)|bind|"
-                                                       r"^(?:table|tables|table_name|tablename|schema|columns?|cols|fields|"
-                                                       r"col|column_name|order|direction|sort_dir|where|where_clause|"
-                                                       r"conditions?|clause|set_clause|joins?|filters?_sql|sql|query|"
-                                                       r"select|limit|offset|n|i|idx|count)$", node.id))
+            return node.id.isupper() or bool(_PY_PLACEHOLDER.search(node.id)) or \
+                not value and bool(_PY_SQL_PART.search(node.id))
         if isinstance(node, ast.Attribute):
-            return bool(re.search(r"(?i)table|schema|column|_meta|model|index|collection|^name$", node.attr)) and \
-                isinstance(node.value, (ast.Name, ast.Attribute))
+            return not value and bool(re.search(r"(?i)table|schema|column|_meta|model|index|collection|^name$", node.attr)) \
+                and isinstance(node.value, (ast.Name, ast.Attribute))
         if isinstance(node, ast.Call):
             d = self._dot(node.func)
             last = d.rsplit(".", 1)[-1] if d else ""
@@ -874,10 +881,12 @@ class _Py:
         ddl = bool(_SQL_DDL.match(lit))
         best = None
         for i, expr in exprs:
-            if expr is None or self.static(expr):
+            if expr is None:
                 continue
             o = self.origins(expr, env)
             before = _lit_before(parts, i)
+            if self.static(expr, value=bool(o & (REQ_ANY | MODEL)) and bool(_VALUE_POS.search(before))):
+                continue
             if LLM in o:
                 return ("high", LLM)
             if TOOL in o:
@@ -2561,14 +2570,14 @@ class _Js:
             i = k + 1
         return out
 
-    def static(self, a, b):
+    def static(self, a, b, value=False):
+        """Como _Py.static: value é o valor de fora na posição de um dado, onde o nome (query, count) não diz nada."""
         s = self.code[a:b].strip()
         if re.fullmatch(r"\d+(?:\.\d+)?|[A-Z][A-Z0-9_]*|true|false|null|undefined", s):
             return True
         if re.fullmatch(r"(?:window\.)?location\.(?:origin|host|hostname|protocol)|(?:process|import\.meta)\.env\.\w+", s):
             return True
-        if re.search(r"(?i)placeholder|^(?:table|tableName|schema|columns?|cols|fields|order|direction|sortDir|where|"
-                     r"whereClause|conditions?|clause|setClause|joins?|sql|query|select|limit|offset|i|idx|n|count)$", s):
+        if re.search(r"(?i)placeholder", s) or not value and _JS_SQL_PART.search(s):
             return True
         if re.search(r"\.join\s*\(", s) and re.search(r"[?$]|%s|:\w", s):
             return True
@@ -3025,10 +3034,10 @@ class _Js:
         ddl = bool(_SQL_DDL.match(lit))
         best = None
         for i, (x, y) in exprs:
-            if self.static(x, y):
-                continue
             o = self.origins(x, y)
             before = _lit_before(parts, i)
+            if self.static(x, y, value=bool(o & (REQ_ANY | MODEL)) and bool(_VALUE_POS.search(before))):
+                continue
             if LLM in o:
                 return ("high", LLM)
             if TOOL in o:
