@@ -52,6 +52,11 @@ T = {
         "discarded": "Descartados como alarme falso ({n})",
         "grade_rule": "A nota não conta alarmes falsos nem o que foi corrigido durante a auditoria.",
         "sarif_help": "A correção depende do caso: cada alerta diz o que mudar. Mais sobre esta regra: {url}",
+        "nothing_read": "Nenhum arquivo foi lido (0 arquivos), então não há o que avaliar e não há nota. Confira o caminho: a pasta "
+                        "está vazia ou tudo nela foi pulado (binários, arquivos grandes demais, pastas como node_modules).",
+        "nothing_read_agents": "Nenhuma configuração de agente foi encontrada nesta máquina (0 arquivos lidos), então não há o que "
+                               "avaliar e não há nota.",
+        "summary_none": "Resumo: 0 arquivos lidos · sem nota", "no_grade": "sem nota",
     },
     "en": {
         "title": "Security audit", "where": "where", "why": "why", "fix": "how to fix",
@@ -78,6 +83,10 @@ T = {
         "discarded": "Discarded as false positives ({n})",
         "grade_rule": "The grade leaves out false positives and what was fixed during the audit.",
         "sarif_help": "The fix depends on the case: each alert says what to change. More about this rule: {url}",
+        "nothing_read": "No file was read (0 files), so there is nothing to grade. Check the path: the folder is empty, or "
+                        "everything in it was skipped (binary files, files that are too large, folders such as node_modules).",
+        "nothing_read_agents": "No agent configuration was found on this machine (0 files read), so there is nothing to grade.",
+        "summary_none": "Summary: 0 files read · no grade", "no_grade": "no grade",
     },
 }
 
@@ -108,6 +117,16 @@ def review_parts(findings, review, lang):
 
 def review_counts(findings, review, lang):
     return ", ".join(review_parts(findings, review, lang))
+
+
+def nothing_read(ctx, findings):
+    """Nenhum arquivo lido e nada achado: não há o que avaliar. Pasta vazia, caminho errado ou checkout esquecido no CI
+    não podem sair como um A limpo, com selo e veredito verde."""
+    return not ctx.files and not findings
+
+
+def nothing_read_text(ctx, lang):
+    return T[lang]["nothing_read_agents" if ctx.mode == "agents" else "nothing_read"]
 
 
 def grade(findings):
@@ -439,6 +458,7 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
     rv = audit.review if audit else None
     valid = counted(findings, rv)
     shown, discarded = split(merge(findings, lang, rv))
+    empty = nothing_read(ctx, findings)
     out = [f"stingward {__version__} · {t['title']}: {_clean(shown_target(target or ctx.root))}",
            f"{t['sources']}: {_sources_line(ctx, lang)}"]
     out += [f"{_clean(k)}: {_clean(v)}" for k, v in _review_head(audit, findings, lang)]
@@ -448,14 +468,16 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
         from .review import plain
         out += [f"  {_clean(line)}" if line else "" for line in plain(audit.notes, gap=True)]
         out.append("")
-    if show_verdict:
+    if show_verdict and not empty:
         out += [verdict(valid, lang), ""]
     first = _fix_first(shown)
     if first:
         out.append(f"{t['first']}:")
         out += [f" {i}. {ICON[e.severity]} {_clean(e.title)} · {_clean(_first_place(e))}" for i, e in enumerate(first, 1)]
         out.append("")
-    if not shown:
+    if empty:
+        out.append("⚠️ " + nothing_read_text(ctx, lang))
+    elif not shown:
         out.append(t["none"])
     shown_low = 0
     hidden = 0
@@ -486,6 +508,9 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
             out.append(f" - {_clean(e.title)} · {_clean(places(e, lang))}  [{e.rule}]")
             out += _comment_lines(audit, e, lang, label=False)
         out.append("")
+    if empty:  # sem nota e sem selo
+        out.append(t["summary_none"])
+        return "\n".join(out) + "\n"
     g = grade(valid)
     out.append(f"{t['summary']}: {counts_line(valid, lang) or '0'} · {t['grade']}: {g}")
     if rv is not None:
@@ -540,15 +565,18 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
     valid = counted(findings, rv)
     g = grade(valid)
     shown, discarded = split(merge(findings, lang, rv))
-    out = ["<!-- stingward-report -->", f"### {badge_md(g)} {t['title']}", ""]
+    empty = nothing_read(ctx, findings)
+    out = ["<!-- stingward-report -->", f"### {t['title']}" if empty else f"### {badge_md(g)} {t['title']}", ""]
     head = _review_head(audit, findings, lang)
     if head:
         out += [" · ".join(f"**{_esc(k)}:** {_esc(v)}" for k, v in head), ""]
     if audit and audit.notes:
         out += [f"**{_esc(t['notes'])}**", ""] + _md_blocks(audit.notes)
-    if show_verdict:
+    if show_verdict and not empty:
         out += [verdict(valid, lang), ""]
-    if not shown:
+    if empty:
+        out += ["⚠️ " + nothing_read_text(ctx, lang), ""]
+    elif not shown:
         out += [t["none"], ""]
     else:
         first = _fix_first(shown)
@@ -605,7 +633,11 @@ def as_json(ctx, findings, lang="pt", audit=None):
             status, comment = rv.get(f)
             item["review"] = {"status": status or None, "comment": audit.mask.lines(comment)}
         items.append(item)
-    doc = {"tool": "stingward", "version": __version__, "grade": grade(counted(findings, rv)), "sources": ctx.sources, "findings": items}
+    empty = nothing_read(ctx, findings)
+    doc = {"tool": "stingward", "version": __version__, "grade": None if empty else grade(counted(findings, rv))}
+    if empty:
+        doc["warning"] = "nothing_read"  # nenhum arquivo lido: não há nota
+    doc.update(sources=ctx.sources, findings=items)
     if rv is not None:
         doc["review"] = {"reviewer": audit.reviewer or None, "counts": {k or "unreviewed": v for k, v in counts(findings, rv).items()}}
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"

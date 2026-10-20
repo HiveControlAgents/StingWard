@@ -425,7 +425,7 @@ class Content(unittest.TestCase):
         self.assertIn('class="f-row long"', out)
 
     def test_sources_and_warnings(self):
-        on = ctx_for(self.root, packages=3, osv=True, kev="2026.10.16", epss=True, nvd=False)
+        on = ctx_for(self.root, files=["package-lock.json"], packages=3, osv=True, kev="2026.10.16", epss=True, nvd=False)
         out = report_html.render(on, [], "en")
         self.assertIn("3 packages found", out)
         self.assertIn("consulted, catalog 2026.10.16", out)
@@ -720,6 +720,65 @@ class Priority(unittest.TestCase):
         first = page.split('class="first"', 1)[1].split("</ol>", 1)[0]
         self.assertEqual(re.findall(r'<p class="first-where"><span>[^<]*</span><code>([^<]+)</code>', first),
                          ["package-lock.json", "config.py:9", ".claude/settings.json:3"])
+
+
+class NothingRead(unittest.TestCase):
+    """Nenhum arquivo lido (pasta vazia, caminho errado, checkout esquecido no CI): o relatório não pode parecer um A limpo."""
+    EN = "No file was read (0 files), so there is nothing to grade."
+    PT = "Nenhum arquivo foi lido (0 arquivos), então não há o que avaliar e não há nota."
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="stingward-empty-")
+        self.addCleanup(shutil.rmtree, self.root, True)
+
+    def test_text_and_markdown_warn_and_give_no_badge(self):
+        for mode in ("project", "skill"):
+            ctx = ctx_for(self.root, offline=True, mode=mode)
+            for lang, warning in (("en", self.EN), ("pt", self.PT)):
+                text = report.text(ctx, [], lang, show_verdict=mode == "skill")
+                md = report.markdown(ctx, [], lang, show_verdict=mode == "skill")
+                for out in (text, md):
+                    self.assertIn(warning, out, (mode, lang))
+                    self.assertNotIn("img.shields.io", out, (mode, lang))
+                    self.assertNotIn("🟢", out, (mode, lang))
+                    self.assertNotRegex(out, r"(?:Grade|Nota)\W+A\b", (mode, lang))
+                self.assertIn({"en": "Summary: 0 files read · no grade", "pt": "Resumo: 0 arquivos lidos · sem nota"}[lang], text)
+
+    def test_agents_mode_says_no_configuration_was_found(self):
+        ctx = ctx_for(self.root, offline=True, mode="agents")
+        self.assertIn("No agent configuration was found on this machine (0 files read), so there is nothing to grade.",
+                      report.text(ctx, [], "en"))
+
+    def test_json_has_no_grade_and_says_why(self):
+        doc = json.loads(report.as_json(ctx_for(self.root, offline=True), [], "en"))
+        self.assertEqual((doc["grade"], doc["warning"]), (None, "nothing_read"))
+
+    def test_html_has_no_green_verdict(self):
+        for lang, warning in (("en", self.EN), ("pt", self.PT)):
+            for mode in ("project", "skill", "agents"):
+                page = report_html.render(ctx_for(self.root, offline=True, mode=mode), [], lang)
+                self.assertNotIn('class="grade grade-A"', page, (lang, mode))
+                self.assertNotIn('class="grade-A on"', page, (lang, mode))  # a escala não marca nenhuma nota
+                self.assertEqual(page.count('<div class="grade grade-none"'), 2)
+                self.assertIn('<span class="grade-v">–</span>', page)
+                self.assertNotIn(report_html.H[lang]["verdict"]["project"]["ok"], page)
+                self.assertNotIn(report.T[lang]["verdict_ok"].split(" ", 1)[1], page)
+                self.assertNotIn(report_html.H[lang]["clean"], page)
+                if mode != "agents":
+                    self.assertEqual(page.count(warning), 2, (lang, mode))  # na capa e no resumo
+
+    def test_a_folder_that_was_read_still_gets_its_grade(self):
+        ctx = ctx_for(self.root, offline=True, files=["a.py"])
+        self.assertIn("README badge", report.text(ctx, [], "en"))
+        self.assertEqual(json.loads(report.as_json(ctx, [], "en"))["grade"], "A")
+        self.assertNotIn("warning", json.loads(report.as_json(ctx, [], "en")))
+        self.assertIn('<span class="grade-v">A</span>', report_html.render(ctx, [], "en"))
+
+    def test_the_command_line_on_an_empty_folder_and_an_empty_skill(self):
+        for argv in ([self.root], ["skill", self.root]):
+            code, out = run(argv + ["--offline", "--lang", "en"])
+            self.assertIn(self.EN, out, argv)
+            self.assertNotIn("README badge", out, argv)
 
 
 class AreaOrder(unittest.TestCase):

@@ -532,8 +532,10 @@ def _status_chip(status, t):
 
 
 def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, audit, findings):
-    g = report.grade(valid)
-    level, verdict = _verdict(valid, ctx.mode, lang, t)
+    empty = report.nothing_read(ctx, findings)  # nada lido: sem nota e sem veredito verde
+    g = "–" if empty else report.grade(valid)
+    level, verdict = ("none", report.nothing_read_text(ctx, lang)) if empty else _verdict(valid, ctx.mode, lang, t)
+    label = report.T[lang]["no_grade"] if empty else f'{t["grade"]} {g}'
     rows = []
     if audit is not None and audit.client:
         rows.append((t["client"], f"<strong>{_h(audit.client)}</strong>"))
@@ -564,7 +566,7 @@ def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, 
 <p class="eyebrow">{_html.escape(t["kind"].get(ctx.mode, t["kind"]["project"]))}</p>
 <h1 class="title">{_h(name)}</h1>
 <div class="verdict">
-<div class="grade grade-{g}" role="img" aria-label="{_html.escape(t["grade"])} {g}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
+<div class="grade grade-{"none" if empty else g}" role="img" aria-label="{_html.escape(label)}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
 <p class="verdict-text verdict-{level}">{_html.escape(verdict)}</p>
 </div>
 {warn}
@@ -581,8 +583,9 @@ def _notes_html(audit, t, today, lang):
     return f'<div class="analyst"><h3 class="analyst-h">{_html.escape(t["notes_h"])}</h3><div class="md">{_md_html(audit.notes)}</div>{sign}</div>'
 
 
-def _summary(valid, shown, numbers, lang, t, audit, findings, today):
-    g = report.grade(valid)
+def _summary(valid, shown, numbers, lang, t, audit, findings, today, nothing=""):
+    """nothing: o aviso de que nenhum arquivo foi lido, quando for o caso; então não há nota."""
+    g = "–" if nothing else report.grade(valid)
     reviewed = audit is not None and audit.review is not None
     scale = "".join(f'<li class="grade-{k}{" on" if k == g else ""}"><span class="scale-g">{k}</span>'
                     f'<span class="scale-t">{_html.escape(v)}</span></li>' for k, v in t["scale"].items())
@@ -608,13 +611,15 @@ def _summary(valid, shown, numbers, lang, t, audit, findings, today):
     elif valid:
         accepted = any(e.status == "accepted_risk" and SEV_RANK[e.severity] >= SEV_RANK["high"] for e in shown)
         first = f'<h3>{_html.escape(t["first"])}</h3><p class="calm">{_html.escape(t["first_none_accepted" if accepted else "first_none"])}</p>'
+    elif nothing:
+        first = f'<p class="warn">{_html.escape(nothing)}</p>'
     else:
         first = f'<p class="calm">{_html.escape(t["clean_reviewed" if reviewed and findings else "clean"])}</p>'
     return f"""<section id="summary">
 <h2><span class="sec-n">1</span>{_html.escape(t["s_summary"])}</h2>
 {_notes_html(audit, t, today, lang)}
 <div class="grade-box">
-<div class="grade grade-{g}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
+<div class="grade grade-{"none" if nothing else g}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
 <div><h3 class="grade-h">{_html.escape(t["grade_means"])}</h3><p>{_html.escape(intro)}</p></div>
 </div>
 <ol class="scale">{scale}</ol>
@@ -869,7 +874,8 @@ def render(ctx, findings, lang="pt", target=None, checks=None, today=None, audit
         toc.append(("appendix", "A", t["s_appendix"]))
     parts = [
         _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc, audit, findings),
-        _summary(valid, shown, numbers, lang, t, audit, findings, today),
+        _summary(valid, shown, numbers, lang, t, audit, findings, today,
+                 report.nothing_read_text(ctx, lang) if report.nothing_read(ctx, findings) else ""),
         _plan(shown, numbers, t),
         _findings(ctx, shown, numbers, t, audit),
         _scope(ctx, lang, t, checks, audit, findings),
@@ -940,7 +946,7 @@ code{font-family:var(--mono);font-size:.88em;unicode-bidi:isolate;overflow-wrap:
 border-radius:16px;background:#fff;color:var(--g)}
 .grade-k{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
 .grade-v{font-size:64px;font-weight:800;line-height:.95}
-.grade-A{--g:var(--gA)}.grade-B{--g:var(--gB)}.grade-C{--g:var(--gC)}.grade-D{--g:var(--gD)}.grade-F{--g:var(--gF)}
+.grade-A{--g:var(--gA)}.grade-B{--g:var(--gB)}.grade-C{--g:var(--gC)}.grade-D{--g:var(--gD)}.grade-F{--g:var(--gF)}.grade-none{--g:var(--faint)}
 .meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 32px;margin-top:36px}
 .meta div{padding:10px 0;border-bottom:1px solid var(--line)}
 .meta dt{font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
