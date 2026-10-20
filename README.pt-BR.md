@@ -161,7 +161,7 @@ STINGWARD_ONLINE=1 python -m unittest discover -s tests -t .    # consulta tamb�
 
 **Qual a diferença para o `npm audit`, o Dependabot ou um scanner de segredos?** Cada um cobre uma parte. O Stingward junta dependências, segredos e os erros típicos de apps feitos com IA, agentes, skills e servidores MCP num relatório só, escrito para quem construiu o projeto, e audita uma skill antes de você instalar.
 
-**Por que o `npx stingward` precisa de Python?** O motor é um único pacote em Python puro, sem dependências; o pacote do npm só dá a partida, para quem usa JavaScript rodar sem `pip`.
+**Por que o `npx stingward` precisa de Python?** O motor é um único pacote em Python puro, sem dependências; o pacote do npm só dá a partida, para quem usa JavaScript rodar sem `pip`. No Windows, o `npx` não acha os atalhos `.bat` do pyenv-win: instale o Python pelo python.org ou use `pip install stingward`.
 
 **Dá para verificar um repositório privado ou uma skill no meu disco?** Dá. Aponte para uma pasta, ou para `dono/repo` com as suas credenciais do git de sempre.
 
