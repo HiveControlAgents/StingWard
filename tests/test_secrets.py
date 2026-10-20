@@ -299,6 +299,25 @@ class TokenFormats(Case):
             with self.subTest(line=line):
                 self.assertEqual(brief(scan_files({"src/client.py": f'client = Client("{line}")\n'}), "SEC001"), [])
 
+    def test_openai_and_npm_prefixes_do_not_supply_a_letter_case(self):
+        # sk-, sk-proj- and npm_ are lower case: after them a real key still has both cases and a digit (OpenAI keys
+        # carry "T3BlbkFJ"; npm tokens are 36 random letters and digits). Upper case and digits only is a made-up value.
+        silent = ["npm_" + "ABCDEFGHIJ1234567890KLMNOPQRSTUVWXYZ", "npm_" + R36.upper(), "npm_" + R36.lower(),
+                  "sk-" + "ABCDEFGHIJKLMNOP1234QRST", "sk-" + "proj-" + R36.upper() + "_ABC-123",
+                  "sk-" + "svcacct-" + R36.upper(), "sk-" + "admin-" + R36.upper()]
+        for value in silent:
+            with self.subTest(value=value[:12]):
+                self.assertEqual(brief(scan_files({"src/client.py": f'client = Client("{value}")\n'}), "SEC001"), [])
+        found = [("npm token", "npm_" + R36), ("npm token", "npm_" + R36[::-1]),
+                 ("OpenAI API key", "sk-" + R36.upper()[:20] + "T3Blbk" + "FJ" + R36.upper()[:20]),
+                 ("OpenAI API key", "sk-" + "proj-" + R36 + "T3Blbk" + "FJ" + R36[::-1]),
+                 ("OpenAI API key", "sk-" + "svcacct-" + R36 + "_x-" + R36),
+                 ("OpenAI API key", "sk-" + "admin-" + R36[::-1])]
+        for kind, value in found:
+            with self.subTest(value=value[:12]):
+                f = scan_files({"src/client.py": f'client = Client("{value}")\n'})
+                self.assertEqual([(x.rule, x.params["kind_en"], x.severity) for x in f], [("SEC001", kind, "critical")])
+
     def test_new_formats_are_masked_and_linear(self):
         for _, _, value in self.NEW_FORMATS:
             self.assertNotIn(value[8:20], secrets.mask(f"Bash(curl -H 'Authorization: {value}' https://api.acme.dev)"))
