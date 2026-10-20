@@ -310,6 +310,20 @@ class CodeRules(Checks):
                "el.innerHTML = `<img src=\"${location.origin}/logo.png\">`\n")
         self.silent({"app/page.tsx": page, "public/app.js": dom})
 
+    def test_cod005_markup_words_in_the_html_do_not_hide_input(self):
+        """icon, svg, style e css no código dizem "isto monta um ícone ou um estilo"; no HTML fixo (class="icon",
+        style="...") não dizem nada sobre o valor que entra."""
+        dom = ("const box = document.getElementById('box')\n"
+               "box.innerHTML = `<span class=\"icon\">${location.hash.slice(1)}</span>`\n"
+               "box.innerHTML = '<div style=\"color:red\">' + location.search + '</div>'\n"
+               "box.innerHTML = `<svg viewBox=\"0 0 24 24\">${iconPath}</svg>`\n"
+               "box.innerHTML = renderIcon(location.hash)\n"
+               "box.innerHTML = DOMPurify.sanitize(`<b class=\"x\">${location.hash}</b>`)\n"
+               "box.innerHTML = `<i class=\"icon\"></i>${data.choices[0].message.content}`\n")
+        self.check({"public/app.js": dom}, [("COD005", "public/app.js", 2, "medium"),
+                                            ("COD005", "public/app.js", 3, "medium"),
+                                            ("APP009", "public/app.js", 7, "medium")])
+
     def test_cod005_python_html_response(self):
         src = FLASK + ("@app.get('/hi')\n"
                        "def hi():\n"
