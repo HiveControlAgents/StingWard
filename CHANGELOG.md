@@ -37,6 +37,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - SEC001 reports a private key only when its body is there (on the same line, as in a service account JSON, or on the next lines). Code that only writes the header, such as `key.replace('-----BEGIN PRIVATE KEY-----', '')`, `startsWith(...)`, a `placeholder="-----BEGIN PRIVATE KEY-----"` or an example with `\n...\n`, was a critical finding.
 - SEC001 now reads key files that were never scanned: `id_rsa` (and the `dsa`, `ecdsa` and `ed25519` ones), `*.pem`, `*.key` and Apple's `*.p8`. A committed private key in one of them was missed; a certificate, which only holds the public part, is not reported.
 - SEC001 no longer reports a "Meta/Facebook token" (high) inside base64 data such as an embedded image, font or WebAssembly module, where `/EAA...` and `+EAA...` show up all the time.
+- Real keys are no longer skipped as placeholders because their random part contains `seu` or `sua` (Portuguese for "your"): about 1 in 100 OpenAI project keys and 1 in 150 Anthropic keys were missed. Those words now count only at the start of a word, as in `SUA_CHAVE` or `sk-sua-chave`.
 
 ## [0.1.5] - 2026-10-20
 
