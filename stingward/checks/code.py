@@ -269,8 +269,9 @@ _VALUE_POS = re.compile(r"""(?:'|%|(?:[=<>]|\blike|\bilike|\bin\s*\(|\bvalues\s*
 _IN_HOST = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*:)?//(?:[^/?#\\\s]*[.:@])?\Z")
 _SQL_DDL = re.compile(r"\s*\(?\s*(?:pragma|create|drop|alter|truncate)\b", re.I)
 # Nome de variável que costuma guardar placeholders (",".join("?" * n)) ou um pedaço de SQL escrito no código (tabela,
-# coluna, ORDER BY, WHERE montado). O pedaço só conta fora da posição de dado: '{query}' é o texto da busca.
-_PLACEHOLDER = re.compile(r"(?i)placeholder|marks|^ph$|^qs$|params?_?(?:str|sql|list)|bind")
+# coluna, ORDER BY, WHERE montado). O pedaço só conta fora da posição de dado: '{query}' é o texto da busca. marks é a
+# palavra inteira (marks, qmarks, question_marks, questionMarks): remarks e bookmarks são dado.
+_PLACEHOLDER = re.compile(r"(?i:placeholder|^q?marks$|_marks$|^ph$|^qs$|params?_?(?:str|sql|list)|bind)|[a-z0-9]Marks$")
 _PY_SQL_PART = re.compile(r"(?i)^(?:table|tables|table_name|tablename|schema|columns?|cols|fields|col|column_name|order|"
                           r"direction|sort_dir|where|where_clause|conditions?|clause|set_clause|joins?|filters?_sql|sql|query|"
                           r"select|limit|offset|n|i|idx|count)$")
