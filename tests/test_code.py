@@ -113,6 +113,41 @@ class CodeRules(Checks):
                "  return Response.json({})\n}\n")
         self.silent({"app/api/users/route.ts": src})
 
+    def test_cod001_values_named_like_sql_parts(self):
+        """query, count, item.name: entre aspas ou depois de = é valor, não nome de tabela nem pedaço de SQL. Os nomes
+        que parecem pedaço de SQL só ficam de fora fora dessas posições (ORDER BY {order}) ou com origem desconhecida."""
+        py = FLASK + ("import sqlite3\ncur = sqlite3.connect('x').cursor()\n"
+                      "@app.get('/s')\ndef s():\n"
+                      "    query = request.args.get('query', '')\n"
+                      "    cur.execute(f\"SELECT * FROM docs WHERE title LIKE '%{query}%'\")\n"
+                      "    count = request.args['count']\n"
+                      "    cur.execute(f'SELECT * FROM docs WHERE n = {count}')\n"
+                      "    order = request.args.get('order', 'id')\n"
+                      "    cur.execute(f'SELECT * FROM docs ORDER BY {order}')\n"
+                      "    ids = request.json['ids']\n"
+                      "    qmarks = ','.join('?' for _ in ids)\n"
+                      "    cur.execute(f'SELECT * FROM docs WHERE id IN ({qmarks})', ids)\n"
+                      "def lib(conn, query):\n"
+                      "    return conn.execute(f\"SELECT * FROM docs WHERE title = '{query}'\")\n")
+        api = FASTAPI + ("import sqlite3\nfrom pydantic import BaseModel\ncur = sqlite3.connect('x').cursor()\n"
+                         "class Item(BaseModel):\n    name: str\n    model: str\n"
+                         "@app.post('/i')\ndef i(item: Item):\n"
+                         "    cur.execute(f\"SELECT * FROM t WHERE name = '{item.name}'\")\n"
+                         "    cur.execute(f\"SELECT * FROM {item.model}\")\n")
+        mcp = ("from mcp.server.fastmcp import FastMCP\nimport sqlite3\nmcp = FastMCP('x')\nconn = sqlite3.connect('d')\n"
+               "@mcp.tool()\ndef search(query: str) -> list:\n"
+               "    return conn.execute(f\"SELECT * FROM docs WHERE body LIKE '%{query}%'\").fetchall()\n")
+        js = EXPRESS + ("const db = require('./db')\n"
+                        "app.get('/s', async (req, res) => {\n"
+                        "  const query = req.query.q\n"
+                        "  const rows = await db.query(`SELECT * FROM docs WHERE title LIKE '%${query}%'`)\n"
+                        "  const order = req.query.sort\n"
+                        "  const r2 = await db.query(`SELECT * FROM docs ORDER BY ${order}`)\n"
+                        "  res.json(rows)\n})\n")
+        self.check({"app.py": py, "main.py": api, "server.py": mcp, "server.js": js},
+                   [("COD001", "app.py", 8, "high"), ("COD001", "app.py", 10, "high"), ("COD001", "main.py", 11, "high"),
+                    ("APP014", "server.py", 7, "high"), ("COD001", "server.js", 6, "high")])
+
     # ------------------------------------------------------------------ COD002 comando
 
     def test_cod002_python_shell_with_request_input(self):

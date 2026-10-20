@@ -29,6 +29,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ### Fixed
 - The code check reads JavaScript and TypeScript files longer than about 2000 lines again. Everything after line 2000 was counted as one long line, so ordinary files of that size (a large MCP server, a big page component) were taken for minified bundles and skipped without a word; only real long lines mark a bundle now.
+- COD001 and APP014 now report SQL built with request data or a tool argument held in a variable named like a piece of SQL, such as `query`, `count` or `limit`, or in a field such as `item.name`, when it sits where a value goes (`'%{query}%'`, `= {count}`). Those names were taken for table names or SQL written in the code, so the most common search query in AI apps and MCP tools was never reported. In other places (`ORDER BY {order}`) and for arguments of unknown origin nothing changes.
 - The code check no longer hangs on a text built from other built texts (`a2 += a1` many times, then `a3 += a2`): a 2 KB file could stop the audit for hours. Each text is now put back together from at most 400 pieces, and the finding still comes out.
 - The code check no longer takes minutes on a JavaScript line with a long run of spaces before `Math.random()`: finding the name that receives the value was cubic in the length of the line.
 - The code check no longer slows to seconds or minutes on a Python `"..." % x` text with long runs of zeros after a `%` or thousands of `%(` without `)`.
