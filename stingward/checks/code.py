@@ -1229,7 +1229,8 @@ class _Py:
         if not shell and isinstance(cmd, (ast.List, ast.Tuple)) and _interp_c(cmd.elts, self._dot):
             # [sys.executable, "-c", texto], ["node", "-e", texto]: o texto é código, como em exec().
             if not _const_str(cmd.elts[2]):
-                self.report_code(cmd.elts[2], "code", _interp_name(cmd.elts, self._dot), env, ln)
+                self.report_code(cmd.elts[2], "code", _interp_name(cmd.elts, self._dot), env, ln,
+                                 python=cmd.elts[1].value == "-c")
             return
         if not shell and isinstance(cmd, (ast.List, ast.Tuple)) and _shell_c(cmd.elts):
             # ["sh", "-c", texto]: o texto vai para o shell do mesmo jeito que com shell=True.
@@ -1267,10 +1268,13 @@ class _Py:
         code = _arg(call, 0, "source")
         if code is None or _const_str(code):
             return
-        self.report_code(code, kind, sink, env, ln)
+        self.report_code(code, kind, sink, env, ln, python=kind == "code")
 
-    def report_code(self, code, kind, sink, env, ln):
-        o = self.origins(code, env)
+    def report_code(self, code, kind, sink, env, ln, python=False):
+        """python: o texto é código Python, onde {v!r} e repr(v) viram um literal (um template não respeita isso)."""
+        o = set()
+        for n in self.code_parts(code) if python else [code]:
+            o |= self.origins(n, env)
         built = _builds_string(code) or (isinstance(code, ast.Name) and code.id in self.strs)
         if LLM in o:
             self.out.add("APP009", "critical", ln, _llm_params(kind))
@@ -1280,6 +1284,22 @@ class _Py:
             self.out.add("COD003", "critical", ln, dict(_src(REQ), sink=sink))
         elif PARAM in o and kind == "code" and self.server and built:
             self.out.add("COD003", "medium", ln, dict(_src(PARAM), sink=sink))
+
+    def code_parts(self, code):
+        """As partes de um código Python montado que podem mudar o código: {v!r} e repr(v) escrevem o valor como literal."""
+        out, todo, seen = [], [code], 0
+        while todo and seen < _PIECES:
+            n = todo.pop()
+            seen += 1
+            if isinstance(n, ast.JoinedStr):
+                todo += [v.value for v in n.values if isinstance(v, ast.FormattedValue) and v.conversion != ord("r")]
+            elif isinstance(n, ast.BinOp) and isinstance(n.op, ast.Add):
+                todo += [n.left, n.right]
+            elif isinstance(n, ast.Name) and n.id in self.strs and seen == 1:
+                todo += self.strs[n.id]
+            elif not (isinstance(n, ast.Call) and self._dot(n.func) == "repr" or _const_str(n)):
+                out.append(n)
+        return out + todo
 
     def whole_query(self, q, env):
         """A consulta inteira vem de fora (texto do modelo ou da requisição), não de um construtor como select(...)."""
