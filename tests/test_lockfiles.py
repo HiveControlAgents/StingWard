@@ -1254,6 +1254,17 @@ class HostileRanges(unittest.TestCase):
         self.assertEqual(lockfiles.python_floor("foo>=1.0+local.7")[3], "1.0+local.7")
         self.assertEqual(lockfiles.npm_floor(">=1.0.0-20210101-abc"), ("1.0.0-20210101-abc", None, False))
 
+    def test_long_whitespace_in_requirements_is_linear(self):
+        # Cutting the pip options (--hash...) off a line was quadratic in a long run of spaces.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "requirements.txt").write_text("foo>=1.0" + " " * 60000 + "x\nbar>=2.0   --hash=sha256:abc\n", "utf-8")
+        start = time.perf_counter()
+        got = lockfiles.ranges(root, "requirements.txt")
+        self.assertLess(time.perf_counter() - start, 1.0)
+        self.assertEqual([(r.name, r.req) for r in got], [("bar", "bar>=2.0")])
+
 
 class PyprojectRequirements(unittest.TestCase):
     def test_project_dependencies_and_optional_dependencies(self):

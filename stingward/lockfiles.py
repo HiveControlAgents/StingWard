@@ -482,7 +482,8 @@ def _requirement_lines(text):
         req, buf = (buf + line).strip(), ""
         if not req or req.startswith("-"):
             continue
-        req = re.split(r"\s+--?[A-Za-z]", req, maxsplit=1)[0].strip()
+        # Um espaço só antes da opção: "\s+--?" voltava a cada espaço de uma sequência longa (quadrático).
+        req = re.split(r"\s--?[A-Za-z]", req, maxsplit=1)[0].strip()
         if not _PIN.match(req):
             out.append((req, start))
     return out
