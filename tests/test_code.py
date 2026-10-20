@@ -402,6 +402,14 @@ class CodeRules(Checks):
 
     # ------------------------------------------------------------------ APP009 saída do modelo
 
+    def test_app009_portuguese_titles_read_right(self):
+        """O lugar vem com a preposição: "chega à página", nunca "chega a a página"."""
+        titles = {kind: texts("APP009", "pt", code._llm_params(kind))[0] for kind in code._LLM_SINK}
+        self.assertEqual(titles["html"], "Texto escrito pelo modelo chega à página como HTML")
+        self.assertEqual(titles["shell"], "Texto escrito pelo modelo chega a um comando de shell")
+        for kind, title in titles.items():
+            self.assertNotRegex(title, r"\ba a\b|chega (?!à |a )", kind)
+
     def test_app009_python_model_output_runs(self):
         src = OPENAI_PY + ("import subprocess\n"
                            "def fix():\n"

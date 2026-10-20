@@ -1,4 +1,6 @@
 {
+  "links": {"audit_checkout": "", "team_waitlist": ""},
+
   "pt": {
     "html_lang": "pt-BR",
     "og_locale": "pt_BR",
@@ -33,13 +35,15 @@
       {"name": "A skill do Stingward", "note": "A que o plugin instala"}
     ],
     "grade_word": "Nota",
+    "report_more": "O mesmo resultado também sai como relatório em HTML, com resumo, plano de correção e o trecho de código de cada problema. Ele imprime direto em PDF.",
+    "report_sample": "Ver um relatório de exemplo",
 
     "how_label": "Etapas da auditoria",
     "stages": [
       {"name": "Arquivos", "clause": "Primeiro, lista os arquivos", "detail": "Pula node_modules, dist e outras pastas geradas. Numa skill de terceiros ele lê também o build, porque é isso que roda."},
-      {"name": "Bases públicas", "clause": "Depois, consulta as bases públicas", "detail": "Só o nome e a versão de cada pacote vão para o OSV.dev, o KEV da CISA, o EPSS e o NVD. O código fica na sua máquina."},
-      {"name": "Verificações", "clause": "Então roda as {rules} verificações", "detail": "Segredos, erros de apps feitos com IA, configuração de agentes e conteúdo de skills. Teste e documentação pesam menos."},
-      {"name": "Nota", "clause": "Por fim, dá a nota", "detail": "Os achados vêm do pior para o melhor, com onde, por quê e como corrigir, e um selo para o seu README."}
+      {"name": "Bases públicas", "clause": "Depois, consulta as bases públicas", "detail": "Só o nome e a versão de cada pacote vão para o OSV.dev, o KEV da CISA, o EPSS e o NVD. Sem lockfile, vai também a menor versão que a faixa aceita. O código fica na sua máquina."},
+      {"name": "Verificações", "clause": "Então roda as {rules} verificações", "detail": "Segredos, falhas no código como injeção e SSRF, erros de apps feitos com IA, configuração de agentes e conteúdo de skills. Teste e documentação pesam menos."},
+      {"name": "Nota", "clause": "Por fim, dá a nota", "detail": "Os achados vêm do pior para o melhor, com onde, por quê e como corrigir, um selo para o seu README e um relatório em HTML que imprime em PDF."}
     ],
     "files_read": "{n} arquivos lidos em ./my-saas",
     "sent_to": "Enviado para api.osv.dev",
@@ -53,6 +57,7 @@
     ],
 
     "finds_h2": "O que ele pega",
+    "finds_p": "Segredos, pacotes com falha, brechas no código e os erros que a IA comete quando monta um app, uma skill ou um agente.",
     "finds": {
       "mask": ["Valor escondido", "A chave nunca aparece no relatório."],
       "kev": ["Falha explorada agora", "CVE do catálogo KEV da CISA vira crítica."],
@@ -61,12 +66,19 @@
       "rls": ["Supabase aberto", "Tabela sem RLS ou política com using (true)."],
       "curl": ["Baixa e executa", "Hook ou skill que roda um script tirado da internet."],
       "bypass": ["Agente sem freio", "Permissão total, Bash(*) e MCP sem versão fixa."],
-      "ssh": ["Roubo de chaves", "Lê ~/.ssh ou ~/.aws e chama a internet."]
+      "ssh": ["Roubo de chaves", "Lê ~/.ssh ou ~/.aws e chama a internet."],
+      "sqli": ["Injeção de SQL", "Dado da requisição no meio da consulta."],
+      "ssrf": ["Busca qualquer URL", "SSRF: o servidor chama endereços internos da nuvem."],
+      "shell": ["Resposta da IA no shell", "O que o modelo escreve vira comando no seu servidor."],
+      "xss": ["HTML sem limpar", "XSS: a resposta da IA vira script na página."],
+      "path": ["Arquivo fora da pasta", "Um ../../.env na URL lê qualquer arquivo do servidor."],
+      "limit": ["Rota de IA sem limite", "Sem login e sem limite de uso, a fatura dispara."],
+      "floor": ["Versão mínima com falha", "Sem lockfile, a menor versão que a faixa aceita também é conferida."]
     },
 
     "where_h2": "Onde ele roda",
     "where": [
-      {"name": "No terminal", "cmd": "pipx install stingward", "alt": "Terminal rodando stingward ./my-saas: chave da OpenAI exposta, next 14.1.0 com falhas conhecidas, Supabase sem RLS. Nota F."},
+      {"name": "No terminal", "cmd": "pipx install stingward", "alt": "Terminal rodando stingward ./my-saas: chave da OpenAI exposta, resposta da IA executada no shell, next 14.1.0 com falhas conhecidas, injeção de SQL, SSRF e Supabase sem RLS. Nota F."},
       {"name": "Antes de instalar uma skill", "cmd": "stingward skill dono/repo", "alt": "Terminal rodando stingward skill ./pdf-helper: instrução invisível decodificada e roubo de credenciais. Nota F."},
       {"name": "No Claude Code", "cmd": "/plugin install stingward@stingward", "ask1": "meu projeto está seguro?", "ask2": "posso instalar github.com/x/y?"},
       {"name": "Em cada pull request", "cmd": "uses: HiveControlAgents/StingWard@v0", "comment_title": "Auditoria de segurança"}
@@ -91,21 +103,46 @@
       "Linha de comando para Linux, macOS e Windows",
       "Plugin e skill do Claude Code",
       "GitHub Action com comentário no PR e SARIF",
-      "Todas as {rules} regras, sem limite de uso"
+      "Todas as {rules} regras, sem limite de uso",
+      "Relatório em HTML, pronto para imprimir em PDF"
     ],
     "price_button": "Instalar",
-    "soon_tab": "Em breve",
-    "soon_h3": "Planos para times e empresas",
-    "soon_p": "O sistema de vendas entra em breve. Até lá, tudo o que está nesta página é gratuito.",
+
+    "audit_h2": "Auditoria de segurança do seu app feito com IA",
+    "audit_p": "O Stingward roda no seu projeto e uma pessoa revisa cada achado antes da entrega: confirma o que é real, tira o alarme falso e explica a correção em palavras simples.",
+    "audit_currency": "US$",
+    "audit_price": "149",
+    "audit_per": "entrega em 48 h",
+    "audit_buy": "Comprar a auditoria",
+    "audit_gets_h": "O que você recebe",
+    "audit_gets": [
+      "Cada achado revisado por uma pessoa, não só pela ferramenta",
+      "Relatório em PDF com nota de A a F e um resumo para quem não é da área",
+      "Plano de correção em ordem, com o esforço de cada item",
+      "Para cada problema: onde está, o trecho de código, por que importa e como corrigir"
+    ],
+    "audit_not_h": "O que não cobre",
+    "audit_not": [
+      "Teste de invasão: ninguém tenta entrar no app rodando",
+      "Servidor, nuvem, login e regras de negócio que não estão no código",
+      "A correção em si: o relatório diz como, e você aplica",
+      "Garantia de que o app é seguro: a revisão vale para os erros conhecidos na data"
+    ],
+    "soon": "Em breve",
+    "soon_tab": "Lista de espera",
+    "soon_h3": "Plano Team",
+    "soon_p": "Um plano para times e empresas está a caminho. Entre na lista de espera para saber quando ele abrir. Até lá, a ferramenta inteira é gratuita.",
+    "soon_button": "Entrar na lista de espera",
     "soon_link": "Acompanhe os lançamentos no GitHub",
 
     "faq_h2": "Perguntas",
     "faq": [
       ["Preciso entender de segurança para usar?", "Não. Cada problema vem explicado em linguagem simples: o que é, onde está, por que importa e o que fazer. A nota de A a F resume tudo."],
-      ["Meu código sai da minha máquina?", "Não. Só o nome e a versão dos pacotes saem, para api.osv.dev, www.cisa.gov, api.first.org e services.nvd.nist.gov. As respostas ficam em cache por algumas horas."],
+      ["Meu código sai da minha máquina?", "Com a ferramenta, não. Só o nome e a versão dos pacotes saem, para api.osv.dev, www.cisa.gov, api.first.org e services.nvd.nist.gov, e as respostas ficam em cache por algumas horas. Na auditoria paga, a pessoa que revisa precisa ler o código."],
       ["Relatório limpo quer dizer que está seguro?", "Não. Quer dizer que os erros mais comuns não estão lá. O Stingward é uma primeira linha rápida, não um teste de invasão."],
+      ["O que a auditoria paga tem a mais?", "A ferramenta é a mesma e continua gratuita. Na auditoria, uma pessoa revisa cada achado, tira o alarme falso e entrega em 48 horas o relatório em PDF com o plano de correção."],
       ["Funciona sem internet?", "Funciona com --offline. Aí as dependências não são verificadas, e o resto da auditoria roda igual."],
-      ["Qual a diferença para o npm audit ou o Dependabot?", "Cada um cobre uma parte. O Stingward junta dependências, segredos e os erros típicos de apps feitos com IA, agentes, skills e servidores MCP num relatório só, e audita uma skill antes de você instalar."],
+      ["Qual a diferença para o npm audit ou o Dependabot?", "Cada um cobre uma parte. O Stingward junta dependências, segredos, falhas no código e os erros típicos de apps feitos com IA, agentes, skills e servidores MCP num relatório só, e audita uma skill antes de você instalar."],
       ["Por que o npx stingward precisa de Python?", "O motor é um pacote em Python puro, sem dependências. O pacote do npm só dá a partida, para quem usa JavaScript rodar sem pip."],
       ["E se ele apontar algo que não é problema?", "Coloque a regra e o caminho no .stingwardignore, ou escreva stingward:ignore na linha. Se a regra estiver errada, avise no GitHub com um exemplo mínimo."],
       ["Ele verifica projetos de outras pessoas?", "Não. O aviso vai só para quem roda a ferramenta, sobre o código que essa pessoa escolheu verificar. Ele não abre issues em repositórios de ninguém."]
@@ -118,14 +155,21 @@
     "footer_cols": [
       ["Projeto", [["GitHub", "{repo}"], ["Lançamentos", "{repo}/releases"], ["Changelog", "{repo}/blob/main/CHANGELOG.md"], ["Licença Apache 2.0", "{repo}/blob/main/LICENSE"]]],
       ["Instalar", [["PyPI", "https://pypi.org/project/stingward/"], ["npm", "https://www.npmjs.com/package/stingward"], ["GitHub Action", "{repo}/blob/main/README.pt-BR.md#github-action"], ["Plugin do Claude Code", "{repo}/blob/main/README.pt-BR.md#começo-rápido"]]],
-      ["Documentação", [["As {rules} regras", "{repo}/blob/main/docs/rules.pt-BR.md"], ["Segurança", "{repo}/blob/main/SECURITY.md"], ["Contribuir", "{repo}/blob/main/CONTRIBUTING.pt-BR.md"], ["Relatar alarme falso", "{repo}/issues/new?template=false-positive.yml"]]]
+      ["Documentação", [["Relatório de exemplo", "{sample}"], ["As {rules} regras", "{repo}/blob/main/docs/rules.pt-BR.md"], ["Segurança", "{repo}/blob/main/SECURITY.md"], ["Contribuir", "{repo}/blob/main/CONTRIBUTING.pt-BR.md"], ["Relatar alarme falso", "{repo}/issues/new?template=false-positive.yml"]]]
     ],
     "footer_contact_1": "Achou uma falha no próprio Stingward?",
     "footer_contact_link": "Relate em particular",
     "footer_contact_2": "Escrito em Python puro, sem dependências.",
     "footer_copy": "© 2026 Isaque Moutta. Licença Apache 2.0.",
     "footer_top": "Voltar ao topo",
-    "logo_alt": "Escudo do Stingward"
+    "logo_alt": "Escudo do Stingward",
+
+    "sample_label": "Sobre este exemplo",
+    "sample_title": "Relatório de exemplo.",
+    "sample_text": "Saída real do Stingward {version} para o app de demonstração do repositório, que tem erros de propósito e só chaves falsas. Para salvar em PDF, use Imprimir no navegador.",
+    "sample_home": "Voltar ao site",
+    "sample_audit": "Auditoria com revisão humana: US$ 149",
+    "sample_other": "English"
   },
 
   "en": {
@@ -162,13 +206,15 @@
       {"name": "Stingward's skill", "note": "The one the plugin installs"}
     ],
     "grade_word": "Grade",
+    "report_more": "The same result also comes as an HTML report, with a summary, a remediation plan and the code excerpt for each problem. It prints straight to PDF.",
+    "report_sample": "See a sample report",
 
     "how_label": "Audit stages",
     "stages": [
       {"name": "Files", "clause": "First, it lists the files", "detail": "It skips node_modules, dist and other generated folders. For a third-party skill it also reads the build, because that is what runs."},
-      {"name": "Public databases", "clause": "Then it asks the public databases", "detail": "Only each package's name and version go to OSV.dev, CISA KEV, EPSS and NVD. Your code stays on your machine."},
-      {"name": "Checks", "clause": "Next, it runs {rules} checks", "detail": "Secrets, AI-app mistakes, agent configuration and skill content. Tests and docs count for less."},
-      {"name": "Grade", "clause": "Finally, it grades it", "detail": "Findings come worst first, with where, why and how to fix, plus a badge for your README."}
+      {"name": "Public databases", "clause": "Then it asks the public databases", "detail": "Only each package's name and version go to OSV.dev, CISA KEV, EPSS and NVD. Without a lockfile, so does the lowest version a range allows. Your code stays on your machine."},
+      {"name": "Checks", "clause": "Next, it runs {rules} checks", "detail": "Secrets, code flaws such as injection and SSRF, AI-app mistakes, agent configuration and skill content. Tests and docs count for less."},
+      {"name": "Grade", "clause": "Finally, it grades it", "detail": "Findings come worst first, with where, why and how to fix, a badge for your README and an HTML report that prints to PDF."}
     ],
     "files_read": "{n} files read in ./my-saas",
     "sent_to": "Sent to api.osv.dev",
@@ -182,6 +228,7 @@
     ],
 
     "finds_h2": "What it finds",
+    "finds_p": "Secrets, flawed packages, holes in the code and the mistakes AI makes when it builds an app, a skill or an agent.",
     "finds": {
       "mask": ["Value hidden", "The key never shows up in the report."],
       "kev": ["Exploited right now", "A CVE in the CISA KEV catalog becomes critical."],
@@ -190,12 +237,19 @@
       "rls": ["Open Supabase", "A table without RLS, or a policy with using (true)."],
       "curl": ["Download and run", "A hook or skill that runs a script pulled from the internet."],
       "bypass": ["Agent without brakes", "Full permissions, Bash(*) and unpinned MCP servers."],
-      "ssh": ["Key theft", "Reads ~/.ssh or ~/.aws and calls the internet."]
+      "ssh": ["Key theft", "Reads ~/.ssh or ~/.aws and calls the internet."],
+      "sqli": ["SQL injection", "Request input pasted into the query."],
+      "ssrf": ["Fetches any URL", "SSRF: the server calls internal cloud addresses."],
+      "shell": ["AI answer in a shell", "Whatever the model writes runs as a command on your server."],
+      "xss": ["Unsanitized HTML", "XSS: the AI's answer becomes a script on the page."],
+      "path": ["File outside the folder", "A ../../.env in the URL reads any file on the server."],
+      "limit": ["AI route with no limit", "No login and no rate limit: the bill spikes."],
+      "floor": ["Vulnerable minimum version", "Without a lockfile, the lowest version a range allows is checked too."]
     },
 
     "where_h2": "Where it runs",
     "where": [
-      {"name": "In the terminal", "cmd": "pipx install stingward", "alt": "Terminal running stingward ./my-saas: OpenAI key exposed, next 14.1.0 with known flaws, Supabase without RLS. Grade F."},
+      {"name": "In the terminal", "cmd": "pipx install stingward", "alt": "Terminal running stingward ./my-saas: OpenAI key exposed, AI answer run in a shell, next 14.1.0 with known flaws, SQL injection, SSRF and Supabase without RLS. Grade F."},
       {"name": "Before you install a skill", "cmd": "stingward skill owner/repo", "alt": "Terminal running stingward skill ./pdf-helper: decoded invisible instruction and credential theft. Grade F."},
       {"name": "In Claude Code", "cmd": "/plugin install stingward@stingward", "ask1": "is my project secure?", "ask2": "can I install github.com/x/y?"},
       {"name": "On every pull request", "cmd": "uses: HiveControlAgents/StingWard@v0", "comment_title": "Security audit"}
@@ -220,21 +274,46 @@
       "Command line for Linux, macOS and Windows",
       "Claude Code plugin and skill",
       "GitHub Action with PR comment and SARIF",
-      "All {rules} rules, no usage limit"
+      "All {rules} rules, no usage limit",
+      "HTML report, ready to print to PDF"
     ],
     "price_button": "Install",
-    "soon_tab": "Coming soon",
-    "soon_h3": "Plans for teams and companies",
-    "soon_p": "Sales open soon. Until then, everything on this page is free.",
+
+    "audit_h2": "A security audit of your AI-built app",
+    "audit_p": "Stingward runs on your project and a person reviews every finding before delivery: confirms what is real, removes the false alarms and explains the fix in plain words.",
+    "audit_currency": "US$",
+    "audit_price": "149",
+    "audit_per": "delivered in 48 h",
+    "audit_buy": "Buy the audit",
+    "audit_gets_h": "What you get",
+    "audit_gets": [
+      "Every finding reviewed by a person, not just the tool",
+      "A PDF report with an A to F grade and a summary for non-experts",
+      "A remediation plan in order, with the effort for each item",
+      "For each problem: where it is, the code excerpt, why it matters and how to fix it"
+    ],
+    "audit_not_h": "What it does not cover",
+    "audit_not": [
+      "A penetration test: nobody tries to break into the running app",
+      "Servers, cloud, login and business rules that are not in the code",
+      "The fix itself: the report says how, and you apply it",
+      "A guarantee that the app is secure: the review covers known mistakes as of that date"
+    ],
+    "soon": "Coming soon",
+    "soon_tab": "Waitlist",
+    "soon_h3": "Team plan",
+    "soon_p": "A plan for teams and companies is on its way. Join the waitlist to hear when it opens. Until then, the whole tool is free.",
+    "soon_button": "Join the waitlist",
     "soon_link": "Follow the releases on GitHub",
 
     "faq_h2": "Questions",
     "faq": [
       ["Do I need to know security to use it?", "No. Each problem comes explained in plain language: what it is, where it is, why it matters and what to do. The A to F grade sums it up."],
-      ["Does my code leave my machine?", "No. Only package names and versions leave, to api.osv.dev, www.cisa.gov, api.first.org and services.nvd.nist.gov. Answers are cached for a few hours."],
+      ["Does my code leave my machine?", "Not with the tool. Only package names and versions leave, to api.osv.dev, www.cisa.gov, api.first.org and services.nvd.nist.gov, and answers are cached for a few hours. In the paid audit, the person reviewing it needs to read the code."],
       ["Does a clean report mean I am secure?", "No. It means the most common mistakes are not there. Stingward is a quick first line, not a penetration test."],
+      ["What does the paid audit add?", "The tool is the same and stays free. In the audit, a person reviews every finding, removes the false alarms and delivers the PDF report with the remediation plan in 48 hours."],
       ["Does it work offline?", "Yes, with --offline. Dependencies are not checked then, and the rest of the audit runs the same."],
-      ["How is it different from npm audit or Dependabot?", "Each covers one part. Stingward puts dependencies, secrets and the usual mistakes of AI-built apps, agents, skills and MCP servers in one report, and audits a skill before you install it."],
+      ["How is it different from npm audit or Dependabot?", "Each covers one part. Stingward puts dependencies, secrets, code flaws and the usual mistakes of AI-built apps, agents, skills and MCP servers in one report, and audits a skill before you install it."],
       ["Why does npx stingward need Python?", "The engine is a single pure-Python package with no dependencies. The npm package only starts it, so JavaScript users can run it without pip."],
       ["What if it flags something that is fine?", "Put the rule and path in .stingwardignore, or write stingward:ignore on the line. If the rule is wrong, tell us on GitHub with a minimal sample."],
       ["Does it check other people's projects?", "No. The warning goes only to the person who runs it, about the code they chose to check. It never opens issues on anyone's repository."]
@@ -247,13 +326,20 @@
     "footer_cols": [
       ["Project", [["GitHub", "{repo}"], ["Releases", "{repo}/releases"], ["Changelog", "{repo}/blob/main/CHANGELOG.md"], ["Apache 2.0 license", "{repo}/blob/main/LICENSE"]]],
       ["Install", [["PyPI", "https://pypi.org/project/stingward/"], ["npm", "https://www.npmjs.com/package/stingward"], ["GitHub Action", "{repo}#github-action"], ["Claude Code plugin", "{repo}#quick-start"]]],
-      ["Docs", [["All {rules} rules", "{repo}/blob/main/docs/rules.md"], ["Security", "{repo}/blob/main/SECURITY.md"], ["Contributing", "{repo}/blob/main/CONTRIBUTING.md"], ["Report a false positive", "{repo}/issues/new?template=false-positive.yml"]]]
+      ["Docs", [["Sample report", "{sample}"], ["All {rules} rules", "{repo}/blob/main/docs/rules.md"], ["Security", "{repo}/blob/main/SECURITY.md"], ["Contributing", "{repo}/blob/main/CONTRIBUTING.md"], ["Report a false positive", "{repo}/issues/new?template=false-positive.yml"]]]
     ],
     "footer_contact_1": "Found a flaw in Stingward itself?",
     "footer_contact_link": "Report it privately",
     "footer_contact_2": "Written in pure Python, with no dependencies.",
     "footer_copy": "© 2026 Isaque Moutta. Apache 2.0 license.",
     "footer_top": "Back to top",
-    "logo_alt": "Stingward shield"
+    "logo_alt": "Stingward shield",
+
+    "sample_label": "About this sample",
+    "sample_title": "Sample report.",
+    "sample_text": "Real output of Stingward {version} for the demo app in the repository, which has mistakes on purpose and only fake keys. To save it as a PDF, use Print in your browser.",
+    "sample_home": "Back to the site",
+    "sample_audit": "Audit with a human review: US$ 149",
+    "sample_other": "Português"
   }
 }
