@@ -142,7 +142,7 @@ Environment: `STINGWARD_LANG` sets the default language, `NVD_API_KEY` raises th
 ## Quality
 
 - **400+ automated tests**, plus online tests that query the real OSV, KEV, EPSS and NVD services across six ecosystems. Line coverage is above 90%.
-- **Every push runs 21 CI jobs**: tests on Linux, macOS and Windows with Python 3.9 to 3.13, the PyPI and npm packages built and installed from scratch on all three systems, the Claude Code plugin validated, and the Action run against sample projects.
+- **Every push runs 24 CI jobs**: tests on Linux, macOS and Windows with Python 3.9 to 3.14, the PyPI and npm packages built and installed from scratch on all three systems, the Claude Code plugin validated, and the Action run against sample projects.
 - **Stingward audits itself** in CI and must stay free of high and critical findings; its own grade is the A badge above.
 - **False positives are measured** against popular public skill collections and MCP servers: no critical or high findings that are not real, and only a handful of medium ones per repository. Each fixed false positive becomes a regression test.
 - **Security review of Stingward itself**, for example making sure a skill folder crafted as a git repository cannot run commands, and that a secret can never reach a report. Found issues are fixed with a test that fails on the old code.

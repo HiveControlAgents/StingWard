@@ -439,3 +439,40 @@ class Packaging(unittest.TestCase):
         info = f"stingward-{cli.__version__}.dist-info/"
         self.assertEqual({n for n in names if not n.startswith(info)}, _package_files())
         self.assertLessEqual({info + "licenses/LICENSE", info + "licenses/NOTICE"}, names)
+
+
+
+# --------------------------------------------------------------------------- o CI e o que os documentos dizem dele
+
+def _ci_jobs():
+    """Cada job de ci.yml com o número de execuções que a matriz dele gera, e as versões de Python dos testes."""
+    jobs = re.split(r"^  ([a-z][a-z-]*):\n", _read(".github", "workflows", "ci.yml").split("\njobs:\n", 1)[1], flags=re.M)[1:]
+    runs, pythons = {}, []
+    for name, body in zip(jobs[::2], jobs[1::2]):
+        n = 1
+        matrix = body.split("matrix:", 1)[1].split("steps:", 1)[0] if "matrix:" in body else ""
+        for key, values in re.findall(r"([a-z]+): \[([^\]]*)\]", matrix):
+            items = [v.strip().strip('"') for v in values.split(",")]
+            n *= len(items)
+            if key == "python":
+                pythons = items
+        runs[name] = n
+    return runs, pythons
+
+
+class SupportedPythons(unittest.TestCase):
+    def test_the_classifiers_name_the_pythons_ci_tests(self):
+        _, pythons = _ci_jobs()
+        pyproject = _read("pyproject.toml")
+        classifiers = re.findall(r'"Programming Language :: Python :: (3\.\d+)"', pyproject)
+        self.assertEqual(classifiers, pythons)
+        self.assertIn(f'requires-python = ">={pythons[0]}"', pyproject)
+
+    def test_the_readmes_count_the_ci_jobs_and_pythons_right(self):
+        runs, pythons = _ci_jobs()
+        for doc, pattern in (("README.md", r"runs (\d+) CI jobs.+?Python ([\d.]+) to ([\d.]+)"),
+                             ("README.pt-BR.md", r"roda (\d+) jobs de CI.+?Python ([\d.]+) a ([\d.]+)"),
+                             ("README.es.md", r"ejecuta (\d+) jobs de CI.+?Python ([\d.]+) a ([\d.]+)")):
+            with self.subTest(doc=doc):
+                said = re.search(pattern, _read(doc)).groups()
+                self.assertEqual(said, (str(sum(runs.values())), pythons[0], pythons[-1]))
