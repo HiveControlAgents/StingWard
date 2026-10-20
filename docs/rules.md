@@ -81,7 +81,7 @@ Looks up every package and version from your lockfiles (npm, Yarn, pnpm, Bun, pi
 
 OSV `MAL-*` records and GitHub "malware" advisories: packages published to steal data or run code. This is an attack, not a bug. A pinned or locked version is critical. When it is the lowest version of a range without a lockfile (see DEP004), it is critical only when every version the range allows is malicious; when the record lists only some releases, the installed version is probably a later one and the finding is high.
 
-**Fix:** remove the package, delete `node_modules`/virtualenvs, and rotate every key and password on the machine and in the project.
+**Fix:** remove the package, delete `node_modules`/virtualenvs, and rotate every key and password on the machine and in the project. When only the lowest version of a range is malicious (high), raise the range's minimum past it and commit a lockfile; clean up and rotate the keys only if the version installed is a malicious one.
 **Standards:** `CWE-506` · `LLM04:2026` · `AST02`
 
 <a id="dep003"></a>

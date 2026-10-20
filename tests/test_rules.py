@@ -1340,6 +1340,32 @@ class DepRules(RuleTest):
         _, f, _ = self.deps({"package.json": '{"dependencies": {"good-pkg": "1.0.0"}}\n'}, ids, docs)
         self.assertEqual([(x.rule, x.severity) for x in f], [("DEP002", "critical")])
 
+    def test_dep002_fix_on_a_range_floor(self):
+        # Only the lowest version of the range is malicious (high): the fix is to raise the minimum past it, and to
+        # clean up only if that is the version installed. "Remove it now" stays for a malicious version that is
+        # installed for sure: pinned, locked, or every version of the range.
+        docs = {d["id"]: d for d in (_adv("MAL-2026-7", "hijacked", "1.0.1"), _adv("MAL-2026-9", "evil-pkg"),
+                                     _pyadv("MAL-2026-6", "hijacked-py", "1.0.1"))}
+        ids = {"hijacked": ["MAL-2026-7"], "evil-pkg": ["MAL-2026-9"], "hijacked-py": ["MAL-2026-6"]}
+        pkg = {"dependencies": {"hijacked": "^1.0.0", "evil-pkg": "^1.0.0"}}
+        _, f, _ = self.deps({"requirements.txt": "hijacked-py>=1.0.0\n", "package.json": json.dumps(pkg, indent=2)}, ids, docs)
+        got = {x.params["pkg"]: (x.severity, texts("DEP002", "pt", x.params)[2], texts("DEP002", "en", x.params)[2])
+               for x in f if x.rule == "DEP002"}
+        remove = ("Remova o pacote agora, apague node_modules/venv e troque todas as chaves e senhas da máquina e do projeto.",
+                  "Remove it now, delete node_modules/venv, and rotate every key and password on this machine and project.")
+        self.assertEqual(got["evil-pkg"], ("critical",) + remove)
+        for where, req in (("hijacked", '"hijacked": "^1.0.0"'), ("hijacked-py", "hijacked-py>=1.0.0")):
+            with self.subTest(where=where):
+                sev, pt, en = got[where]
+                self.assertEqual(sev, "high")
+                self.assertTrue(pt.startswith(f"Suba a versão mínima em {req} para depois da 1.0.0"), pt)
+                self.assertTrue(en.startswith(f"Raise the minimum in {req} past 1.0.0"), en)
+                self.assertNotIn("Remov", pt + en)
+                self.assertIn("troque todas as chaves", pt)
+                self.assertIn("rotate every key", en)
+        _, f, _ = self.deps({"package.json": '{"dependencies": {"hijacked": "1.0.0"}}\n'}, ids, docs)
+        self.assertEqual([(x.severity, texts("DEP002", "en", x.params)[2]) for x in f], [("critical", remove[1])])
+
     def test_dep004_near_misses(self):
         lock = '{"lockfileVersion": 3, "packages": {"": {}, "node_modules/axios": {"version": "1.12.2"}}}\n'
         poetry = '[[package]]\nname = "pillow"\nversion = "12.3.0"\n'
