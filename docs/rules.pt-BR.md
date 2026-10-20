@@ -105,7 +105,7 @@ Sem lockfile, uma faixa como `Pillow>=10` ou `"axios": "^1.6.0"` é tudo o que d
 <a id="sec001"></a>
 ### SEC001 · Segredo no código
 
-Chaves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord, Replicate, Pinecone, Shopify, Notion, Linear, Resend...), segredos de cliente OAuth do Google (`GOCSPX-`, alto: um app instalado leva o seu junto), chaves privadas (também em arquivos `id_rsa`, `.pem`, `.key` e `.p8`), senha em URL, webhooks e atribuições sensíveis. O valor nunca aparece em nenhum formato de relatório, só o tipo e o lugar. Em testes, documentação e exemplos a severidade cai.
+Chaves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack, Discord, Replicate, Pinecone, Shopify, Notion, Linear, Resend, Clerk...), segredos de cliente OAuth do Google (`GOCSPX-`, alto: um app instalado leva o seu junto), chaves privadas (também em arquivos `id_rsa`, `.pem`, `.key` e `.p8`), senha em URL, webhooks e atribuições sensíveis. O valor nunca aparece em nenhum formato de relatório, só o tipo e o lugar. Em testes, documentação e exemplos a severidade cai.
 
 **Como corrigir:** mova o valor para variável de ambiente ou cofre de segredos e troque a chave: ela já está no histórico.
 **Padrões:** `CWE-798` · `LLM02:2026`

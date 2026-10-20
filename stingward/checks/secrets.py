@@ -97,7 +97,7 @@ KIND = {
     "replicate_token": ("token da API do Replicate", "Replicate API token"),
     "pinecone_key": ("chave da API do Pinecone", "Pinecone API key"), "shopify_token": ("token do Shopify", "Shopify token"),
     "notion_token": ("token da API do Notion", "Notion API token"), "linear_key": ("chave da API do Linear", "Linear API key"),
-    "resend_key": ("chave da API do Resend", "Resend API key"),
+    "resend_key": ("chave da API do Resend", "Resend API key"), "clerk_key": ("chave secreta do Clerk", "Clerk secret key"),
 }
 
 
@@ -318,6 +318,10 @@ def _known_sev(kind, val):
     return "critical" if kind in CRITICAL else "high"
 
 
+# A chave secreta do Clerk tem o formato da do Stripe (sk_live_, sk_test_): quem diz o serviço é a linha.
+_CLERK = re.compile(r"(?i)clerk")
+
+
 def _known(line, n, rel, low_conf, out, nxt=""):
     for kind, m in _tokens(line, nxt):
         if kind == "jwt":
@@ -328,7 +332,10 @@ def _known(line, n, rel, low_conf, out, nxt=""):
             elif role not in ("anon", "authenticated") and not low_conf:
                 out.append(Finding("SEC001", "medium", rel, n, _kind("jwt")))
             continue
-        out.append(Finding("SEC001", "low" if low_conf else _known_sev(kind, m.group(0)), rel, n, _kind(kind)))
+        sev = "low" if low_conf else _known_sev(kind, m.group(0))
+        if kind == "stripe_key" and _CLERK.search(line):
+            kind = "clerk_key"  # mesmo formato sk_live_/sk_test_ do Stripe, mesma severidade
+        out.append(Finding("SEC001", sev, rel, n, _kind(kind)))
     for rx, kind in ((redact._DISCORD_HOOK, "discord_webhook"), (redact._SLACK_HOOK, "slack_webhook")):
         # O exemplo está no token do próprio webhook (XXXX, YOUR/WEBHOOK/URL), não no resto da linha: um "your build
         # finished" ou um process.env.X || "https://hooks..." ao lado escondia o webhook de verdade.
