@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import string
 from collections import Counter
 from urllib.parse import quote
 
@@ -50,6 +51,7 @@ T = {
                      "": ("{n} ainda não revisado", "{n} ainda não revisados")},
         "discarded": "Descartados como alarme falso ({n})",
         "grade_rule": "A nota não conta alarmes falsos nem o que foi corrigido durante a auditoria.",
+        "sarif_help": "A correção depende do caso: cada alerta diz o que mudar. Mais sobre esta regra: {url}",
     },
     "en": {
         "title": "Security audit", "where": "where", "why": "why", "fix": "how to fix",
@@ -75,6 +77,7 @@ T = {
                      "": ("{n} not reviewed yet", "{n} not reviewed yet")},
         "discarded": "Discarded as false positives ({n})",
         "grade_rule": "The grade leaves out false positives and what was fixed during the audit.",
+        "sarif_help": "The fix depends on the case: each alert says what to change. More about this rule: {url}",
     },
 }
 
@@ -581,8 +584,73 @@ def as_json(ctx, findings, lang="pt", audit=None):
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
 
 
+# Nome genérico de cada regra, o da tabela de docs/rules.md e docs/rules.pt-BR.md (um teste confere). O SARIF
+# descreve a regra uma vez só para todos os alertas dela: o título de um achado fala do pacote ou do destino dele.
+RULE_NAME = {
+    "DEP001": ("Versão de dependência com falhas conhecidas", "Dependency version with known vulnerabilities"),
+    "DEP002": ("Pacote malicioso", "Malicious package"),
+    "DEP003": ("Manifesto sem lockfile", "Manifest without a lockfile"),
+    "DEP004": ("Faixa de versão aceita versões com falhas", "Version range allows vulnerable versions"),
+    "SEC001": ("Segredo no código", "Secret in code"),
+    "SEC002": (".env no git", ".env committed to git"),
+    "SEC003": (".env fora do .gitignore", ".env missing from .gitignore"),
+    "SEC004": ("Chave service_role do Supabase no código", "Supabase service_role key in code"),
+    "APP001": ("Segredo exposto ao navegador por prefixo público",
+               "Secret exposed to the browser through a public env prefix"),
+    "APP002": ("SDK de IA rodando no navegador", "AI SDK running in the browser"),
+    "APP003": ("CORS aberto para qualquer origem", "CORS open to any origin"),
+    "APP004": ("Tabela do Supabase sem Row Level Security", "Supabase table without Row Level Security"),
+    "APP005": ("Política do Supabase que libera para todos", "Supabase policy that allows everyone"),
+    "APP006": ("Regras do Firebase abertas", "Open Firebase rules"),
+    "APP007": ("Modo debug ligado", "Debug mode enabled"),
+    "APP008": ("JWT aceito sem verificar a assinatura", "JWT accepted without verifying the signature"),
+    "APP009": ("Saída do modelo chega a código, shell, SQL ou HTML", "Model output reaches code, a shell, SQL or HTML"),
+    "APP010": ("Dado da requisição entra no prompt de sistema", "Request input goes into the system prompt"),
+    "APP011": ("Rota de IA sem login e sem limite de uso", "AI endpoint with no login and no rate limit"),
+    "APP012": ("Carregar o modelo pode executar código", "Loading the model can run code"),
+    "APP013": ("Agente pode executar o que o modelo escrever", "Agent can run whatever the model writes"),
+    "APP014": ("Argumento que o modelo escreve na ferramenta chega a shell, código, SQL, caminho ou URL",
+               "Tool argument written by the model reaches a shell, code, SQL, a path or a URL"),
+    "COD001": ("Consulta SQL montada com dado de fora", "SQL query built from outside input"),
+    "COD002": ("Comando de shell montado com dado de fora", "Shell command built from outside input"),
+    "COD003": ("Código montado com dado de fora é executado", "Code built from outside input is executed"),
+    "COD004": ("Dados carregados com pickle ou YAML inseguro", "Data loaded with pickle or unsafe YAML"),
+    "COD005": ("HTML inserido sem limpar", "HTML inserted without sanitizing"),
+    "COD006": ("Verificação do certificado TLS desligada", "TLS certificate check turned off"),
+    "COD007": ("Caminho de arquivo montado com dados da requisição", "File path built from request input"),
+    "COD008": ("Servidor busca uma URL que veio da requisição", "Server fetches a URL taken from the request"),
+    "COD009": ("Redirecionamento para um endereço que veio da requisição",
+               "Redirect to an address taken from the request"),
+    "COD010": ("Número aleatório previsível usado num segredo", "Predictable random number used for a secret"),
+    "COD011": ("Senha guardada com hash rápido", "Password hashed with a fast hash"),
+    "AGT001": ("Permissão de agente ampla demais", "Agent permission too broad"),
+    "AGT002": ("Hook que baixa e executa código", "Hook downloads and runs remote code"),
+    "AGT003": ("Servidor MCP sem versão fixa", "MCP server without a pinned version"),
+    "AGT004": ("Credencial escrita na configuração do MCP", "Credential hard-coded in MCP config"),
+    "AGT005": ("Servidor MCP remoto sem HTTPS", "Remote MCP server over plain HTTP"),
+    "AGT006": ("Todos os servidores MCP do projeto aprovados automaticamente",
+               "Every project MCP server auto-approved"),
+    "SKL001": ("Caracteres Unicode invisíveis", "Invisible Unicode characters"),
+    "SKL002": ("Baixa um script e passa direto para o shell", "Downloads a script and pipes it into a shell"),
+    "SKL003": ("Injeção de prompt ou envenenamento de ferramenta", "Prompt injection phrasing or tool poisoning"),
+    "SKL004": ("Lê credenciais da máquina", "Reads machine credentials"),
+    "SKL005": ("Executa instruções vindas de arquivos ou páginas",
+               "Executes instructions taken from files or web pages"),
+    "SKL006": ("Skill pede shell sem restrição", "Skill requests unrestricted shell"),
+    "SKL007": ("Código ofuscado", "Obfuscated code"),
+    "SKL008": ("Envia dados para serviço de captura anônimo", "Sends data to an anonymous capture service"),
+    "SKL009": ("Script de instalação executa comandos", "Install script runs commands"),
+    "SKL010": ("Skill manda o agente não parar para falar com você", "Skill tells the agent not to pause for you"),
+    "SKL011": ("Reverse shell", "Reverse shell"),
+}
+
+
 _SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "note"}
 _SARIF_SCORE = {"critical": "9.5", "high": "8.0", "medium": "5.5", "low": "3.0", "info": "0.0"}
+
+
+def _fields(template):
+    return any(field for _, field, _, _ in string.Formatter().parse(template))
 
 
 def sarif(ctx, findings, lang="pt", prefix=""):
@@ -592,11 +660,18 @@ def sarif(ctx, findings, lang="pt", prefix=""):
     first = {}
     for f in findings:  # já vêm da mais grave para a menos grave
         first.setdefault(f.rule, f)
+    lang = lang if lang in ("pt", "en") else "en"
+    doc_page = "rules.pt-BR.md" if lang == "pt" else "rules.md"
     rules = []
     for r, f in sorted(first.items()):
-        title, why, fix = texts(r, lang, f.params)
-        rules.append({"id": r, "name": r, "shortDescription": {"text": title}, "fullDescription": {"text": why},
-                      "help": {"text": fix}, "helpUri": f"{REPO_URL}/blob/main/docs/rules.md#{r.lower()}",
+        # Texto da regra com campo a preencher depende do achado: no lugar dele vai o nome, ou a ajuda genérica.
+        name = RULE_NAME[r][0 if lang == "pt" else 1]
+        _, why, fix = RULES[r][lang]
+        uri = f"{REPO_URL}/blob/main/docs/{doc_page}#{r.lower()}"
+        rules.append({"id": r, "name": r, "shortDescription": {"text": name},
+                      "fullDescription": {"text": fill(why, lang, {}) if not _fields(why) else name},
+                      "help": {"text": fill(fix, lang, {}) if not _fields(fix) else T[lang]["sarif_help"].format(url=uri)},
+                      "helpUri": uri,
                       "properties": {"tags": ["security", RULES[r]["group"]] + STANDARDS.get(r, []),
                                      "security-severity": _SARIF_SCORE[f.severity]}})
     results = []

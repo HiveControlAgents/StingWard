@@ -34,6 +34,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - When the Markdown report has more than 50 problems, its last row said "and N more low-severity item(s)" even when the ones left out were high or critical. It now says how many are left out at each severity, such as "and 3 more item(s): 2 high, 1 low".
 - The HTML report fits a phone screen again. In the remediation plan the effort column kept its desktop width of 80 pixels, so a status such as "Accepted risk" was cut off and the page scrolled sideways, and the place column stayed at a third of the width, splitting paths over several lines. On a 320-pixel screen a long name such as `NEXT_PUBLIC_OPENAI_API_KEY` also pushed the "fix these first" list off the screen.
 - In the PDF of the HTML report, the last row of a finding (such as "Standards") or of the remediation plan no longer goes alone to the next page: it takes the row before it along.
+- In SARIF, each rule's description and help described the first problem found for that rule, so in GitHub code scanning an alert for `axios` came with "Upgrade next to 15.5.24 or later." The rule now has its generic name from the rules reference, its explanation and fix when they do not depend on the problem, and otherwise a line saying that each alert says what to change. Each alert keeps its own text. In Portuguese, the rule links to `docs/rules.pt-BR.md`.
 
 ## [0.1.5] - 2026-10-20
 

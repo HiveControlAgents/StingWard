@@ -56,6 +56,14 @@ class RulesReference(unittest.TestCase):
         for doc in ("README.md", "README.pt-BR.md", "README.es.md"):
             self.assertIn(f"{len(RULES)} ", re.search(r"(?:All|As|Las) \d+ (?:rules|regras|reglas)", _read(doc)).group(0), doc)
 
+    def test_sarif_names_each_rule_as_the_table_does(self):
+        # O SARIF descreve cada regra com o nome genérico dela, o mesmo da tabela da referência.
+        for doc, i in (("docs/rules.pt-BR.md", 0), ("docs/rules.md", 1)):
+            table = dict(re.findall(r"^\| \[([A-Z]{3}\d{3})\]\(#[a-z]{3}\d{3}\) \| (.+?) \| ", _read(doc), re.M))
+            self.assertEqual(set(table), set(RULES), doc)
+            for rule, name in table.items():
+                self.assertEqual(report.RULE_NAME[rule][i], name.replace("`", ""), (doc, rule))
+
     def test_sarif_links_to_the_rule_entry(self):
         from stingward.model import Context, Finding
         doc = json.loads(report.sarif(Context(root=ROOT, files=[]), [Finding("SKL001", "critical", "a.md", 1, {})], "en"))
