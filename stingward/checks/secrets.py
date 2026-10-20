@@ -100,8 +100,9 @@ def _jwt_role(token: str):
         return None
 
 
-_PEM_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
-_PEM_HEADER = re.compile(r"(?:Proc-Type|DEK-Info|Comment):")
+# Também o bloco do PGP ("PRIVATE KEY BLOCK"), cujo armor tem cabeçalhos (Version:, Comment:) e uma linha em branco.
+_PEM_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")
+_PEM_HEADER = re.compile(r"(?:Proc-Type|DEK-Info|Comment|Version|Hash|Charset|MessageID):")
 _B64_RUN = re.compile(r"[A-Za-z0-9+/]{20,}")
 
 
@@ -117,9 +118,10 @@ def _pem_body(text: str) -> bool:
 def _real_key(val, nxt):
     """Chave privada de verdade, e não só o cabeçalho: código que lida com chaves (startsWith, replace, placeholder=
     "-----BEGIN...") também escreve o cabeçalho. O corpo vem na mesma linha (JSON com \\n) ou, se depois do
-    cabeçalho só sobra pontuação, na linha seguinte (nxt). nxt None é valor solto sem linha seguinte (.env, config
+    cabeçalho só sobra pontuação, na próxima linha que não está em branco (nxt). nxt None é valor solto sem linha seguinte (.env, config
     de MCP): aí o cabeçalho sozinho conta, como antes."""
-    body = re.sub(r"\\[rn]", "\n", val[_PEM_BEGIN.match(val).end():])
+    head = _PEM_BEGIN.match(val)  # o padrão vem do _redact: um cabeçalho que este não conhece não derruba a varredura
+    body = re.sub(r"\\[rn]", "\n", val[head.end() if head else val.find("-----", 5) + 5:])
     closed = "-----END" in body
     body = body.split("-----END", 1)[0]
     lines = [ln for ln in body.split("\n") if re.search(r"[A-Za-z0-9]", ln) and not _PEM_HEADER.match(ln.strip(" \t\"'`"))]
@@ -294,7 +296,8 @@ def scan_text(text: str, rel: str, generic: bool = True, sample: bool = False):
     # split("\n") e não splitlines(): \f e \v contariam como quebra e a linha do achado sairia errada.
     lines = text.split("\n")
     for n, line in enumerate(lines, 1):
-        nxt = lines[n] if n < len(lines) else ""
+        # A linha seguinte que não está em branco: no PGP o corpo vem depois de uma linha vazia.
+        nxt = next((ln for ln in lines[n:n + 3] if ln.strip()), "") if "-----BEGIN" in line else ""
         if markdown and _FENCE.match(line):
             fence = not fence
         if len(line) > 4000:
