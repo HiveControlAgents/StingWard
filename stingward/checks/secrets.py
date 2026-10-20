@@ -58,6 +58,8 @@ _HINT = re.compile(r"-----BEGIN|eyJ|AKIA|ASIA|ABIA|ACCA|gh[pousr]_|github_pat_|x
 _MIXED = {"openai_key", "meta_token", "npm_token", "replicate_token", "resend_key"}
 # Token do Hugging Face: 34 letras e dígitos aleatórios, e cerca de 1 em 400 sai sem dígito. Basta ter as duas caixas.
 _CASED = {"huggingface_token"}
+# Prefixo curto com minúscula ou dígito (hf_, r8_, re_): a conta de caixas e dígito olha só o que vem depois dele.
+_OWN_PREFIX = {"huggingface_token", "replicate_token", "resend_key"}
 # Exemplo de documentação: "sk-ant-oat01-...", "ghp_abc***", "xoxb-<token>", "AKIA1234xxxx".
 _TRUNCATED = re.compile(r"\.\.\.|\u2026|\*|<(?!/)|[xX]{4}")
 
@@ -184,10 +186,11 @@ def _real_token(kind, m, line, nxt=None):
         return _real_key(val, nxt)
     if _PLACEHOLDER.search(val) or len(set(val)) < 6 or _TRUNCATED.match(line, m.end()):
         return False
-    if kind in _CASED:  # as caixas contam só depois do prefixo: o "hf" de hf_ já é minúsculo
-        body = val.split("_", 1)[1]
-        return bool(re.search(r"[a-z]", body) and re.search(r"[A-Z]", body))
+    if kind in _OWN_PREFIX:  # dígito e caixas contam só depois do prefixo: o "r8" de r8_ já tem os dois
+        val = val.split("_", 1)[1]
     cased = bool(re.search(r"[a-z]", val) and re.search(r"[A-Z]", val))
+    if kind in _CASED:
+        return cased
     return kind not in _MIXED or bool(cased and re.search(r"\d", val))
 
 
