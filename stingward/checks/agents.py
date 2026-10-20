@@ -758,8 +758,9 @@ def check(ctx):
             out += _invisible(text, rel, instruction)
         out += _content(text, rel, instruction, script, strict=ctx.mode == "skill")
         if ctx.mode == "skill" and not instruction and rel.endswith((".py", ".js", ".mjs", ".cjs", ".ts", ".json")):
-            # Servidor MCP: a descrição das ferramentas vai direto para o modelo (tool poisoning).
-            out += _overrides(text, rel)
+            # Servidor MCP: a descrição das ferramentas vai direto para o modelo (tool poisoning). Quem escreve o
+            # servidor escolhe as palavras ao redor, então strict: o filtro de contexto baixa para médio, não apaga.
+            out += _overrides(text, rel, strict=True)
         if _launches_agent(rel, name, instruction, script):
             out += _permission_flags(text, rel, instruction, strict=ctx.mode == "skill")
         out += _configs(text, rel, name)
