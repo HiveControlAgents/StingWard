@@ -2,6 +2,17 @@
 
 All notable changes to Stingward. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] - 2026-10-20
+
+### Added
+- SKL011 flags reverse shells in skills and agent scripts (`bash -i >& /dev/tcp/...`, `nc -e`, `socat exec:`, Python `pty.spawn`, PowerShell `TCPClient`).
+- SKL002 also catches downloading a file and running it on the same line (`curl -o x ... && chmod +x x`).
+- SKL005 understands "follow the instructions on the page".
+
+### Changed
+- SKL009 is high, not medium, when an install script downloads and runs code from the internet.
+- SKL004 no longer treats `env=dict(os.environ)` as reading credentials: copying the environment to a child process is normal. Sending the whole environment (`json=dict(os.environ)`, `json.dumps(os.environ)`, `params=os.environ`) is still critical.
+
 ## [0.1.2] - 2026-10-20
 
 ### Changed
@@ -26,6 +37,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 First public release: CLI (`pipx`, `uvx`, `npx`), Claude Code plugin and skill, and GitHub Action. Checks dependencies (OSV.dev, CISA KEV, EPSS, NVD), secrets, AI-built app mistakes, agent and MCP setups, and skills, with reports in text, Markdown, JSON and SARIF in English and Portuguese.
 
+[0.1.3]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/HiveControlAgents/StingWard/releases/tag/v0.1.0

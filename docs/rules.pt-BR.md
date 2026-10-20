@@ -44,8 +44,9 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [SKL006](#skl006) | Skill pede shell sem restrição | 🟡 |
 | [SKL007](#skl007) | Código ofuscado | 🟠 |
 | [SKL008](#skl008) | Envia dados para serviço de captura anônimo | 🟠 |
-| [SKL009](#skl009) | Script de instalação executa comandos | 🟡 |
+| [SKL009](#skl009) | Script de instalação executa comandos | 🟠 |
 | [SKL010](#skl010) | Skill manda o agente não parar para falar com você | 🟡 |
+| [SKL011](#skl011) | Reverse shell | 🔴 |
 
 ## Dependências
 
@@ -236,7 +237,7 @@ Caracteres de tag Unicode (texto invisível que o modelo lê), controles bidirec
 <a id="skl002"></a>
 ### SKL002 · Baixa um script e passa direto para o shell
 
-`curl ... | sh`, `wget -O- ... | bash`, `iex (iwr ...)` e parecidos, em skills, scripts e instruções.
+`curl ... | sh`, `wget -O- ... | bash`, `iex (iwr ...)` e parecidos, e baixar um arquivo e rodar na mesma linha (`curl -o x ... && chmod +x x`), em skills, scripts e instruções.
 
 **Como corrigir:** baixe, leia e fixe o script, ou instale por um gerenciador de pacotes com versão fixa.
 **Padrões:** `CWE-494` · `AST02`
@@ -292,7 +293,7 @@ webhook.site, RequestBin, Pipedream, ngrok, interact.sh, Burp Collaborator, bots
 <a id="skl009"></a>
 ### SKL009 · Script de instalação executa comandos
 
-Scripts `preinstall`, `install`, `postinstall` ou `prepare` no `package.json`: rodam no `npm install`, antes de você usar qualquer coisa.
+Scripts `preinstall`, `install`, `postinstall` ou `prepare` no `package.json`: rodam no `npm install`, antes de você usar qualquer coisa. Alto quando o script baixa e roda código da internet.
 
 **Como corrigir:** leia o script. Na dúvida, instale com `--ignore-scripts`.
 **Padrões:** `CWE-829` · `AST02`
@@ -304,6 +305,14 @@ Scripts `preinstall`, `install`, `postinstall` ou `prepare` no `package.json`: r
 
 **Como corrigir:** rode a skill com permissões restritas e revise o plano antes de executar.
 **Padrões:** `LLM03:2026` · `AST05`
+
+<a id="skl011"></a>
+### SKL011 · Reverse shell
+
+`bash -i >& /dev/tcp/host/porta`, `nc -e /bin/sh`, `socat ... exec:/bin/bash`, `os.dup2(s.fileno(), ...)` com `pty.spawn`, `Net.Sockets.TCPClient` no PowerShell: a skill entrega o seu terminal para quem estiver escutando do outro lado. Teste de porta como `</dev/tcp/localhost/5432` não é marcado.
+
+**Como corrigir:** não instale. Se já rodou, tire a máquina da rede, troque senhas e chaves e confira processos e tarefas agendadas.
+**Padrões:** `CWE-506` · `AST01`
 
 ## Ignorar um achado
 

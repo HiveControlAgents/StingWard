@@ -77,7 +77,9 @@ _PIPE_SHELL = re.compile(
     r"(?:\b(?:ba|z|da|k)?sh|\bsource|(?<![\w.])\.)\s+<\(\s*(?:curl|wget)\b|"
     r"\b(?:eval|(?:ba|z|da|k)?sh\s+-c)\s+[\"']?\$\(\s*(?:curl|wget)\b|"
     r"\b(?:iex|Invoke-Expression)\s*\$?\(?\s*\(?\s*"
-    r"(?:irm|iwr|Invoke-WebRequest|Invoke-RestMethod|New-Object\s+(?:System\.)?Net\.WebClient)\b", re.I)
+    r"(?:irm|iwr|Invoke-WebRequest|Invoke-RestMethod|New-Object\s+(?:System\.)?Net\.WebClient)\b|"
+    # Baixar para um arquivo e rodar logo em seguida, na mesma linha, é o mesmo que passar direto para o shell.
+    r"(?:curl|wget)\b[^\n|]*?(?:&&|;)\s*(?:chmod\s+[ugoa]*\+x\b|" + _SUDO + r"(?:ba|z|da|k)?sh\s+(?!-c\b)[\w./~$-])", re.I)
 # Em .py/.js, "curl ... | sh" numa mensagem de erro é dica de instalação; só roda se estiver numa chamada de shell.
 _EXEC_CALL = re.compile(r"subprocess|os\.system|os\.popen|\bPopen|check_(?:call|output)|\bexec(?:Sync|File|FileSync)?\s*\(|"
                         r"\bspawn(?:Sync)?\s*\(|child_process|shell\s*=\s*True|\bsystem\s*\(|Deno\.(?:run|Command)|"
@@ -98,14 +100,23 @@ _OVERRIDE = re.compile(
     r"esconda\s+(?:isso\s+)?do\s+usu[aá]rio", re.I)
 
 _EXEC_CONTENT = re.compile(
-    r"(?:follow|obey|carry\s+out)\s+(?:the\s+|any\s+|all\s+)?instructions\s+(?:in|from|found\s+in|inside|contained\s+in)\s+(?:the\s+|any\s+)?"
+    r"(?:follow|obey|carry\s+out)\s+(?:the\s+|any\s+|all\s+)?instructions\s+(?:in|on|from|found\s+(?:in|on)|inside|contained\s+in)\s+(?:the\s+|any\s+)?"
     r"(?:file|files|page|url|website|issue|comment|response|output|document|readme|plan)|"
-    r"(?:execute|run)\s+(?:the\s+|any\s+|all\s+)?(?:instructions|commands|code)\s+(?:in|from|found\s+in|inside|returned\s+by|listed\s+in)\s+"
+    r"(?:execute|run)\s+(?:the\s+|any\s+|all\s+)?(?:instructions|commands|code)\s+(?:in|on|from|found\s+(?:in|on)|inside|returned\s+by|listed\s+(?:in|on))\s+"
     r"(?:the\s+|any\s+)?(?:file|page|url|website|issue|comment|response|output|document|readme|plan)|"
     r"do\s+whatever\s+(?:the|it|this)\s+(?:file|page|issue|comment|document|response)\s+says|"
     r"treat\s+(?:the\s+|its\s+)?(?:content|contents|file|page|response)\s+as\s+(?:your\s+)?instructions|"
     r"siga\s+as\s+instru[cç][õo]es\s+(?:do|da|que\s+estiverem\s+no|contidas\s+no)\s+(?:arquivo|p[aá]gina|site|issue|coment[aá]rio)|"
     r"execute\s+(?:os|as)\s+(?:comandos|instru[cç][õo]es)\s+(?:do|da|que\s+estiverem\s+no)\s+(?:arquivo|p[aá]gina|site|issue)", re.I)
+
+# Reverse shell: entrega o terminal para quem está do outro lado. Não há uso legítimo disso numa skill.
+_REVERSE_SHELL = re.compile(
+    # "</dev/tcp/localhost/5432" só testa se a porta abriu; o shell ligado ao socket é que entrega o terminal.
+    r"(?:>&|&>)\s*/dev/(?:tcp|udp)/\S+|<>\s*/dev/(?:tcp|udp)/\S+[^\n]*\s0<&\d|"
+    r"\b(?:nc|ncat|netcat)\b[^\n|;]*\s-(?:e|c)\s+\S*\b(?:ba|z|da|k)?sh\b|\b(?:nc|ncat|netcat)\b[^\n|;]*\s-e\s+cmd(?:\.exe)?\b|"
+    r"\bsocat\b[^\n]*\bexec:[^\n]*\b(?:(?:ba|z)?sh|cmd)\b|"
+    r"os\.dup2\(\s*\w+\.fileno\(\)|pty\.spawn\(\s*[\"'](?:/bin/)?(?:ba|z)?sh\b|"
+    r"New-Object\s+(?:System\.)?Net\.Sockets\.TCPClient\s*\(", re.I)
 
 _CREDS = [
     (re.compile(r"~/\.ssh|\.ssh/id_|\bid_rsa\b|\bid_ed25519\b"), "chaves SSH", "SSH keys"),
@@ -118,7 +129,11 @@ _CREDS = [
     (re.compile(r"[/\\](?:Login Data|Local State)\b|[\"'](?:Login Data|Local State)[\"']|Cookies\.binarycookies|\bkey4\.db\b"),
      "dados do navegador", "browser data"),
     (re.compile(r"security\s+find-(?:generic|internet)-password\b[^\n]*-w|security\s+dump-keychain"), "chaveiro do sistema", "system keychain"),
-    (re.compile(r"\bprintenv\s*(?:$|[|>;&)])|JSON\.stringify\(\s*process\.env\s*\)|dict\(\s*os\.environ\s*\)|^\s*env\s*\|", re.M),
+    # Copiar o ambiente (env=dict(os.environ)) é como todo subprocesso roda; o que denuncia o roubo é transformar o
+    # ambiente inteiro em texto ou em corpo de requisição.
+    (re.compile(r"\bprintenv\s*(?:$|[|>;&)])|JSON\.stringify\(\s*process\.env\s*\)|^\s*env\s*\||"
+                r"json\.dumps\(\s*(?:dict\(\s*)?os\.environ\b|\b(?:str|repr)\(\s*os\.environ\s*\)|"
+                r"\b(?:json|data|params)\s*=\s*(?:dict\(\s*)?os\.environ\b(?!\s*\[|\.get)", re.M),
      "todas as variáveis de ambiente", "all environment variables"),
     # .claude.json é a config de MCP, não credencial.
     (re.compile(r"\.claude/\.credentials"), "credenciais do Claude", "Claude credentials"),
@@ -368,6 +383,13 @@ def _obfuscation(text, rel):
     return [Finding("SKL007", sev, rel, ln, {"what_pt": pt, "what_en": en})]
 
 
+def _reverse_shell(text, rel, instruction, strict=False):
+    def keep(m):
+        return not (_defensive(text, m) if instruction else _comment_line(text, m.start()))
+    return [Finding("SKL011", _soft("critical", soft), rel, ln, {"snippet": _snippet(m.group(0))})
+            for m, ln, soft in _hits(_REVERSE_SHELL, text, keep, strict, 1)]
+
+
 def _phrases(rule, sev, rx, text, rel, strict=False):
     return [Finding(rule, _soft(sev, soft), rel, ln, {"snippet": _snippet(m.group(0))})
             for m, ln, soft in _hits(rx, text, lambda m: not _defensive(text, m), strict)]
@@ -382,6 +404,7 @@ def _content(text, rel, instruction, script, strict=False):
     if instruction or script:
         out += _pipe_shell(text, rel, instruction, strict)
         out += _cred_reads(text, rel, instruction, strict)
+        out += _reverse_shell(text, rel, instruction, strict)
         out += _obfuscation(text, rel)
         out += [Finding("SKL008", "high", rel, ln, {"host": m.group(1).lower()}) for m, ln in _matches(_EXFIL, text)]
     if instruction:
@@ -663,7 +686,9 @@ def _lifecycle(d, text, rel):
     for script in ("preinstall", "install", "postinstall", "prepare"):
         cmd = scripts.get(script)
         if isinstance(cmd, str) and _LIFECYCLE_DANGER.search(cmd):
-            out.append(Finding("SKL009", "medium", rel, _line(text, f'"{script}"'), {"script": script}))
+            # Baixar e rodar código da internet no npm install é alto: roda antes de alguém ler qualquer coisa.
+            sev = "high" if _PIPE_SHELL.search(cmd) else "medium"
+            out.append(Finding("SKL009", sev, rel, _line(text, f'"{script}"'), {"script": script}))
     return out
 
 

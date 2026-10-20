@@ -52,9 +52,9 @@ Sem cadastro, sem telemetria, sem dependências: Python 3.9+ puro, no Linux, mac
 | **Segredos** | Chaves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack...), chaves privadas, `service_role` do Supabase, webhooks, senha em URL, `.env` no git ou fora do `.gitignore`. O valor nunca aparece no relatório. |
 | **Apps feitos com IA** | Segredo atrás de `NEXT_PUBLIC_` / `VITE_` / `EXPO_PUBLIC_`, `dangerouslyAllowBrowser`, CORS aberto, tabela do Supabase sem RLS ou com `using (true)`, regras do Firebase abertas, modo debug, JWT sem verificar assinatura. |
 | **Agentes e MCP** | `bypassPermissions`, `Bash(*)`, hook com `curl \| sh`, `enableAllProjectMcpServers`, MCP sem versão fixa, token no `.mcp.json`, MCP remoto sem HTTPS, pacote MCP vulnerável como o `mcp-remote` (CVE-2025-6514). |
-| **Skills e prompts** | Caracteres invisíveis (tags Unicode, Trojan Source, largura zero), "ignore as instruções anteriores", "não conte ao usuário", leitura de `~/.ssh` ou `~/.aws` com chamada à internet, `curl \| bash`, código ofuscado, serviços de captura (webhook.site, ngrok...), scripts de instalação, `allowed-tools: Bash`, instrução escondida na descrição de ferramentas MCP. |
+| **Skills e prompts** | Caracteres invisíveis (tags Unicode, Trojan Source, largura zero), "ignore as instruções anteriores", "não conte ao usuário", leitura de `~/.ssh` ou `~/.aws` com chamada à internet, `curl \| bash`, reverse shell, código ofuscado, serviços de captura (webhook.site, ngrok...), scripts de instalação, `allowed-tools: Bash`, instrução escondida na descrição de ferramentas MCP. |
 
-As 31 regras, com severidade, exemplos e correção: [docs/rules.pt-BR.md](docs/rules.pt-BR.md).
+As 32 regras, com severidade, exemplos e correção: [docs/rules.pt-BR.md](docs/rules.pt-BR.md).
 
 <p align="center">
   <img alt="stingward ./my-saas: chave da OpenAI exposta por NEXT_PUBLIC_, next 14.1.0 com a CVE-2025-29927 (EPSS de 99%), tabela do Supabase sem RLS, CORS aberto. Nota F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-pt.gif" width="820">
