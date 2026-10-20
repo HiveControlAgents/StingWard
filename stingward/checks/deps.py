@@ -165,6 +165,12 @@ def check(ctx):
     ids_per_pkg, ids_per_floor = found[:len(pkgs)], dict(zip(floors, found[len(pkgs):]))
     all_ids = sorted({i for ids in found for i in ids})
     docs = vulndb.osv_vulns(all_ids) if all_ids else {}
+    missing = [i for i in all_ids if i not in docs]
+    if missing:
+        # Verificação incompleta não pode passar no portão de CI: osv_error faz a CLI sair com 3, e os pacotes
+        # desses avisos continuam no relatório (assess abaixo).
+        ctx.sources["osv_error"] = (f"{len(missing)} vulnerability detail(s) could not be fetched from OSV.dev: "
+                                    + ", ".join(missing[:10]) + (" ..." if len(missing) > 10 else ""))
 
     cves = {a for d in docs.values() for a in [d.get("id", "")] + (d.get("aliases") or []) if a.startswith("CVE-")}
     try:
