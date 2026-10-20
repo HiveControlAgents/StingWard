@@ -129,5 +129,46 @@ class UrlPasswords(Case):
                 self.assertEqual(brief(scan_files({"src/db.py": line + "\n"}), "SEC001"), [("SEC001", "src/db.py", 1, "high")])
 
 
+# =========================================================================== chave privada
+
+BEGIN = "-----BEGIN " + "PRIVATE KEY-----"
+END = "-----END " + "PRIVATE KEY-----"
+RSA_BEGIN = "-----BEGIN RSA " + "PRIVATE KEY-----"
+# Corpo de mentira com cara de base64 de verdade (linhas de 64 caracteres, maiúsculas, minúsculas e dígitos).
+BODY = ["MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7" + R36[:12],
+        R36 + "Zq8W3e5R7t9Y1u3I5o7P9a1S3d5F7g9H0jK2"[:28]]
+
+
+class PrivateKeys(Case):
+    def test_code_that_handles_keys_is_not_a_key(self):
+        files = {
+            "src/pem.ts": f'const PEM_HEADER = "{BEGIN}";\nconst PEM_FOOTER = "{END}";\n',
+            "src/strip.js": f"const body = key.replace('{BEGIN}', '').replace('{END}', '');\n",
+            "src/check.ts": f"if (!pk.includes('{RSA_BEGIN}')) throw new Error('bad key')\n",
+            "src/form.tsx": f'<Textarea\n  placeholder="{BEGIN}"\n  rows={{4}}\n/>\n',
+            "src/fields.tsx": f"  : '{BEGIN}\\n...\\n{END}'\n",
+            "src/sa.py": f'SA = {{"private_key": "{BEGIN}\\nYOUR_PRIVATE_KEY\\n{END}\\n"}}\n',
+            "src/doc.py": f'"""Example:\n\n    PRIVATE_KEY="{RSA_BEGIN}\n    ...\n"""\n',
+        }
+        self.assertEqual(brief(scan_files(files), "SEC001"), [])
+
+    def test_real_keys_still_fire(self):
+        one_line = BEGIN + "\\n" + "\\n".join(BODY) + "\\n" + END + "\\n"
+        multi = BEGIN + "\n" + "\n".join(BODY) + "\n" + END + "\n"
+        files = {
+            "config/service-account.json": '{\n  "type": "service_account",\n  "private_key": "' + one_line + '",\n}\n',
+            "src/key.ts": "export const KEY = `" + multi + "`\n",
+            "src/key.py": 'KEY = (\n    "' + BEGIN + '\\n"\n    "' + BODY[0] + '\\n"\n)\n',
+            "src/enc.txt": "-----BEGIN RSA " + "PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,0A1B\n\n" + BODY[0] + "\n",
+        }
+        self.assertEqual(brief(scan_files(files), "SEC001"), [
+            ("SEC001", "config/service-account.json", 3, "critical"), ("SEC001", "src/enc.txt", 1, "critical"),
+            ("SEC001", "src/key.py", 2, "critical"), ("SEC001", "src/key.ts", 1, "critical")])
+
+    def test_multi_line_key_in_a_committed_env_is_still_a_secret(self):
+        files = {".env": "APP_NAME=demo\nPRIVATE_KEY=\"" + BEGIN + "\n" + "\n".join(BODY) + "\n" + END + "\"\n"}
+        self.assertEqual(brief(scan_files(files, tracked=files), "SEC002"), [("SEC002", ".env", None, "high")])
+
+
 if __name__ == "__main__":
     unittest.main()
