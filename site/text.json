@@ -1,0 +1,259 @@
+{
+  "pt": {
+    "html_lang": "pt-BR",
+    "og_locale": "pt_BR",
+    "title": "Stingward: segurança para quem cria com IA",
+    "description": "Com IA, qualquer um publica um app, uma skill ou um servidor MCP sem saber o que é vulnerabilidade. O Stingward acha as brechas, dá nota de A a F e explica como fechar cada uma. Software livre, sem cadastro.",
+    "skip": "Pular para o conteúdo",
+    "nav_github": "GitHub",
+    "lang_label": "Idioma",
+    "hero_h1": ["Você cria.", "Quem confere?"],
+    "hero_lead": "Com IA, qualquer um publica um app, uma skill ou um servidor MCP sem saber o que é vulnerabilidade. O\u00a0Stingward acha as brechas e diz como fechar.",
+    "tabs": ["Por que existe", "Relatório", "O que pega", "Preço", "Instalar"],
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "copy_failed": "Selecione e copie",
+    "hero_more": "Também roda com npx stingward, como plugin do Claude Code e como GitHub Action.",
+    "hero_source": "Ver o código",
+
+    "why_h2": "Por que ele existe",
+    "why_p": "A IA escreve o código, escolhe as versões dos pacotes e monta a configuração. Ela faz funcionar, mas não avisa o que deixou aberto, e quem publica muitas vezes nunca ouviu falar em CVE, RLS ou chave exposta. Você não precisa virar especialista: o Stingward lê o projeto e explica, sem jargão, o que está errado e como resolver.",
+    "why_facts": [
+      ["45%", "dos testes de código feitos com mais de 100 modelos de IA saíram com uma falha da lista OWASP Top 10, as mais comuns da web.", "Veracode, 2025", "https://www.veracode.com/press-release/ai-generated-code-poses-major-security-risks-in-nearly-half-of-all-development-tasks-veracode-research-reveals/"],
+      ["170", "de 1.645 apps feitos com IA, numa vitrine pública, deixavam o banco de dados aberto, com nomes, e-mails, chaves de API e pagamentos.", "CVE-2025-48757", "https://mattpalmer.io/posts/statement-on-CVE-2025-48757/"],
+      ["36%", "de 3.984 skills públicas para agentes tinham pelo menos uma falha de segurança, e 13% tinham uma falha crítica.", "Snyk, 2026", "https://snyk.io/pt-BR/blog/toxicskills-malicious-ai-agent-skills-clawhub"],
+      ["23,8 milhões", "de chaves e senhas vazaram no GitHub público em 2024, 25% a mais que no ano anterior.", "GitGuardian, 2025", "https://blog.gitguardian.com/the-state-of-secrets-sprawl-2025/"]
+    ],
+
+    "report_h2": "Três relatórios reais",
+    "report_p": "Saída do Stingward {version} para os dois exemplos que vêm no repositório e para a skill do próprio Stingward. Escolha um.",
+    "reports": [
+      {"name": "Uma skill de PDF", "note": "Parece um ajudante de PDF"},
+      {"name": "Um app em Next.js", "note": "Next.js e Supabase, feito com IA"},
+      {"name": "A skill do Stingward", "note": "A que o plugin instala"}
+    ],
+    "grade_word": "Nota",
+
+    "how_label": "Etapas da auditoria",
+    "stages": [
+      {"name": "Arquivos", "clause": "Primeiro, lista os arquivos", "detail": "Pula node_modules, dist e outras pastas geradas. Numa skill de terceiros ele lê também o build, porque é isso que roda."},
+      {"name": "Bases públicas", "clause": "Depois, consulta as bases públicas", "detail": "Só o nome e a versão de cada pacote vão para o OSV.dev, o KEV da CISA, o EPSS e o NVD. O código fica na sua máquina."},
+      {"name": "Verificações", "clause": "Então roda as {rules} verificações", "detail": "Segredos, erros de apps feitos com IA, configuração de agentes e conteúdo de skills. Teste e documentação pesam menos."},
+      {"name": "Nota", "clause": "Por fim, dá a nota", "detail": "Os achados vêm do pior para o melhor, com onde, por quê e como corrigir, e um selo para o seu README."}
+    ],
+    "files_read": "{n} arquivos lidos em ./my-saas",
+    "sent_to": "Enviado para api.osv.dev",
+    "groups": {"SKL": "Skills e prompts", "APP": "Apps feitos com IA", "AGT": "Agentes e MCP", "SEC": "Segredos", "DEP": "Dependências"},
+    "grades": [
+      ["A", "Só itens baixos, ou nada"],
+      ["B", "Médios, nenhum alto"],
+      ["C", "Um ou dois altos"],
+      ["D", "Três ou mais altos"],
+      ["F", "Algum crítico"]
+    ],
+
+    "finds_h2": "O que ele pega",
+    "finds": {
+      "mask": ["Valor escondido", "A chave nunca aparece no relatório."],
+      "kev": ["Falha explorada agora", "CVE do catálogo KEV da CISA vira crítica."],
+      "hidden": ["Instrução invisível", "Decodifica o texto em Unicode que só a IA lê."],
+      "public": ["Chave no navegador", "Segredo atrás de NEXT_PUBLIC_, VITE_ ou EXPO_PUBLIC_."],
+      "rls": ["Supabase aberto", "Tabela sem RLS ou política com using (true)."],
+      "curl": ["Baixa e executa", "Hook ou skill que roda um script tirado da internet."],
+      "bypass": ["Agente sem freio", "Permissão total, Bash(*) e MCP sem versão fixa."],
+      "ssh": ["Roubo de chaves", "Lê ~/.ssh ou ~/.aws e chama a internet."]
+    },
+
+    "where_h2": "Onde ele roda",
+    "where": [
+      {"name": "No terminal", "cmd": "pipx install stingward", "alt": "Terminal rodando stingward ./my-saas: chave da OpenAI exposta, next 14.1.0 com falhas conhecidas, Supabase sem RLS. Nota F."},
+      {"name": "Antes de instalar uma skill", "cmd": "stingward skill dono/repo", "alt": "Terminal rodando stingward skill ./pdf-helper: instrução invisível decodificada e roubo de credenciais. Nota F."},
+      {"name": "No Claude Code", "cmd": "/plugin install stingward@stingward", "ask1": "meu projeto está seguro?", "ask2": "posso instalar github.com/x/y?"},
+      {"name": "Em cada pull request", "cmd": "uses: HiveControlAgents/StingWard@v0", "comment_title": "Auditoria de segurança"}
+    ],
+
+    "proof_h2": "Dá para conferir",
+    "proof_p": "Os dados vêm de bases abertas e o código está todo no GitHub.",
+    "proof": [
+      ["OSV.dev", "CVEs e pacotes maliciosos", "https://osv.dev"],
+      ["KEV da CISA", "Falhas exploradas agora", "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"],
+      ["EPSS", "Chance de exploração", "https://www.first.org/epss/"],
+      ["NVD", "Notas que faltam", "https://nvd.nist.gov"],
+      ["{rules} regras", "Cada uma com CWE e OWASP", "{repo}/blob/main/docs/rules.pt-BR.md"],
+      ["{tests} testes", "Linux, macOS e Windows", "{repo}/actions/workflows/ci.yml"]
+    ],
+
+    "price_h2": "Aberto e gratuito",
+    "price_p": "A linha de comando, o plugin do Claude Code e a GitHub Action são software livre, com licença MIT. Sem cadastro e sem telemetria.",
+    "currency": "R$",
+    "price_period": "sem cadastro",
+    "price_lines": [
+      "Linha de comando para Linux, macOS e Windows",
+      "Plugin e skill do Claude Code",
+      "GitHub Action com comentário no PR e SARIF",
+      "Todas as {rules} regras, sem limite de uso"
+    ],
+    "price_button": "Instalar",
+    "soon_tab": "Em breve",
+    "soon_h3": "Planos para times e empresas",
+    "soon_p": "O sistema de vendas entra em breve. Até lá, tudo o que está nesta página é gratuito.",
+    "soon_link": "Acompanhe os lançamentos no GitHub",
+
+    "faq_h2": "Perguntas",
+    "faq": [
+      ["Preciso entender de segurança para usar?", "Não. Cada problema vem explicado em linguagem simples: o que é, onde está, por que importa e o que fazer. A nota de A a F resume tudo."],
+      ["Meu código sai da minha máquina?", "Não. Só o nome e a versão dos pacotes saem, para api.osv.dev, www.cisa.gov, api.first.org e services.nvd.nist.gov. As respostas ficam em cache por algumas horas."],
+      ["Relatório limpo quer dizer que está seguro?", "Não. Quer dizer que os erros mais comuns não estão lá. O Stingward é uma primeira linha rápida, não um teste de invasão."],
+      ["Funciona sem internet?", "Funciona com --offline. Aí as dependências não são verificadas, e o resto da auditoria roda igual."],
+      ["Qual a diferença para o npm audit ou o Dependabot?", "Cada um cobre uma parte. O Stingward junta dependências, segredos e os erros típicos de apps feitos com IA, agentes, skills e servidores MCP num relatório só, e audita uma skill antes de você instalar."],
+      ["Por que o npx stingward precisa de Python?", "O motor é um pacote em Python puro, sem dependências. O pacote do npm só dá a partida, para quem usa JavaScript rodar sem pip."],
+      ["E se ele apontar algo que não é problema?", "Coloque a regra e o caminho no .stingwardignore, ou escreva stingward:ignore na linha. Se a regra estiver errada, avise no GitHub com um exemplo mínimo."],
+      ["Ele verifica projetos de outras pessoas?", "Não. O aviso vai só para quem roda a ferramenta, sobre o código que essa pessoa escolheu verificar. Ele não abre issues em repositórios de ninguém."]
+    ],
+
+    "cta_before": "Antes de instalar a próxima skill, rode",
+    "cta_cmd": "stingward skill dono/repo",
+    "cta_note": "Funciona com uma pasta no seu disco, com dono/repo ou com a URL de uma subpasta no GitHub.",
+
+    "footer_cols": [
+      ["Projeto", [["GitHub", "{repo}"], ["Lançamentos", "{repo}/releases"], ["Changelog", "{repo}/blob/main/CHANGELOG.md"], ["Licença MIT", "{repo}/blob/main/LICENSE"]]],
+      ["Instalar", [["PyPI", "https://pypi.org/project/stingward/"], ["npm", "https://www.npmjs.com/package/stingward"], ["GitHub Action", "{repo}/blob/main/README.pt-BR.md#github-action"], ["Plugin do Claude Code", "{repo}/blob/main/README.pt-BR.md#começo-rápido"]]],
+      ["Documentação", [["As {rules} regras", "{repo}/blob/main/docs/rules.pt-BR.md"], ["Segurança", "{repo}/blob/main/SECURITY.md"], ["Contribuir", "{repo}/blob/main/CONTRIBUTING.pt-BR.md"], ["Relatar alarme falso", "{repo}/issues/new?template=false-positive.yml"]]]
+    ],
+    "footer_contact_1": "Achou uma falha no próprio Stingward?",
+    "footer_contact_link": "Relate em particular",
+    "footer_contact_2": "Escrito em Python puro, sem dependências.",
+    "footer_copy": "© 2026 Isaque Moutta. Licença MIT.",
+    "footer_top": "Voltar ao topo",
+    "logo_alt": "Escudo do Stingward"
+  },
+
+  "en": {
+    "html_lang": "en",
+    "og_locale": "en_US",
+    "title": "Stingward: security for people who build with AI",
+    "description": "With AI, anyone can ship an app, a skill or an MCP server without knowing what a vulnerability is. Stingward finds the holes, grades the project from A to F and shows how to close each one. Open source, no sign-up.",
+    "skip": "Skip to content",
+    "nav_github": "GitHub",
+    "lang_label": "Language",
+    "hero_h1": ["You build it.", "Who checks it?"],
+    "hero_lead": "With AI, anyone can ship an app, a skill or an MCP server without knowing what a vulnerability is. Stingward finds the holes and shows how to close them.",
+    "tabs": ["Why it exists", "Report", "What it finds", "Price", "Install"],
+    "copy": "Copy",
+    "copied": "Copied",
+    "copy_failed": "Select and copy",
+    "hero_more": "It also runs with npx stingward, as a Claude Code plugin and as a GitHub Action.",
+    "hero_source": "See the code",
+
+    "why_h2": "Why it exists",
+    "why_p": "AI writes the code, picks the package versions and sets up the config. It makes things work, but it does not tell you what it left open, and the person shipping has often never heard of a CVE, RLS or an exposed key. You do not need to become an expert: Stingward reads the project and explains, without jargon, what is wrong and how to fix it.",
+    "why_facts": [
+      ["45%", "of code tests run on more than 100 AI models came back with a flaw from the OWASP Top 10, the most common on the web.", "Veracode, 2025", "https://www.veracode.com/press-release/ai-generated-code-poses-major-security-risks-in-nearly-half-of-all-development-tasks-veracode-research-reveals/"],
+      ["170", "of 1,645 AI-built apps in a public showcase left their database open, with names, emails, API keys and payments.", "CVE-2025-48757", "https://mattpalmer.io/posts/statement-on-CVE-2025-48757/"],
+      ["36%", "of 3,984 public agent skills had at least one security flaw, and 13% had a critical one.", "Snyk, 2026", "https://snyk.io/blog/toxicskills-malicious-ai-agent-skills-clawhub/"],
+      ["23.8M", "keys and passwords leaked on public GitHub in 2024, 25% more than the year before.", "GitGuardian, 2025", "https://blog.gitguardian.com/the-state-of-secrets-sprawl-2025/"]
+    ],
+
+    "report_h2": "Three real reports",
+    "report_p": "Output of Stingward {version} for the two examples that ship with the repository and for Stingward's own skill. Pick one.",
+    "reports": [
+      {"name": "A PDF skill", "note": "Looks like a PDF helper"},
+      {"name": "A Next.js app", "note": "Next.js and Supabase, built with AI"},
+      {"name": "Stingward's skill", "note": "The one the plugin installs"}
+    ],
+    "grade_word": "Grade",
+
+    "how_label": "Audit stages",
+    "stages": [
+      {"name": "Files", "clause": "First, it lists the files", "detail": "It skips node_modules, dist and other generated folders. For a third-party skill it also reads the build, because that is what runs."},
+      {"name": "Public databases", "clause": "Then it asks the public databases", "detail": "Only each package's name and version go to OSV.dev, CISA KEV, EPSS and NVD. Your code stays on your machine."},
+      {"name": "Checks", "clause": "Next, it runs {rules} checks", "detail": "Secrets, AI-app mistakes, agent configuration and skill content. Tests and docs count for less."},
+      {"name": "Grade", "clause": "Finally, it grades it", "detail": "Findings come worst first, with where, why and how to fix, plus a badge for your README."}
+    ],
+    "files_read": "{n} files read in ./my-saas",
+    "sent_to": "Sent to api.osv.dev",
+    "groups": {"SKL": "Skills and prompts", "APP": "AI-built apps", "AGT": "Agents and MCP", "SEC": "Secrets", "DEP": "Dependencies"},
+    "grades": [
+      ["A", "Only low items, or nothing"],
+      ["B", "Medium, no high"],
+      ["C", "One or two high"],
+      ["D", "Three or more high"],
+      ["F", "Any critical"]
+    ],
+
+    "finds_h2": "What it finds",
+    "finds": {
+      "mask": ["Value hidden", "The key never shows up in the report."],
+      "kev": ["Exploited right now", "A CVE in the CISA KEV catalog becomes critical."],
+      "hidden": ["Invisible instruction", "Decodes Unicode text that only the AI reads."],
+      "public": ["Key in the browser", "A secret behind NEXT_PUBLIC_, VITE_ or EXPO_PUBLIC_."],
+      "rls": ["Open Supabase", "A table without RLS, or a policy with using (true)."],
+      "curl": ["Download and run", "A hook or skill that runs a script pulled from the internet."],
+      "bypass": ["Agent without brakes", "Full permissions, Bash(*) and unpinned MCP servers."],
+      "ssh": ["Key theft", "Reads ~/.ssh or ~/.aws and calls the internet."]
+    },
+
+    "where_h2": "Where it runs",
+    "where": [
+      {"name": "In the terminal", "cmd": "pipx install stingward", "alt": "Terminal running stingward ./my-saas: OpenAI key exposed, next 14.1.0 with known flaws, Supabase without RLS. Grade F."},
+      {"name": "Before you install a skill", "cmd": "stingward skill owner/repo", "alt": "Terminal running stingward skill ./pdf-helper: decoded invisible instruction and credential theft. Grade F."},
+      {"name": "In Claude Code", "cmd": "/plugin install stingward@stingward", "ask1": "is my project secure?", "ask2": "can I install github.com/x/y?"},
+      {"name": "On every pull request", "cmd": "uses: HiveControlAgents/StingWard@v0", "comment_title": "Security audit"}
+    ],
+
+    "proof_h2": "Check its work",
+    "proof_p": "The data comes from open databases and all of the code is on GitHub.",
+    "proof": [
+      ["OSV.dev", "CVEs and malicious packages", "https://osv.dev"],
+      ["CISA KEV", "Flaws exploited right now", "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"],
+      ["EPSS", "Chance of exploitation", "https://www.first.org/epss/"],
+      ["NVD", "Missing scores", "https://nvd.nist.gov"],
+      ["{rules} rules", "Each with CWE and OWASP", "{repo}/blob/main/docs/rules.md"],
+      ["{tests} tests", "Linux, macOS and Windows", "{repo}/actions/workflows/ci.yml"]
+    ],
+
+    "price_h2": "Open and free",
+    "price_p": "The command line, the Claude Code plugin and the GitHub Action are open source under the MIT license. No sign-up and no telemetry.",
+    "currency": "$",
+    "price_period": "no sign-up",
+    "price_lines": [
+      "Command line for Linux, macOS and Windows",
+      "Claude Code plugin and skill",
+      "GitHub Action with PR comment and SARIF",
+      "All {rules} rules, no usage limit"
+    ],
+    "price_button": "Install",
+    "soon_tab": "Coming soon",
+    "soon_h3": "Plans for teams and companies",
+    "soon_p": "Sales open soon. Until then, everything on this page is free.",
+    "soon_link": "Follow the releases on GitHub",
+
+    "faq_h2": "Questions",
+    "faq": [
+      ["Do I need to know security to use it?", "No. Each problem comes explained in plain language: what it is, where it is, why it matters and what to do. The A to F grade sums it up."],
+      ["Does my code leave my machine?", "No. Only package names and versions leave, to api.osv.dev, www.cisa.gov, api.first.org and services.nvd.nist.gov. Answers are cached for a few hours."],
+      ["Does a clean report mean I am secure?", "No. It means the most common mistakes are not there. Stingward is a quick first line, not a penetration test."],
+      ["Does it work offline?", "Yes, with --offline. Dependencies are not checked then, and the rest of the audit runs the same."],
+      ["How is it different from npm audit or Dependabot?", "Each covers one part. Stingward puts dependencies, secrets and the usual mistakes of AI-built apps, agents, skills and MCP servers in one report, and audits a skill before you install it."],
+      ["Why does npx stingward need Python?", "The engine is a single pure-Python package with no dependencies. The npm package only starts it, so JavaScript users can run it without pip."],
+      ["What if it flags something that is fine?", "Put the rule and path in .stingwardignore, or write stingward:ignore on the line. If the rule is wrong, tell us on GitHub with a minimal sample."],
+      ["Does it check other people's projects?", "No. The warning goes only to the person who runs it, about the code they chose to check. It never opens issues on anyone's repository."]
+    ],
+
+    "cta_before": "Before you install the next skill, run",
+    "cta_cmd": "stingward skill owner/repo",
+    "cta_note": "It works with a folder on your disk, with owner/repo or with the URL of a subfolder on GitHub.",
+
+    "footer_cols": [
+      ["Project", [["GitHub", "{repo}"], ["Releases", "{repo}/releases"], ["Changelog", "{repo}/blob/main/CHANGELOG.md"], ["MIT license", "{repo}/blob/main/LICENSE"]]],
+      ["Install", [["PyPI", "https://pypi.org/project/stingward/"], ["npm", "https://www.npmjs.com/package/stingward"], ["GitHub Action", "{repo}#github-action"], ["Claude Code plugin", "{repo}#quick-start"]]],
+      ["Docs", [["All {rules} rules", "{repo}/blob/main/docs/rules.md"], ["Security", "{repo}/blob/main/SECURITY.md"], ["Contributing", "{repo}/blob/main/CONTRIBUTING.md"], ["Report a false positive", "{repo}/issues/new?template=false-positive.yml"]]]
+    ],
+    "footer_contact_1": "Found a flaw in Stingward itself?",
+    "footer_contact_link": "Report it privately",
+    "footer_contact_2": "Written in pure Python, with no dependencies.",
+    "footer_copy": "© 2026 Isaque Moutta. MIT license.",
+    "footer_top": "Back to top",
+    "logo_alt": "Stingward shield"
+  }
+}
