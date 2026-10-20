@@ -238,9 +238,9 @@ def check(ctx):
                           "epss": None, "fixed": None, "details": False})
         return vulns, malware
 
-    def malicious(name, version, rel, line, advisories):
-        return Finding("DEP002", "critical", rel, line, {"pkg": name, "version": version, "vuln_id": advisories[0],
-                                                         "advisories": advisories},
+    def malicious(name, version, rel, line, advisories, severity="critical"):
+        return Finding("DEP002", severity, rel, line, {"pkg": name, "version": version, "vuln_id": advisories[0],
+                                                       "advisories": advisories},
                        [f"https://osv.dev/vulnerability/{advisories[0]}"], ["malicious"])
 
     for (eco, name, version, rel, line), ids in zip(pkgs, ids_per_pkg):
@@ -257,7 +257,11 @@ def check(ctx):
             at_floor[key] = assess(ids_per_floor.get(key, []), r.eco, r.name, r.floor)
         vulns, malware = at_floor[key]
         if malware:
-            out.append(malicious(r.name, r.floor, r.file, r.line, malware))
+            # O piso malicioso só é crítico quando toda versão da faixa é maliciosa. Uma versão ruim só no piso
+            # (release sequestrado, já trocado) quase nunca é a instalada: alto, para revisar a faixa.
+            whole = any(vulndb.affects_whole_range(docs.get(m, {}), r.eco, r.name, r.floor, r.upper, r.inclusive)
+                        for m in malware)
+            out.append(malicious(r.name, r.floor, r.file, r.line, malware, "critical" if whole else "high"))
         if vulns:
             vulns = [dict(x, spans=vulndb.affects_whole_range(docs.get(x["osv"], {}), r.eco, r.name, r.floor, r.upper, r.inclusive))
                      for x in vulns]

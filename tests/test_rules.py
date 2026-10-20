@@ -1278,11 +1278,24 @@ class DepRules(RuleTest):
                          [("DEP004", "pyproject.toml", 2), ("DEP004", "requirements.txt", 1)])
 
     def test_dep004_malicious_lowest_version_is_dep002(self):
-        mal = {"id": "MAL-2026-9", "summary": "Malicious code in evil-pkg"}
-        _, f, _ = self.deps({"package.json": '{"dependencies": {"evil-pkg": "^1.0.0"}}\n'}, {"evil-pkg": ["MAL-2026-9"]},
-                            {"MAL-2026-9": mal})
-        self.assertEqual([(x.rule, x.severity, x.params.get("version")) for x in f], [("DEP002", "critical", "1.0.0"),
-                                                                                       ("DEP003", "low", None)])
+        # Critical only when every version the range allows is malicious: when one bad release sits at the floor,
+        # the installed version is probably a later, clean one.
+        one = {"id": "MAL-2026-8", "summary": "Malicious code in good-pkg",
+               "affected": [{"package": {"ecosystem": "npm", "name": "good-pkg"}, "versions": ["1.0.0"]}]}
+        docs = {d["id"]: d for d in (_adv("MAL-2026-9", "evil-pkg"), one, _adv("MAL-2026-7", "hijacked", "1.0.1"),
+                                     _adv("MAL-2026-6", "boxed", "1.1.0"))}
+        pkg = {"dependencies": {"evil-pkg": "^1.0.0", "good-pkg": "^1.0.0", "hijacked": "^1.0.0", "boxed": "~1.0.0",
+                                "gone": "^1.0.0"}}
+        ids = {"evil-pkg": ["MAL-2026-9"], "good-pkg": ["MAL-2026-8"], "hijacked": ["MAL-2026-7"], "boxed": ["MAL-2026-6"],
+               "gone": ["MAL-2026-5"]}
+        _, f, _ = self.deps({"package.json": json.dumps(pkg, indent=2)}, ids, docs)
+        got = {x.params["pkg"]: (x.severity, x.params["version"]) for x in f if x.rule == "DEP002"}
+        self.assertEqual(got, {"evil-pkg": ("critical", "1.0.0"), "good-pkg": ("high", "1.0.0"),
+                               "hijacked": ("high", "1.0.0"), "boxed": ("critical", "1.0.0"), "gone": ("high", "1.0.0")})
+        self.assertSilent(f, "DEP004")
+        # A pinned malicious version is what gets installed: always critical.
+        _, f, _ = self.deps({"package.json": '{"dependencies": {"good-pkg": "1.0.0"}}\n'}, ids, docs)
+        self.assertEqual([(x.rule, x.severity) for x in f], [("DEP002", "critical")])
 
     def test_dep004_near_misses(self):
         lock = '{"lockfileVersion": 3, "packages": {"": {}, "node_modules/axios": {"version": "1.12.2"}}}\n'
