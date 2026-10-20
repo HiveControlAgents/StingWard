@@ -29,6 +29,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ### Fixed
 - The code check no longer hangs on a text built from other built texts (`a2 += a1` many times, then `a3 += a2`): a 2 KB file could stop the audit for hours. Each text is now put back together from at most 400 pieces, and the finding still comes out.
+- The code check no longer takes minutes on a JavaScript line with a long run of spaces before `Math.random()`: finding the name that receives the value was cubic in the length of the line.
 
 ## [0.1.5] - 2026-10-20
 

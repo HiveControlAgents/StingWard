@@ -2271,6 +2271,10 @@ _JS_GUARD_REDIRECT = re.compile(r"startsWith\s*\(\s*['\"]/|isSafe|safeRedirect|i
 _JS_GUARD_URL = re.compile(r"(?i)allowed|whitelist|allowlist|isPrivate|private_?(?:ip|address|network|range|host|cidr)|isPublic|"
                            r"\.hostname\s*[!=]==|\.host\s*[!=]==|startsWith\s*\(")
 _JS_RANDOM = re.compile(r"Math\s*\.\s*random\s*\(")
+# Quem recebe o valor na linha do Math.random(): const x =, this.x =, x: (chave), const x: string =. Os espaços do tipo
+# só aparecem entre palavras, para a busca não ter dois jeitos de casar os mesmos espaços (ficava cúbica).
+_JS_RANDOM_NAME = re.compile(r"(?:(?:const|let|var)\s+|this\s*\.\s*|\.)?(?<![\w$])([A-Za-z_$][\w$]*)[ \t]*"
+                             r"(?::[ \t]*[\w<>\[\]|]+(?:[ \t]+[\w<>\[\]|]+)*)?[ \t]*[:=](?!=)[^=:]*$")
 _JS_HASH = re.compile(r"""createHash\(\s*(['"])(md5|sha1|sha256|sha512|sha224|sha384)\1\s*\)|"""
                       r"""(?<![\w$.])(md5|sha1|sha256|sha512)\s*\(|\bCryptoJS\s*\.\s*(MD5|SHA1|SHA256|SHA512|SHA3)\s*\(""")
 _JS_SYSTEM = re.compile(r"""role\s*:\s*(['"])(?:system|developer)\1""")
@@ -3411,10 +3415,10 @@ class _Js:
     def weak_random(self):
         decls = starts = None
         for m in _JS_RANDOM.finditer(self.mask):
-            start = self.mask.rfind("\n", 0, m.start()) + 1
+            start = max(self.mask.rfind("\n", 0, m.start()) + 1, m.start() - 300)
             head = self.mask[start:m.start()]
             name = None
-            d = re.search(r"(?:(?:const|let|var)\s+|this\s*\.\s*|\.)?([A-Za-z_$][\w$]*)\s*(?::\s*[\w<>\[\]| ]+)?\s*[:=](?!=)[^=:]*$", head)
+            d = _JS_RANDOM_NAME.search(head)
             if d:
                 name = d.group(1)
             elif re.match(r"\s*return\b", head):
