@@ -129,7 +129,7 @@ Ainda não foi para o git, mas o próximo `git add .` leva junto.
 <a id="sec004"></a>
 ### SEC004 · Chave `service_role` do Supabase no código
 
-A chave `service_role` passa por cima do Row Level Security: quem tem a chave lê e altera qualquer tabela.
+A chave `service_role` passa por cima do Row Level Security: quem tem a chave lê e altera qualquer tabela. A chave padrão do Supabase local (a que o `supabase start` cria em toda máquina: emissor `supabase-demo`, assinada com o segredo padrão do CLI) é baixa, com a nota "chave padrão do ambiente local", e não deixa alto um `.env` no git. Qualquer outra chave `service_role` é crítica.
 
 **Como corrigir:** use só no servidor, nunca no front-end, e gere outra no painel do Supabase.
 **Padrões:** `CWE-798`

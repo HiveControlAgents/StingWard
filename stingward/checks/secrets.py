@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import base64
 import fnmatch
+import hashlib
+import hmac
 import itertools
 import json
 import re
@@ -98,6 +100,32 @@ def _jwt_role(token: str):
         return json.loads(base64.urlsafe_b64decode(payload)).get("role")
     except (IndexError, ValueError, AttributeError, RecursionError):
         return None
+
+
+# Segredo padrão do Supabase CLI: o supabase start assina com ele as chaves anon e service_role de toda instalação local
+# (emissor "supabase-demo"). Público na documentação; a chave assinada com ele só abre o banco local.
+_DEMO_JWT_SECRET = b"super-secret-jwt-token-with-at-least-" + b"32-characters-long"
+_DEMO_NOTE = {"note_pt": " (chave padrão do ambiente local)", "note_en": " (local default key)",
+              "local_pt": " Esta é a chave padrão que o supabase start cria em toda máquina: só abre o banco local. "
+                          "Confira se a produção usa uma chave própria.",
+              "local_en": " This is the default key that supabase start creates on every machine: it only opens the "
+                          "local database. Make sure production uses a key of its own."}
+
+
+def _demo_key(token: str) -> bool:
+    """A chave de exemplo do Supabase local: emissor supabase-demo e assinatura feita com o segredo padrão do CLI.
+    Com outra assinatura (o projeto trocou o segredo) ou outro emissor, é chave de verdade."""
+    parts = token.split(".")
+    if len(parts) != 3:
+        return False
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+    except (ValueError, RecursionError):
+        return False
+    if not isinstance(claims, dict) or claims.get("iss") != "supabase-demo":
+        return False
+    sig = hmac.new(_DEMO_JWT_SECRET, f"{parts[0]}.{parts[1]}".encode(), hashlib.sha256).digest()
+    return hmac.compare_digest(base64.urlsafe_b64encode(sig).decode().rstrip("="), parts[2])
 
 
 # Também o bloco do PGP ("PRIVATE KEY BLOCK"), cujo armor tem cabeçalhos (Version:, Comment:) e uma linha em branco.
@@ -271,7 +299,8 @@ def _known(line, n, rel, low_conf, out, nxt=""):
         if kind == "jwt":
             role = _jwt_role(m.group(0))
             if role == "service_role":
-                out.append(Finding("SEC004", "critical", rel, n))
+                demo = _demo_key(m.group(0))
+                out.append(Finding("SEC004", "low" if demo else "critical", rel, n, dict(_DEMO_NOTE) if demo else {}))
             elif role not in ("anon", "authenticated") and not low_conf:
                 out.append(Finding("SEC001", "medium", rel, n, _kind("jwt")))
             continue
@@ -369,8 +398,10 @@ def _env_has_secret(text: str) -> bool:
         if val.startswith("encrypted:") or key.startswith("DOTENV_PUBLIC_KEY"):
             continue
         toks = _tokens(val)
-        # A chave anon do Supabase vai para o navegador de propósito; o SEC001 também não a conta.
-        if toks and all(kind == "jwt" and _jwt_role(m.group(0)) in ("anon", "authenticated") for kind, m in toks):
+        # A chave anon do Supabase vai para o navegador de propósito; o SEC001 também não a conta. A service_role
+        # padrão do Supabase local (_demo_key) também não abre nada fora da máquina.
+        if toks and all(kind == "jwt" and (_jwt_role(m.group(0)) in ("anon", "authenticated") or _demo_key(m.group(0)))
+                        for kind, m in toks):
             continue
         if toks or any(_url_password(u, val) == "high" for u in redact._URL_CREDS.finditer(val)):
             return True
