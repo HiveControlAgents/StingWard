@@ -33,6 +33,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - `npx stingward` ran whatever `python3` it found first: with Python 3.8 or older the package broke with a traceback and exit code 1, the same code as "found problems", and it never tried `python`. It now asks each Python its version first, skips the ones older than 3.9 and says which it found, and exits 2 when none fits. On Windows it asks for `py -3`, so the launcher no longer opens a Python 2. A Python stopped by a signal (Ctrl-C, `kill`) now stops `npx` the same way instead of exiting 1, and the message is in English too.
 - On a pull request from a fork or from Dependabot the GitHub Action's token cannot comment, and the comment step failed with a bare `HTTP 403`. It now leaves a notice (fork) or a warning that names `pull-requests: write`, and points to the job summary, where the report already is. It also no longer posts a second comment when listing the existing ones fails.
 - The GitHub Action's `sarif` input and the README did not say that uploading SARIF from a private repository also needs `actions: read`. Without it the upload failed quietly and nothing reached code scanning.
+- On the site, the "Install" folder tab showed no focus ring when reached with the keyboard: the tab's cut corners (`clip-path`) cut the ring too. The other folder tabs only showed a thin line, because the next folder covers most of the ring. A focused folder tab now underlines its name.
 
 ## [0.1.5] - 2026-10-20
 
