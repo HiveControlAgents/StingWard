@@ -28,6 +28,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - Test and example code is recognized in more places (`e2e/`, `samples/`, `testdata/`, `__mocks__/`, `cookbooks/`, `test_*.py`, `conftest.py`), and findings there are lowered as they already were in `tests/` and `examples/`.
 
 ### Fixed
+- The code check reads JavaScript and TypeScript files longer than about 2000 lines again. Everything after line 2000 was counted as one long line, so ordinary files of that size (a large MCP server, a big page component) were taken for minified bundles and skipped without a word; only real long lines mark a bundle now.
 - The code check no longer hangs on a text built from other built texts (`a2 += a1` many times, then `a3 += a2`): a 2 KB file could stop the audit for hours. Each text is now put back together from at most 400 pieces, and the finding still comes out.
 - The code check no longer takes minutes on a JavaScript line with a long run of spaces before `Math.random()`: finding the name that receives the value was cubic in the length of the line.
 - The code check no longer slows to seconds or minutes on a Python `"..." % x` text with long runs of zeros after a `%` or thousands of `%(` without `)`.

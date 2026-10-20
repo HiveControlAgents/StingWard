@@ -1241,6 +1241,13 @@ class CodeEngine(unittest.TestCase):
                  "nested.js": "const x = " + "[" * 3000 + "]" * 3000 + "\n", "huge.js": "// x\n" * 200_000}
         self.assertEqual(got(run(files)), [])
 
+    def test_long_files_are_not_taken_for_minified(self):
+        """Um arquivo comum de 4000 linhas é lido até o fim; só linhas realmente longas indicam bundle minificado."""
+        src = EXPRESS + "const a = 1 // filler line here\n" * 4000 + "app.post('/x', (req, res) => { eval(req.body.code) })\n"
+        self.assertEqual(got(run({"server.js": src})), [("COD003", "server.js", 4003, "critical")])
+        self.assertFalse(code._minified(src))
+        self.assertTrue(code._minified("const a = 1\n" * 3000 + "var a=1;" * 3000 + "\n"))
+
     def test_pathological_files_stay_fast(self):
         """Milhares de começos sem fim, com uma origem e um sink para a análise toda rodar: cada arquivo tem um teto."""
         head = "const cp = require('child_process')\nconst q = req.query.x\neval(q)\ncp.exec(q)\n"

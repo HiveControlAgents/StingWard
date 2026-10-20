@@ -2017,8 +2017,10 @@ def _script_only(rel, text):
 
 
 def _minified(text):
+    """Bundle minificado: uma linha com mais de 20000 caracteres ou duas com mais de 3000. Todas as linhas contam: com
+    split("\n", 2000), o resto depois da linha 2000 virava uma linha só, e arquivos comuns longos eram pulados."""
     long_lines = 0
-    for line in text.split("\n", 2000):
+    for line in text.split("\n"):
         if len(line) > 3000:
             long_lines += 1
             if long_lines > 1 or len(line) > 20000:
