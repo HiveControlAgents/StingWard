@@ -8,6 +8,7 @@ import re
 from collections import namedtuple
 from pathlib import Path
 
+from .model import decode_text
 from .vulndb import _vkey
 
 LOCKFILES = {
@@ -69,8 +70,10 @@ def parse(root: Path, rel: str, requirements=False):
 
 
 def _read(root, rel):
+    """Texto do manifesto como o resto da auditoria o lê (decode_text): UTF-8, ou UTF-16/32 pelo BOM. O PowerShell 5
+    grava pip freeze > requirements.txt em UTF-16, que em UTF-8 virava lixo e dava zero pacotes, calado."""
     try:
-        return (root / rel).read_text("utf-8-sig", errors="replace")
+        return decode_text((root / rel).read_bytes())
     except OSError:
         return None
 

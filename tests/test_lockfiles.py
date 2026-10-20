@@ -85,6 +85,28 @@ class Dispatch(LockfileCase):
             with self.subTest(rel=rel):
                 self.assertEqual(self.pkgs(rel, content, encoding="utf-8-sig"), want)
 
+    def test_utf16_with_bom_is_read(self):
+        # Windows PowerShell 5 writes UTF-16 LE with a BOM for `pip freeze > requirements.txt`.
+        lock = json.dumps({"lockfileVersion": 3, "packages": {"node_modules/ms": {"version": "2.1.3"}}})
+        cases = [("requirements.txt", "requests==2.19.0\r\nflask==0.12\r\n", [("PyPI", "requests", "2.19.0"), ("PyPI", "flask", "0.12")]),
+                 ("package-lock.json", lock, [("npm", "ms", "2.1.3")])]
+        for encoding in ("utf-16", "utf-16-be"):
+            for rel, content, want in cases:
+                with self.subTest(rel=rel, encoding=encoding):
+                    data = content.encode(encoding)
+                    if encoding == "utf-16-be":
+                        data = b"\xfe\xff" + data
+                    (self.root / rel).write_bytes(data)
+                    self.assertEqual([x[:3] for x in lockfiles.parse(self.root, rel)], want)
+        self.write("requirements.txt", "requests==2.19.0\r\nflask>=0.12\r\n", encoding="utf-16")
+        self.assertEqual([(r.name, r.floor, r.line) for r in lockfiles.ranges(self.root, "requirements.txt")], [("flask", "0.12", 2)])
+        self.assertEqual(lockfiles.open_ranges(self.root, "requirements.txt"), 1)
+
+    def test_utf16_requirements_are_audited_by_a_scan(self):
+        from stingward import scan
+        self.write("requirements.txt", "requests==2.19.0\r\nflask==0.12\r\n", encoding="utf-16")
+        self.assertEqual(scan.run(str(self.root), offline=True)[0].sources["packages"], 2)
+
     def test_deeply_nested_json_does_not_crash(self):
         for rel in ("package-lock.json", "package.json", "Pipfile.lock", "composer.lock"):
             with self.subTest(rel=rel):
