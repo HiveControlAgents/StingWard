@@ -474,6 +474,15 @@ class Secrets(Case):
             self.assertNoSecret(out, fmt)
             self.assertIn("masked something that looks like a secret", err)
 
+    def test_a_pgp_private_key_is_masked_whole(self):
+        # A última linha do corpo de uma chave PGP é curta: linha a linha ela passaria como texto comum.
+        pgp = ("-----BEGIN PGP " + "PRIVATE KEY BLOCK-----\n\n" + PEM_BODY + "\n" + OPAQUE[:11] + "\n=Ab3x\n"
+               "-----END PGP " + "PRIVATE KEY BLOCK-----")
+        m = review.Masker()
+        self.assertEqual(m.lines(f"Found this in the repo:\n{pgp}\nRotate it."),
+                         "Found this in the repo:\n[REDACTED:private_key]\nRotate it.")
+        self.assertTrue(m.changed)
+
     def test_long_notes_stay_fast(self):
         ctx = Context(root=self.root, files=[])
         found = [Finding("SEC001", "high", "src/db.js", 2, {}), Finding("SEC001", "high", ".env", 1, {})]

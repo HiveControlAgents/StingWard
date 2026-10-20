@@ -82,7 +82,8 @@ def ensure(ctx, findings):
 # --------------------------------------------------------------------------- o que quem revisou escreveu
 
 _CHUNK = re.compile(r"[^\s\"'`,;:=(){}\[\]<>|&]+")
-_PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)")
+_PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?"  # o PGP termina em "KEY BLOCK-----"
+                          r"(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|\Z)")
 _WINDOW = 12   # pedaço de segredo que já conta como vazamento
 _MIN_SECRET = 6
 _WHOLE_FILE = 2000  # linhas: arquivo maior que isso marcado inteiro não entra linha a linha
