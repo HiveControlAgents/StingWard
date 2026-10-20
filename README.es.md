@@ -11,7 +11,7 @@
   <a href="https://www.npmjs.com/package/stingward"><img alt="npm" src="https://img.shields.io/npm/v/stingward?color=f5b83d"></a>
   <a href="https://pypi.org/project/stingward/"><img alt="Python 3.9+" src="https://img.shields.io/pypi/pyversions/stingward"></a>
   <img alt="Cero dependencias" src="https://img.shields.io/badge/dependencias-0-brightgreen">
-  <a href="LICENSE"><img alt="Licencia Apache 2.0" src="https://img.shields.io/badge/licencia-Apache%202.0-blue"></a>
+  <a href="https://github.com/HiveControlAgents/StingWard/blob/main/LICENSE"><img alt="Licencia Apache 2.0" src="https://img.shields.io/badge/licencia-Apache%202.0-blue"></a>
   <a href="#calidad"><img alt="stingward: A" src="https://img.shields.io/badge/stingward-A-brightgreen"></a>
 </p>
 
@@ -57,7 +57,7 @@ Sin cuenta, sin telemetría, sin dependencias: Python 3.9+ puro, en Linux, macOS
 | **Agentes y MCP** | `bypassPermissions`, `Bash(*)`, hooks con `curl \| sh`, `enableAllProjectMcpServers`, servidores MCP sin versión fija, tokens en `.mcp.json`, MCP remoto sin HTTPS, paquetes MCP vulnerables como `mcp-remote` (CVE-2025-6514). |
 | **Skills y prompts** | Unicode invisible (caracteres de etiqueta, Trojan Source, ancho cero), "ignora las instrucciones anteriores", "no le digas al usuario", lectura de `~/.ssh` o `~/.aws` con llamada a internet, `curl \| bash`, reverse shells, código ofuscado, servicios de captura (webhook.site, ngrok...), scripts de instalación, `allowed-tools: Bash`, instrucciones ocultas en la descripción de herramientas MCP. |
 
-Las 50 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.md](docs/rules.md).
+Las 50 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.md](https://github.com/HiveControlAgents/StingWard/blob/main/docs/rules.md).
 
 <p align="center">
   <img alt="stingward ./my-saas: clave de OpenAI expuesta con NEXT_PUBLIC_, la respuesta del modelo ejecutada como comando de shell, next 14.1.0 con CVE-2025-29927 (EPSS de 99%), SQL y una ruta de archivo armados con datos de la petición, un servidor que descarga cualquier URL, tabla de Supabase sin RLS, requests cuya versión mínima permitida tiene fallas conocidas. Nota F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-en.gif" width="820">
@@ -74,7 +74,7 @@ Las 50 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.m
 
 Solo los nombres y versiones de los paquetes salen de tu máquina (a `api.osv.dev`, `www.cisa.gov`, `api.first.org` y `services.nvd.nist.gov`). Tu código nunca sale. Las respuestas se guardan en caché unas horas en `~/.cache/stingward`.
 
-Stingward lee contenido hostil por diseño, así que lo trata con cuidado: git nunca descubre un repositorio dentro de los archivos auditados, los lanzadores nunca importan código de la carpeta auditada, y los secretos, los códigos de terminal y el markdown se neutralizan en todos los formatos. Ver [SECURITY.md](SECURITY.md).
+Stingward lee contenido hostil por diseño, así que lo trata con cuidado: git nunca descubre un repositorio dentro de los archivos auditados, los lanzadores nunca importan código de la carpeta auditada, y los secretos, los códigos de terminal y el markdown se neutralizan en todos los formatos. Ver [SECURITY.md](https://github.com/HiveControlAgents/StingWard/blob/main/SECURITY.md).
 
 ## GitHub Action
 
@@ -173,8 +173,8 @@ Stingward informa a quien lo ejecuta, sobre el código que esa persona eligió r
 
 ## Contribuir
 
-Reportes de errores, falsos positivos y reglas nuevas son bienvenidos. Lee [CONTRIBUTING.md](CONTRIBUTING.md) (en inglés) para preparar el entorno, y reporta los problemas de seguridad del propio Stingward en privado, como explica [SECURITY.md](SECURITY.md).
+Reportes de errores, falsos positivos y reglas nuevas son bienvenidos. Lee [CONTRIBUTING.md](https://github.com/HiveControlAgents/StingWard/blob/main/CONTRIBUTING.md) (en inglés) para preparar el entorno, y reporta los problemas de seguridad del propio Stingward en privado, como explica [SECURITY.md](https://github.com/HiveControlAgents/StingWard/blob/main/SECURITY.md).
 
 Datos de vulnerabilidades: [OSV.dev](https://osv.dev) (que reúne GitHub Advisories, NVD, PyPA, RustSec, Go y los paquetes maliciosos de OpenSSF), [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog), [FIRST EPSS](https://www.first.org/epss/) y [NVD](https://nvd.nist.gov).
 
-[Apache 2.0](LICENSE) © Isaque Moutta
+[Apache 2.0](https://github.com/HiveControlAgents/StingWard/blob/main/LICENSE) © Isaque Moutta

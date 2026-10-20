@@ -500,3 +500,20 @@ class PinnedTools(unittest.TestCase):
                 with self.subTest(workflow=name, package=spec):
                     self.assertRegex(spec, r"^(@[a-z0-9-]+/)?[a-z0-9.-]+@\d+\.\d+\.\d+$")
         self.assertGreaterEqual(len(seen), 2, seen)
+
+
+BLOB = "https://github.com/HiveControlAgents/StingWard/blob/main/"
+
+
+class ReadmeOnPyPI(unittest.TestCase):
+    def test_readme_links_work_outside_github(self):
+        """O PyPI mostra o README.md fora do GitHub: um link relativo (docs/rules.md, LICENSE) vira 404 lá. Os links
+        apontam para o GitHub, e cada um para um arquivo que existe."""
+        for doc in ("README.md", "README.pt-BR.md", "README.es.md"):
+            text = _read(doc)
+            targets = re.findall(r"\]\(([^)\s]+)\)", text) + re.findall(r'(?:href|src)="([^"]+)"', text)
+            for t in targets:
+                with self.subTest(doc=doc, link=t):
+                    self.assertRegex(t, r"^(https?:|mailto:|#)")
+                    if t.startswith(BLOB):
+                        self.assertTrue(os.path.exists(os.path.join(ROOT, t[len(BLOB):].split("#", 1)[0])), t)
