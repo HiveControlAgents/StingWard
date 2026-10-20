@@ -1,7 +1,7 @@
 ---
 name: stingward
 description: Security check for projects built with AI and for skills, plugins and MCP servers before installing them. Finds vulnerable or malicious dependencies (OSV.dev, NVD, CISA KEV, EPSS), leaked secrets, AI-app mistakes (keys exposed in the frontend, open CORS, Supabase without RLS, open Firebase rules), flaws in the app's code (SQL and shell injection, XSS, SSRF, path traversal, model output run as code, MCP and agent tool arguments reaching a shell, SQL, files or URLs, AI routes with no login or rate limit) and risky agent setups (broad permissions, unpinned MCP servers, hidden instructions in skills). Use when the user asks whether their project is secure, before deploying or publishing, or before installing a skill, plugin or MCP server.
-allowed-tools: Read, Grep, Glob, Bash(python3 *scripts/run.py:*), Bash(stingward:*)
+allowed-tools: Read, Grep, Glob, Bash(python3 -I ${CLAUDE_SKILL_DIR}/scripts/run.py . --format json --fail-on never), Bash(python3 -I ${CLAUDE_SKILL_DIR}/scripts/run.py agents --format json --fail-on never), Bash(python3 -I ${CLAUDE_SKILL_DIR}/scripts/run.py skill --format json --fail-on never -- *)
 ---
 
 # stingward
@@ -10,15 +10,15 @@ Audits the user's own project, or a skill/plugin/MCP server they are about to in
 
 ## Run it
 
-Use the launcher next to this file (it falls back to a `stingward` install on PATH):
+Use the launcher next to this file (it falls back to a `stingward` install on PATH). Type each command exactly as written: only these forms are pre-approved (any other command needs the user's approval), and `-I` keeps Python from importing anything from the folder being checked.
 
 | User wants | Command |
 |---|---|
-| Check the current project | `python3 <skill-dir>/scripts/run.py . --format json --fail-on never` |
-| Check a skill or MCP server before installing | `python3 <skill-dir>/scripts/run.py skill <path-or-github-url> --format json --fail-on never` |
-| Check the agent setup on this machine | `python3 <skill-dir>/scripts/run.py agents --format json --fail-on never` |
+| Check the current project | `python3 -I ${CLAUDE_SKILL_DIR}/scripts/run.py . --format json --fail-on never` |
+| Check a skill or MCP server before installing | `python3 -I ${CLAUDE_SKILL_DIR}/scripts/run.py skill --format json --fail-on never -- <path-or-github-url>` |
+| Check the agent setup on this machine | `python3 -I ${CLAUDE_SKILL_DIR}/scripts/run.py agents --format json --fail-on never` |
 
-`<skill-dir>` is the base directory this skill was loaded from. Add `--offline` only if the network is unavailable; then dependencies are not checked and you must say so. Only package names and versions leave the machine (to api.osv.dev, api.first.org, www.cisa.gov and services.nvd.nist.gov); source code never does.
+`${CLAUDE_SKILL_DIR}` is the folder this file is in; if it was not replaced by a path, use the base directory this skill was loaded from. Keep `--` right before the skill's path or URL, so nothing in it is read as an option. Add `--offline` (before `--`) only if the network is unavailable; then dependencies are not checked and you must say so. Only package names and versions leave the machine (to api.osv.dev, api.first.org, www.cisa.gov and services.nvd.nist.gov); source code never does.
 
 ## Report back
 
