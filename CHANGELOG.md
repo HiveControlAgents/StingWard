@@ -38,6 +38,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - The GitHub Action's `sarif` input and the README did not say that uploading SARIF from a private repository also needs `actions: read`. Without it the upload failed quietly and nothing reached code scanning.
 - On the site, the "Install" folder tab showed no focus ring when reached with the keyboard: the tab's cut corners (`clip-path`) cut the ring too. The other folder tabs only showed a thin line, because the next folder covers most of the ring. A focused folder tab now underlines its name.
 - The links in the README to the rules reference, `SECURITY.md`, `CONTRIBUTING.md` and the license were relative, so they gave 404 on the PyPI page. They now point to the files on GitHub, in all three READMEs.
+- The plugin's launcher (`skills/stingward/scripts/run.py`) relied on the caller passing `-I`. Run without it and with a `PYTHONPATH` that has an empty entry, it imported the checked folder's own `shutil.py` or `json.py`. It now drops the current folder from `sys.path` before importing anything else.
 
 ## [0.1.5] - 2026-10-20
 
