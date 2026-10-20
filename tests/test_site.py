@@ -1,4 +1,5 @@
 """O site é montado a partir deste checkout; estes testes montam o site e conferem o que ele promete."""
+import html
 import importlib.util
 import json
 import os
@@ -8,7 +9,7 @@ import sys
 import tempfile
 import unittest
 
-from stingward import __version__, report_html
+from stingward import __version__, report, report_html, scan
 from stingward.rules import RULES
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -79,6 +80,23 @@ class Site(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 list(self.build.pairs("where", page, text))
         self.assertEqual(list(self.build.pairs("where", [1, 2], ["a", "b"])), [(1, "a"), (2, "b")])
+
+    def test_the_pull_request_preview_shows_the_rows_of_the_real_comment(self):
+        # The PR comment merges one problem found in several places into one row, in the order of report.merge. The
+        # preview shows its first rows the same way: the public key in .env and in the chat route is one row, not two.
+        demo = os.path.join(self.tmp.name, "demo-pr")
+        subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "demo", "fixtures.py"), demo], check=True, capture_output=True)
+        _, findings = scan.run(os.path.join(demo, "my-saas"), offline=True)
+        for lang, page in self.pages.items():
+            with self.subTest(lang=lang):
+                rows = page.split('class="pr__rows">', 1)[1].split("</ul>", 1)[0]
+                got = re.findall(r'<li><b class="sev sev--\w+">([^<]+)</b> (.*?)<code>(.*?)</code></li>', rows)
+                shown, _ = report.split(report.merge(findings, lang))
+                want = [(report.LABEL[lang][x.severity], html.escape(x.title), html.escape(report.places(x, lang, limit=5)))
+                        for x in shown[:5]]
+                self.assertEqual(got, want)
+                self.assertEqual(rows.count("NEXT_PUBLIC_OPENAI_API_KEY"), 1)
+                self.assertIn("<code>.env:1, app/api/chat/route.ts:3</code>", rows)
 
     def test_nothing_is_left_unfilled(self):
         for lang, rel, page in self.every_page():
