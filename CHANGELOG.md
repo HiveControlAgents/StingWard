@@ -34,6 +34,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - `stingward skill https://github.com/<owner>/<repo>/tree/<branch>/<folder>` only audits a folder inside the downloaded repository. A folder such as `../../etc`, or one that the repository makes a symbolic link to a folder on your machine, used to be audited instead of the skill, and the verdict was about that folder.
 - `stingward skill <url>` clones with git hooks turned off. A `post-checkout` hook from your own git setup (`core.hooksPath` or `init.templateDir`) used to run inside the downloaded skill before it was audited.
 - A token or password in the address given to `stingward skill` (`https://x-access-token:<token>@github.com/...`) no longer shows up in the text and HTML reports or in the download error, and the git message in that error is masked and loses terminal escape sequences sent by the server.
+- An answer from OSV.dev, CISA KEV, EPSS or the NVD in the wrong shape (an empty `{}` from a proxy or captive portal, a list, a missing field) counts as that source failing. An empty `{}` from OSV.dev used to read as "no vulnerabilities": the CI gate passed with exit code 0 and the answer stayed in the cache for six hours; other shapes crashed with a traceback. Now OSV.dev gives exit code 3 as when it is down, a KEV failure shows in the report, and a wrong answer is never cached (one already in the cache is fetched again).
 
 ## [0.1.5] - 2026-10-20
 

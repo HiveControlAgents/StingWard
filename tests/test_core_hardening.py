@@ -1,6 +1,7 @@
 """Revisão do núcleo: download de skill, leitura de arquivos, bases de vulnerabilidade, CLI e o mascaramento."""
 import contextlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -9,7 +10,7 @@ import time
 import unittest
 from unittest import mock
 
-from stingward import _redact as redact, cli
+from stingward import _redact as redact, cli, net, vulndb
 
 LANG_VARS = ("STINGWARD_LANG", "LC_ALL", "LC_MESSAGES", "LANG")
 
@@ -244,6 +245,96 @@ class SkillDownload(unittest.TestCase):
                 pass
         kw = run.call_args[1]
         self.assertEqual((kw.get("encoding"), kw.get("errors")), ("utf-8", "replace"))
+
+
+
+def _resp(payload):
+    r = mock.MagicMock()
+    r.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+    return r
+
+
+class OddAnswersFromTheDatabases(unittest.TestCase):
+    """Proxy, portal cativo ou API mudada: resposta com forma errada é falha da base, nunca "nada encontrado"."""
+
+    def setUp(self):
+        self.cache = tempfile.TemporaryDirectory()
+        self.addCleanup(self.cache.cleanup)
+        for patcher in (mock.patch.dict(os.environ, {"STINGWARD_CACHE": self.cache.name}), mock.patch("time.sleep")):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    PKGS = [("npm", "lodash", "4.17.15"), ("npm", "left-pad", "1.0.0")]
+
+    def test_osv_answer_with_the_wrong_shape_is_a_failure(self):
+        for bad in ({}, [], None, "x", {"results": "x"}, {"results": [{}]}, {"results": [{}, {"vulns": [{"idx": 1}]}]},
+                    {"results": [{}, {"vulns": "GHSA-1"}]}, {"results": [3, {}]}):
+            with self.subTest(answer=bad):
+                with mock.patch("urllib.request.urlopen", return_value=_resp(bad)):
+                    with self.assertRaises(net.NetError):
+                        vulndb.osv_query(self.PKGS)
+
+    def test_bad_answer_is_not_cached(self):
+        good = {"results": [{"vulns": [{"id": "GHSA-1"}]}, {"vulns": None}]}
+        with mock.patch("urllib.request.urlopen", side_effect=[_resp({})] * 3 + [_resp(good)]) as op:
+            with self.assertRaises(net.NetError):
+                vulndb.osv_query(self.PKGS)
+            self.assertEqual(vulndb.osv_query(self.PKGS), [["GHSA-1"], []])
+        self.assertEqual(op.call_count, 4)
+
+    def test_bad_answer_already_in_the_cache_is_fetched_again(self):
+        good = {"results": [{}, {}]}
+        with mock.patch("urllib.request.urlopen", return_value=_resp(good)):
+            vulndb.osv_query(self.PKGS)
+        (name,) = os.listdir(self.cache.name)
+        with open(os.path.join(self.cache.name, name), "w") as fh:
+            fh.write("{}")
+        with mock.patch("urllib.request.urlopen", return_value=_resp(good)) as op:
+            self.assertEqual(vulndb.osv_query(self.PKGS), [[], []])
+        self.assertEqual(op.call_count, 1)
+
+    def test_empty_osv_answer_fails_the_ci_gate(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with open(os.path.join(tmp.name, "package-lock.json"), "w") as fh:
+            json.dump({"lockfileVersion": 3, "packages": {"": {}, "node_modules/lodash": {"version": "4.17.15"}}}, fh)
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch("urllib.request.urlopen", return_value=_resp({})), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main([tmp.name, "--lang", "en", "--format", "json"])
+        self.assertEqual(code, 3, err.getvalue())
+        self.assertIn("osv_error", json.loads(out.getvalue())["sources"])
+
+    def test_kev_answer_with_the_wrong_shape_is_a_failure(self):
+        for bad in ({}, [], {"vulnerabilities": []}, {"vulnerabilities": "x"}):
+            with self.subTest(answer=bad):
+                with mock.patch("urllib.request.urlopen", return_value=_resp(bad)):
+                    with self.assertRaises(net.NetError):
+                        vulndb.kev()
+        ok = {"catalogVersion": "2026.10.16", "vulnerabilities": [{"cveID": "CVE-2026-1"}, {"x": 1}, "junk"]}
+        with mock.patch("urllib.request.urlopen", return_value=_resp(ok)):
+            self.assertEqual(vulndb.kev(), ({"CVE-2026-1": {"cveID": "CVE-2026-1"}}, "2026.10.16"))
+
+    def test_odd_epss_and_nvd_answers_do_not_crash(self):
+        odd = [[], {"data": "x"}, {"data": [{"cve": "CVE-2026-1"}, {"cve": "CVE-2026-2", "epss": "x", "percentile": "1"},
+                                           "junk", {"cve": "CVE-2026-3", "epss": "0.5", "percentile": "0.9"}]}]
+        for answer in odd:
+            with self.subTest(answer=answer):
+                with mock.patch("urllib.request.urlopen", return_value=_resp(answer)):
+                    got = vulndb.epss(["CVE-2026-1", "CVE-2026-2", "CVE-2026-3"])
+                self.assertIn(got, ({}, {"CVE-2026-3": (0.5, 0.9)}))
+        for answer in ([], {"vulnerabilities": "x"}, {"vulnerabilities": ["x", {"cve": []}, {"cve": {"metrics": []}},
+                                                                            {"cve": {"metrics": {"cvssMetricV31": ["x"]}}},
+                                                                            {"cve": {"metrics": {"cvssMetricV30": 5}}}]},
+                       {"vulnerabilities": [{"cve": {"metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": "high"}}]}}}]}):
+            with self.subTest(answer=answer):
+                with mock.patch("urllib.request.urlopen", return_value=_resp(answer)):
+                    self.assertIsNone(vulndb.nvd_severity("CVE-2026-1"))
+
+    def test_osv_record_that_is_not_an_object_is_left_out(self):
+        with mock.patch("urllib.request.urlopen", side_effect=lambda req, timeout: _resp(
+                {"id": "GHSA-1"} if req.full_url.endswith("GHSA-1") else ["junk"])):
+            self.assertEqual(vulndb.osv_vulns(["GHSA-1", "GHSA-2"]), {"GHSA-1": {"id": "GHSA-1"}})
 
 
 if __name__ == "__main__":

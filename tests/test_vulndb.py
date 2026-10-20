@@ -412,11 +412,11 @@ class OsvQuery(unittest.TestCase):
         self.assertEqual(url, vulndb.OSV_BATCH)
         self.assertEqual(body, {"queries": [{"package": {"ecosystem": "npm", "name": "lodash"}, "version": "4.17.15"},
                                             {"package": {"ecosystem": "PyPI", "name": "django"}, "version": "3.2.0"}]})
-        self.assertEqual(kw, {"ttl": 6 * vulndb.HOUR})
+        self.assertEqual(kw, {"ttl": 6 * vulndb.HOUR, "valid": mock.ANY})
 
     def test_chunks_of_500(self):
         pkgs = [("npm", "p%d" % i, "1.0.0") for i in range(501)]
-        with mock.patch.object(vulndb, "fetch_json", side_effect=lambda url, body, ttl: {"results": [{}] * len(body["queries"])}) as fj:
+        with mock.patch.object(vulndb, "fetch_json", side_effect=lambda url, body, ttl, **kw: {"results": [{}] * len(body["queries"])}) as fj:
             got = vulndb.osv_query(pkgs)
         self.assertEqual([len(c.args[1]["queries"]) for c in fj.call_args_list], [500, 1])
         self.assertEqual(len(got), 501)
@@ -434,7 +434,7 @@ class OsvQuery(unittest.TestCase):
 
 class OsvVulns(unittest.TestCase):
     def test_dedup_and_failures_dropped(self):
-        def fake(url, ttl):
+        def fake(url, ttl, **kw):
             if url.endswith("/BAD"):
                 raise NetError("404")
             if url.endswith("/EMPTY"):
@@ -444,7 +444,7 @@ class OsvVulns(unittest.TestCase):
             got = vulndb.osv_vulns(["GHSA-b", "GHSA-a", "GHSA-b", "BAD", "EMPTY"])
         self.assertEqual(got, {"GHSA-a": {"id": "GHSA-a"}, "GHSA-b": {"id": "GHSA-b"}})
         self.assertEqual(fj.call_count, 4)
-        self.assertIn(mock.call(vulndb.OSV_VULN.format("GHSA-a"), ttl=24 * vulndb.HOUR), fj.call_args_list)
+        self.assertIn(mock.call(vulndb.OSV_VULN.format("GHSA-a"), ttl=24 * vulndb.HOUR, valid=mock.ANY), fj.call_args_list)
 
 
 class Kev(unittest.TestCase):
@@ -456,18 +456,20 @@ class Kev(unittest.TestCase):
         self.assertEqual(version, "2026.10.16")
         self.assertEqual(sorted(got), ["CVE-2020-1", "CVE-2021-44228"])
         self.assertEqual(got["CVE-2021-44228"]["vendorProject"], "Apache")
-        fj.assert_called_once_with(vulndb.KEV_URL, ttl=12 * vulndb.HOUR, timeout=60)
+        fj.assert_called_once_with(vulndb.KEV_URL, ttl=12 * vulndb.HOUR, timeout=60, valid=mock.ANY)
 
-    def test_empty_feed(self):
+    def test_empty_feed_is_a_failure(self):
+        # Catálogo vazio não quer dizer "nada explorado": é resposta errada, e o relatório tem que dizer que a KEV falhou.
         with mock.patch.object(vulndb, "fetch_json", return_value={}):
-            self.assertEqual(vulndb.kev(), ({}, ""))
+            with self.assertRaises(NetError):
+                vulndb.kev()
 
 
 class Epss(unittest.TestCase):
     def test_filters_chunks_and_parses(self):
         cves = ["CVE-2021-%04d" % i for i in range(81)] + ["GHSA-xxxx", "PYSEC-1", "CVE-2021-0000"]
 
-        def fake(url, ttl):
+        def fake(url, ttl, **kw):
             ids = url.split("cve=", 1)[1].split(",")
             if "CVE-2021-0080" in ids:
                 raise NetError("timeout")
@@ -513,7 +515,8 @@ class NvdSeverity(unittest.TestCase):
         with mock.patch.dict(os.environ, {"NVD_API_KEY": "k123"}), \
                 mock.patch.object(vulndb, "fetch_json", return_value={}) as fj:
             vulndb.nvd_severity("CVE-2021-44228")
-        fj.assert_called_once_with(vulndb.NVD_URL.format("CVE-2021-44228"), ttl=7 * 24 * vulndb.HOUR, headers={"apiKey": "k123"})
+        fj.assert_called_once_with(vulndb.NVD_URL.format("CVE-2021-44228"), ttl=7 * 24 * vulndb.HOUR, headers={"apiKey": "k123"},
+                                   valid=mock.ANY)
         with mock.patch.dict(os.environ), mock.patch.object(vulndb, "fetch_json", return_value={}) as fj:
             os.environ.pop("NVD_API_KEY", None)
             vulndb.nvd_severity("CVE-1")
