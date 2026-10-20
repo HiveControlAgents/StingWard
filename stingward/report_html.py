@@ -1104,6 +1104,7 @@ a{text-decoration:none}
 .f-row{grid-template-columns:28mm minmax(0,1fr)}
 .f-top,.f-row{break-inside:avoid}
 .f-row.long{break-inside:auto}
+.finding>.f-row:last-child,tbody tr:last-child{break-before:avoid}
 table{font-size:9.5pt}
 .code{font-size:8.5pt}
 .toc a{padding:3pt 0}

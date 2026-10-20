@@ -639,6 +639,14 @@ class Layout(unittest.TestCase):
         reset = {s for sels, body in self.blocks(phone) if re.search(r"(?:^|;)width:auto", body) for s in sels}
         self.assertEqual(fixed - reset, set())
 
+    def test_in_print_the_last_row_of_a_finding_keeps_company(self):
+        # Sem isso, a última linha de um achado (Padrões ou Referências) ou a última linha do plano podia ir sozinha
+        # para uma página quase vazia.
+        printed = report_html.CSS.split("@media print{", 1)[1]
+        rules = {s: body for sels, body in self.blocks(printed) for s in sels}
+        for sel in (".finding>.f-row:last-child", "tbody tr:last-child"):
+            self.assertIn("break-before:avoid", rules.get(sel, ""), sel)
+
     def test_long_names_wrap_in_the_fix_first_list(self):
         # NEXT_PUBLIC_OPENAI_API_KEY no título não tem onde quebrar: num celular de 320px o item saía da tela.
         rules = {}
