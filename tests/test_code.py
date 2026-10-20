@@ -400,6 +400,32 @@ class CodeRules(Checks):
                          "    return FileResponse(item.path)\n")
         self.silent({"main.py": src})
 
+    def test_cod007_extension_of_the_uploaded_name_stays_silent(self):
+        """os.path.splitext(file.filename)[1] não tem / nem ..: num nome que o código montou (uuid + extensão), quem manda
+        o arquivo só escolhe o .png. O resto do nome (root, split('.')[-1], o nome inteiro) continua alto."""
+        src = FASTAPI + ("import os, uuid, subprocess\nfrom fastapi import UploadFile, File\nUPLOAD_DIR = 'uploads'\n"
+                         "@app.post('/a')\nasync def a(file: UploadFile = File(...)):\n"
+                         "    ext = os.path.splitext(file.filename)[1].lower()\n"
+                         "    path = os.path.join(UPLOAD_DIR, f'{uuid.uuid4()}{ext}')\n"
+                         "    with open(path, 'wb') as f:\n"
+                         "        f.write(await file.read())\n"
+                         "    with open(os.path.join(UPLOAD_DIR, str(uuid.uuid4()) + os.path.splitext(file.filename)[-1]), 'wb') as f:\n"
+                         "        f.write(b'')\n"
+                         "    name = uuid.uuid4().hex\n"
+                         "    root, ext2 = os.path.splitext(file.filename)\n"
+                         "    name += ext2\n"
+                         "    open(os.path.join(UPLOAD_DIR, name), 'wb').close()\n"
+                         "    subprocess.run(f'convert in{ext} out.png', shell=True)\n"
+                         "@app.post('/b')\nasync def b(file: UploadFile = File(...)):\n"
+                         "    root, ext = os.path.splitext(file.filename)\n"
+                         "    open(os.path.join(UPLOAD_DIR, root + ext), 'wb').close()\n"
+                         "    tail = file.filename.split('.')[-1]\n"
+                         "    open(os.path.join(UPLOAD_DIR, f'{uuid.uuid4()}.{tail}'), 'wb').close()\n"
+                         "    ext = file.filename\n"
+                         "    open(os.path.join(UPLOAD_DIR, ext), 'wb').close()\n")
+        self.check({"main.py": src}, [("COD002", "main.py", 18, "critical"), ("COD007", "main.py", 22, "high"),
+                                      ("COD007", "main.py", 24, "high"), ("COD007", "main.py", 26, "high")])
+
     def test_cod007_js_path_from_request(self):
         src = EXPRESS + ("const fs = require('fs')\nconst path = require('path')\n"
                          "app.get('/f', (req, res) => {\n"
