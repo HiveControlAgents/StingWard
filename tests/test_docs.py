@@ -93,6 +93,17 @@ class Links(unittest.TestCase):
             for anchor in re.findall(r"\]\(#([\w-]+)\)", text):
                 self.assertIn(f'<a id="{anchor}"></a>', text, f"{doc}#{anchor}")
 
+    def test_the_review_docs_say_a_rotated_key_keeps_its_status(self):
+        # A impressão digital usa a linha já mascarada (test_review: test_rotating_the_secret_keeps_the_fingerprint), de
+        # propósito: nada derivado do segredo vai para o arquivo de revisão. Quem revisa precisa saber disso.
+        from stingward import review
+        for doc, label, phrase in (("README.md", "Human review", "check that line again"),
+                                   ("README.pt-BR.md", "Revisão humana", "confira essa linha de novo"),
+                                   ("README.es.md", "Revisión humana", "revisa esa línea de nuevo")):
+            paragraph = re.search(rf"^\*\*{label}:\*\*.*$", _read(doc), re.M).group(0)
+            self.assertIn(phrase, paragraph, doc)
+        self.assertIn("confira essa linha de novo", review.__doc__)
+
     def test_readme_anchors(self):
         for doc, anchors in (("README.md", ["quality", "github-action"]), ("README.pt-BR.md", ["qualidade", "github-action"]),
                              ("README.es.md", ["calidad", "github-action"])):
