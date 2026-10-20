@@ -37,27 +37,86 @@ def _default_lang():
     return "en"
 
 
-def _parser():
-    ap = argparse.ArgumentParser(prog="stingward", description="Auditoria de segurança para projetos feitos com IA, skills e MCP.")
+# Textos do --help, no idioma dos relatórios. As palavras do próprio argparse ("usage", "options", as mensagens de
+# erro) seguem o gettext do Python, em inglês.
+HELP = {
+    "pt": {"description": "Auditoria de segurança para projetos feitos com IA, skills e MCP.",
+           "file": "ARQ", "name": "NOME", "list": "LISTA",
+           "help": "mostra esta ajuda e sai",
+           "command": "scan (padrão), skill ou agents",
+           "target": "pasta do projeto, ou caminho/URL da skill",
+           "lang": "idioma do relatório (padrão: STINGWARD_LANG, depois o idioma do sistema)",
+           "format": "formato na saída padrão",
+           "sarif": "grava SARIF (painel de segurança do GitHub)",
+           "markdown": "grava Markdown (comentário de PR)",
+           "json": "grava JSON",
+           "html": "grava o relatório em HTML (um arquivo só, para entregar ou imprimir em PDF)",
+           "review": "arquivo de revisão (JSON): o status e o comentário de quem revisou cada achado",
+           "review_template": "grava o arquivo de revisão com um item por achado (mantém o que já foi revisado)",
+           "client": "para quem é o relatório: aparece na capa como \"Preparado para\"",
+           "notes": "parecer do analista em Markdown simples (parágrafos, listas, **negrito**, `código`)",
+           "fail_on": "sai com código 1 se houver achado desta severidade ou acima (padrão: high)",
+           "only": "só estas verificações: deps,secrets,app,code,agents",
+           "offline": "não consulta as bases (pula dependências)",
+           "no_color": "texto sem cores, mesmo no terminal",
+           "version": "mostra a versão e sai"},
+    "en": {"description": "Security audit for AI-built projects, skills and MCP servers.",
+           "file": "FILE", "name": "NAME", "list": "LIST",
+           "help": "show this help and exit",
+           "command": "scan (default), skill or agents",
+           "target": "project folder, or the skill's path or URL",
+           "lang": "report language (default: STINGWARD_LANG, then the system language)",
+           "format": "format of the standard output",
+           "sarif": "write SARIF (GitHub security tab)",
+           "markdown": "write Markdown (pull request comment)",
+           "json": "write JSON",
+           "html": "write the HTML report (a single file, to deliver or print to PDF)",
+           "review": "review file (JSON): the status and comment of whoever reviewed each finding",
+           "review_template": "write the review file with one entry per finding (keeps what was already reviewed)",
+           "client": "who the report is for: shown on the cover as \"Prepared for\"",
+           "notes": "analyst summary in simple Markdown (paragraphs, lists, **bold**, `code`)",
+           "fail_on": "exit with code 1 if there is a finding at this severity or above (default: high)",
+           "only": "only these checks: deps,secrets,app,code,agents",
+           "offline": "do not query the online databases (skips dependencies)",
+           "no_color": "plain text without colors, even in a terminal",
+           "version": "show the version and exit"},
+}
+
+
+def _argv_lang(argv):
+    """--lang da linha de comando, lido antes do argparse: o --help é impresso assim que aparece, antes do resto."""
+    lang = None
+    for i, a in enumerate(argv):
+        if a == "--":
+            break
+        v = argv[i + 1] if a == "--lang" and i + 1 < len(argv) else a[len("--lang="):] if a.startswith("--lang=") else None
+        if v in HELP:
+            lang = v
+    return lang
+
+
+def _parser(lang=None):
+    h = HELP[lang or _default_lang()]
+    ap = argparse.ArgumentParser(prog="stingward", description=h["description"], add_help=False)
+    ap.add_argument("-h", "--help", action="help", help=h["help"])
     # Sem default: _parse precisa saber o que foi dado para pôr o alvo depois de `--` no lugar certo.
-    ap.add_argument("command", nargs="?", help="scan (padrão), skill ou agents")
-    ap.add_argument("target", nargs="?", help="pasta do projeto, ou caminho/URL da skill")
-    ap.add_argument("--lang", choices=["pt", "en"], default=None, help="idioma do relatório")
-    ap.add_argument("--format", choices=["text", "json", "markdown", "sarif", "html"], default="text", help="formato na saída padrão")
-    ap.add_argument("--sarif", metavar="ARQ", help="grava SARIF (painel de segurança do GitHub)")
-    ap.add_argument("--markdown", metavar="ARQ", help="grava Markdown (comentário de PR)")
-    ap.add_argument("--json", metavar="ARQ", help="grava JSON")
-    ap.add_argument("--html", metavar="ARQ", help="grava o relatório em HTML (um arquivo só, para entregar ou imprimir em PDF)")
-    ap.add_argument("--review", metavar="ARQ", help="arquivo de revisão (JSON): o status e o comentário de quem revisou cada achado")
-    ap.add_argument("--review-template", metavar="ARQ", help="grava o arquivo de revisão com um item por achado (mantém o que já foi revisado)")
-    ap.add_argument("--client", metavar="NOME", help="para quem é o relatório: aparece na capa como \"Preparado para\"")
-    ap.add_argument("--notes", metavar="ARQ", help="parecer do analista em Markdown simples (parágrafos, listas, **negrito**, `código`)")
-    ap.add_argument("--fail-on", choices=["critical", "high", "medium", "low", "never"], default="high",
-                    help="sai com código 1 se houver achado desta severidade ou acima (padrão: high)")
-    ap.add_argument("--only", default=None, help="só estas verificações: deps,secrets,app,code,agents")
-    ap.add_argument("--offline", action="store_true", help="não consulta as bases (pula dependências)")
-    ap.add_argument("--no-color", action="store_true")
-    ap.add_argument("--version", action="version", version=f"stingward {__version__}")
+    ap.add_argument("command", nargs="?", help=h["command"])
+    ap.add_argument("target", nargs="?", help=h["target"])
+    ap.add_argument("--lang", choices=["pt", "en"], default=None, help=h["lang"])
+    ap.add_argument("--format", choices=["text", "json", "markdown", "sarif", "html"], default="text", help=h["format"])
+    ap.add_argument("--sarif", metavar=h["file"], help=h["sarif"])
+    ap.add_argument("--markdown", metavar=h["file"], help=h["markdown"])
+    ap.add_argument("--json", metavar=h["file"], help=h["json"])
+    ap.add_argument("--html", metavar=h["file"], help=h["html"])
+    ap.add_argument("--review", metavar=h["file"], help=h["review"])
+    ap.add_argument("--review-template", metavar=h["file"], help=h["review_template"])
+    ap.add_argument("--client", metavar=h["name"], help=h["client"])
+    ap.add_argument("--notes", metavar=h["file"], help=h["notes"])
+    ap.add_argument("--fail-on", choices=["critical", "high", "medium", "low", "never"], default="high", help=h["fail_on"])
+    ap.add_argument("--only", metavar=h["list"], default=None, help=h["only"])
+    ap.add_argument("--offline", action="store_true", help=h["offline"])
+    ap.add_argument("--no-color", action="store_true", help=h["no_color"])
+    ap.add_argument("--version", action="version", version=f"stingward {__version__}", help=h["version"])
     return ap
 
 
@@ -67,7 +126,7 @@ def _parse(argv):
     Até o 3.12 o argparse preenchia command e target de uma vez ao ver `skill`: `skill --offline pasta` e
     `skill --offline -- pasta` davam "unrecognized arguments". parse_intermixed_args lê as opções antes; o que vem
     depois de `--` entra à parte porque, antes do 3.13, ele tomava `-- -pasta` por uma opção."""
-    ap = _parser()
+    ap = _parser(_argv_lang(argv))
     head, tail = argv, []
     if "--" in argv:
         i = argv.index("--")
