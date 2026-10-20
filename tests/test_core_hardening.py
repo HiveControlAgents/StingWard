@@ -2,6 +2,7 @@
 import contextlib
 import io
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -185,6 +186,30 @@ class SkillDownload(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("SKILL.md:2", out)
         self.assertEqual(os.listdir(self.tmp.name), [])
+
+    @unittest.skipUnless(shutil.which("git"), "git is not installed")
+    def test_your_git_hooks_do_not_run_in_the_downloaded_skill(self):
+        """Um post-checkout global (core.hooksPath, init.templateDir) rodaria dentro do código de terceiros."""
+        hooks = os.path.join(self.tmp.name, "hooks")
+        os.makedirs(hooks)
+        with open(os.path.join(hooks, "post-checkout"), "w", newline="\n") as fh:
+            fh.write("#!/bin/sh\necho ran > hook-ran\n")
+        os.chmod(os.path.join(hooks, "post-checkout"), 0o755)
+        cfg = os.path.join(self.tmp.name, "gitconfig")
+        with open(cfg, "w") as fh:
+            fh.write(f"[core]\n\thooksPath = {hooks.replace(os.sep, '/')}\n[user]\n\tname = t\n\temail = t@example.com\n")
+        src = os.path.join(self.tmp.name, "src")
+        os.makedirs(src)
+        with open(os.path.join(src, "SKILL.md"), "w") as fh:
+            fh.write("# x\n")
+        env = {"GIT_CONFIG_GLOBAL": cfg, "GIT_CONFIG_NOSYSTEM": "1"}
+        with mock.patch.dict(os.environ, env):
+            for args in (["init", "-q"], ["add", "."], ["commit", "-qm", "x"]):
+                subprocess.run(["git", "-C", src, "-c", "core.hooksPath=", *args], check=True, capture_output=True)
+            tmp, path = cli._fetch(src)
+        self.assertTrue(os.path.isfile(os.path.join(path, "SKILL.md")))
+        self.assertFalse(os.path.exists(os.path.join(path, "hook-ran")), "a git hook ran in the downloaded skill")
+        shutil.rmtree(tmp, ignore_errors=True)
 
     def test_git_output_that_is_not_utf8_is_not_fatal(self):
         with mock.patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, b"", b"")) as run:
