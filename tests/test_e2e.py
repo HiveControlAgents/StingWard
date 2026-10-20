@@ -370,3 +370,20 @@ class ActionPermissions(unittest.TestCase):
             with self.subTest(doc=doc):
                 self.assertIn("`security-events: write`", row)
                 self.assertIn("`actions: read`", row)
+
+
+# --------------------------------------------------------------------------- o site
+
+class SiteFocus(unittest.TestCase):
+    def test_a_folder_tab_with_keyboard_focus_shows_it(self):
+        """A aba da pasta é recortada com clip-path, que recorta também o contorno de foco: a aba "Instalar" focada pelo
+        teclado não mostrava nada, e nas outras pastas só sobrava uma linha fina. A aba focada sublinha o nome."""
+        css = re.sub(r"/\*.*?\*/", "", _read("site", "style.css"), flags=re.S)
+        rules = {}
+        for sels, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+            for sel in sels.split(","):
+                rules[sel.strip()] = rules.get(sel.strip(), "") + body
+        self.assertIn("clip-path", rules[".folder__tab"])
+        for sel in (".folder:focus-visible .folder__tab", "a.folder__tab:focus-visible"):
+            with self.subTest(selector=sel):
+                self.assertIn("text-decoration: underline", rules.get(sel, "no rule"))
