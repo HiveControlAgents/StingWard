@@ -304,12 +304,12 @@ def _others(vulns):
     return others_pt, others_en
 
 
-def _target(vulns):
+def _target(vulns, eco):
     """A menor versão que corrige tudo o que tem correção, e quantas falhas ainda não têm (o aviso sem detalhe
-    não conta: dele não se sabe se tem correção)."""
+    não conta: dele não se sabe se tem correção). A maior correção vem pela ordem do ecossistema (PEP 440, semver)."""
     fixes = [x["fixed"] for x in vulns if x["fixed"]]
     unfixed = sum(1 for x in vulns if not x["fixed"] and x.get("details", True))
-    return (max(fixes, key=vulndb._vkey) if fixes else None), unfixed
+    return (max(fixes, key=lambda v: vulndb._vkey(v, eco)) if fixes else None), unfixed
 
 
 _MISSING = ("O OSV.dev não mandou os detalhes de {ids}: veja o aviso no link e rode de novo.",
@@ -352,7 +352,7 @@ def _package_finding(eco, name, version, rel, line, vulns, kev):
         head_en = f"{n} known vulnerabilities; worst is {_named(worst)}"
         others_pt, others_en = _others(vulns)
         why_pt, why_en = f"Esta versão tem falhas públicas. Outras: {others_pt}.", f"This version has public vulnerabilities. Others: {others_en}."
-    target, unfixed = _target(vulns)
+    target, unfixed = _target(vulns, eco)
     if target:
         fix_pt, fix_en = f"Atualize {name} para {target} ou mais nova.", f"Upgrade {name} to {target} or later."
         if unfixed:
@@ -404,7 +404,7 @@ def _range_finding(r, vulns, kev):
             others_pt, others_en = _others(vulns)
             why_pt += f" Outras falhas na versão {floor}: {others_pt}."
             why_en += f" Other issues in version {floor}: {others_en}."
-    target, unfixed = _target(vulns)
+    target, unfixed = _target(vulns, r.eco)
     if target:
         new = lockfiles.raised(r, target)
         if lockfiles.in_range(r, target):

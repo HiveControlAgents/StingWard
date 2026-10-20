@@ -1738,6 +1738,15 @@ class Ranges(LockfileCase):
             with self.subTest(spec=spec):
                 self.assertEqual(raised("package.json", '{"dependencies": {"axios": %s}}' % spec, version), want)
 
+    def test_python_versions_follow_pep_440(self):
+        # In PEP 440 "1.0-1" is the post-release 1.0.post1, after 1.0; the generic order took it for a pre-release.
+        self.write("requirements.txt", "foo>=0.9,<1.0.post1\nbar>=1.0,>=1.0-1\nbaz>=1.0.post1,<=1.0-1\n")
+        foo, bar, baz = lockfiles.ranges(self.root, "requirements.txt")
+        self.assertEqual([lockfiles.in_range(foo, v) for v in ("0.9", "1.0", "1.0-1", "1.0.post1")], [True, True, False, False])
+        self.assertEqual(bar.floor, "1.0-1")
+        self.assertTrue(baz.exact)
+        self.assertEqual(lockfiles.raised(foo, "1.0-1"), "foo>=1.0-1")  # outside the range: it opens
+
     def test_in_range(self):
         self.write("package.json", '{"dependencies": {"a": "^1.6.0", "b": ">=1.0.0 <=1.9.0", "c": ">=2.0.0"}}')
         a, b, c = lockfiles.ranges(self.root, "package.json")
