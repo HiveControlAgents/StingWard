@@ -172,6 +172,10 @@ _SKIP_PERMS = re.compile(r"--dangerously-skip-permissions\b|--dangerously-bypass
 _ALLOWED_FLAG = re.compile(r"--allowed-?tools[= ]+(?:\"([^\"\n]*)\"|'([^'\n]*)'|(\S+))", re.I)
 _COMMENT = re.compile(r"[ \t]*(?://|#(?!!)|/\*|\*|<!--|--\s)")
 _CAP = 5  # achados por regra por arquivo
+# O relatório mostra no máximo 70 caracteres de um trecho. Mascarar o texto todo antes de cortar é lento o bastante
+# para travar a varredura quando uma skill ou config hostil planta uma linha (ou um valor) de megabytes, então só um
+# começo folgado vai para o mascaramento: qualquer segredo que apareceria nos 70 caracteres já cabe nele.
+_MASK_CAP = 2000
 
 
 # --------------------------------------------------------------------------- filtros
@@ -240,7 +244,8 @@ def _matches(rx, text, keep=None, cap=_CAP):
 
 def _snippet(s: str) -> str:
     # Mascara antes de cortar: um token cortado ao meio deixa de ser reconhecido e vazaria no relatório.
-    s = " ".join(secrets.mask(s).split())
+    # Limita antes de mascarar (ver _MASK_CAP): o relatório só mostra 70 caracteres e uma linha gigante travaria.
+    s = " ".join(secrets.mask(s[:_MASK_CAP]).split())
     return s if len(s) <= 70 else s[:67] + "..."
 
 
@@ -489,7 +494,7 @@ def _claude_settings(d, text, rel):
         sev = "high" if _BROAD_BASH.match(e) else "medium" if _RISKY_BASH.match(e) else None
         if sev:
             # A entrada pode levar token (Bash(curl -H 'Authorization: ...')): mascara antes de ir para o relatório.
-            out.append(Finding("AGT001", sev, rel, _vline(text, entry), {"what": secrets.mask(e)}))
+            out.append(Finding("AGT001", sev, rel, _vline(text, entry), {"what": secrets.mask(e[:_MASK_CAP])}))
     if d.get("skipDangerousModePermissionPrompt"):
         out.append(Finding("AGT001", "high", rel, _line(text, "skipDangerousModePermissionPrompt"), {"what": "skipDangerousModePermissionPrompt"}))
     if d.get("enableAllProjectMcpServers"):
@@ -639,6 +644,9 @@ def _credential(srv, text, rel, name):
     if isinstance(url, str):
         values.append(("url", url))
     for k, v in values:
+        # Uma credencial escrita à mão é curta; cortar antes de analisar impede que um valor gigante (config hostil)
+        # trave known_kinds, que também mascara o texto. Qualquer token real cabe de sobra no começo.
+        v = v[:_MASK_CAP]
         if not v or "${" in v or v.startswith(("$", "%")) or re.search(r"(?i)your|<|xxx|placeholder|changeme", v):
             continue
         kinds = secrets.known_kinds(v)
@@ -662,7 +670,7 @@ def mcp_findings(d, text, rel, pinned_out):
             else:
                 hint = {"npm": f"{pname}@1.2.3", "PyPI": f"{pname}==1.2.3", "docker": f"{pname}:1.2.3"}[eco]
                 out.append(Finding("AGT003", "medium", rel, _vline(text, spec),
-                                   {"server": name, "spec": secrets.mask(spec), "fixed_hint": secrets.mask(hint)}))
+                                   {"server": name, "spec": secrets.mask(spec[:_MASK_CAP]), "fixed_hint": secrets.mask(hint[:_MASK_CAP])}))
         url = srv.get("url") or srv.get("serverUrl") or srv.get("httpUrl")
         if isinstance(url, str) and url.startswith("http://") and not _LOCAL.match(url):
             out.append(Finding("AGT005", "medium", rel, _vline(text, url), {"server": name}))

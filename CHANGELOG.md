@@ -27,6 +27,9 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - Text and Markdown reports list the same problem (same rule, title and explanation) once, with every place it was found, and start with a short "fix these first" list when there are critical or high findings. JSON and SARIF still have one record per finding.
 - Test and example code is recognized in more places (`e2e/`, `samples/`, `testdata/`, `__mocks__/`, `cookbooks/`, `test_*.py`, `conftest.py`), and findings there are lowered as they already were in `tests/` and `examples/`.
 
+### Fixed
+- The agents and skills check no longer hangs on a hostile file with one very long line. A single giant line (a `curl ... | sh`, a permission entry or an MCP package spec of many kilobytes) was masked in full before being cut to the 70 characters a report shows, and masking is super-linear, so a scan could take minutes. The text is now capped before masking, which keeps the same output for real files.
+
 ## [0.1.5] - 2026-10-20
 
 ### Changed
