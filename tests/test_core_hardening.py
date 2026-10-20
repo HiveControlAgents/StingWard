@@ -523,6 +523,50 @@ class OddRecordsFromOsv(unittest.TestCase):
             self.assertEqual(vulndb.epss([r["cve"] for r in rows]), {"CVE-2026-8": (0.25, 0.75)})
 
 
+class OsvPages(unittest.TestCase):
+    """Pacote com muitas falhas vem em páginas (next_page_token): as seguintes também são lidas, até um teto."""
+    PKGS = [("npm", "lodash", "4.17.15"), ("npm", "left-pad", "1.0.0")]
+
+    def setUp(self):
+        self.cache = tempfile.TemporaryDirectory()
+        self.addCleanup(self.cache.cleanup)
+        for patcher in (mock.patch.dict(os.environ, {"STINGWARD_CACHE": self.cache.name}), mock.patch("time.sleep")):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.bodies = []
+
+    def _osv(self, pages):
+        def answer(req, timeout):
+            body = json.loads(req.data)
+            self.bodies.append(body)
+            return _resp({"results": [pages(q) for q in body["queries"]]})
+        return mock.patch("urllib.request.urlopen", side_effect=answer)
+
+    def test_next_pages_are_read(self):
+        def pages(q):
+            if q["package"]["name"] == "left-pad":
+                return {"vulns": [{"id": "GHSA-C"}]}
+            token = q.get("page_token")
+            return {None: {"vulns": [{"id": "GHSA-A"}], "next_page_token": "t1"},
+                    "t1": {"vulns": [{"id": "GHSA-B"}], "next_page_token": "t2"}, "t2": {"vulns": [{"id": "GHSA-D"}]}}[token]
+        with self._osv(pages):
+            self.assertEqual(vulndb.osv_query(self.PKGS), [["GHSA-A", "GHSA-B", "GHSA-D"], ["GHSA-C"]])
+        self.assertEqual([len(b["queries"]) for b in self.bodies], [2, 1, 1])
+        self.assertEqual(self.bodies[1]["queries"][0], {"package": {"ecosystem": "npm", "name": "lodash"},
+                                                        "version": "4.17.15", "page_token": "t1"})
+
+    def test_pages_stop_at_the_cap(self):
+        n = iter(range(1000))
+        with self._osv(lambda q: {"vulns": [{"id": "GHSA-A"}], "next_page_token": f"t{next(n)}"}):
+            self.assertEqual(vulndb.osv_query(self.PKGS[:1]), [["GHSA-A"]])
+        self.assertEqual(len(self.bodies), vulndb.OSV_MAX_PAGES)
+
+    def test_page_token_that_is_not_text_is_a_failure(self):
+        with self._osv(lambda q: {"vulns": [], "next_page_token": 5}):
+            with self.assertRaises(net.NetError):
+                vulndb.osv_query(self.PKGS[:1])
+
+
 class SourceFailuresAreAlwaysSaid(unittest.TestCase):
     """Base que falhou aparece no stderr em qualquer formato, mesmo quando o código de saída já é 1 ou --fail-on never."""
 
