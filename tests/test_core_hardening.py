@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 from stingward import _redact as redact, cli, net, scan, vulndb
+from stingward.checks import secrets
 from stingward.model import Finding
 
 LANG_VARS = ("STINGWARD_LANG", "LC_ALL", "LC_MESSAGES", "LANG")
@@ -728,6 +729,28 @@ class HostileVersions(unittest.TestCase):
                 vulndb.affects_whole_range(vuln, "npm", "lodash", version, version)
         self.assertLess(vulndb._vkey("1.0.0-" + big), vulndb._vkey("1.0.0"))
         self.assertLess(vulndb._vkey("1.2.3"), vulndb._vkey("1.10.0"))
+
+
+class AssignmentOperators(unittest.TestCase):
+    """O valor depois de :=, ::=, ?=, ==, != e => (com aspas) é mascarado, não o operador."""
+    S = "Tr0ub4dor" + "77xK"
+
+    def test_value_after_the_operator_is_masked(self):
+        s = self.S
+        for text in (f'passwd := "{s}"', f"password := {s}", f"PASSWORD ?= {s}", f"API_TOKEN ::= {s}",
+                     f'if password == "{s}":', f'if (token === "{s}")', f'password != "{s}"',
+                     f"'password' => '{s}',", f'"api_key" => "{s}"', f':password => "{s}"', f'password => "{s}"'):
+            for fn in (redact.sanitize_text, secrets.mask):
+                with self.subTest(text=text, fn=fn.__name__):
+                    out = fn(text)
+                    self.assertNotIn(s, out)
+                    self.assertNotIn("Tr0ub", out)
+                    self.assertIn("[REDACTED", out)
+
+    def test_arrow_functions_are_left_alone(self):
+        for text in (".map(token => token.trim())", "const check = password => verify(password)"):
+            with self.subTest(text=text):
+                self.assertEqual(redact.sanitize_text(text), text)
 
 
 if __name__ == "__main__":
