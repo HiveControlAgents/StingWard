@@ -399,31 +399,33 @@ def evidence(ctx, rel, line):
     """[(número, texto mascarado ou None se a linha é longa demais, tamanho)] da linha e uma de cada lado.
 
     Arquivo de segredos (.env, .npmrc, chave) mostra só a linha do achado. Linha dentro de um bloco de chave
-    privada nunca aparece, mesmo quando o bloco começa fora da janela."""
+    privada nunca aparece, mesmo quando o bloco começa fora da janela.
+
+    O texto vem de ctx.read, o mesmo que as verificações leram: a mesma decodificação e as mesmas linhas (só "\\n"
+    quebra linha), e não o arquivo de novo do disco, que pode ter mudado depois da varredura."""
     if not line:
         return None
     lo, hi = (line, line) if _SECRET_FILE.search(rel) else (max(1, line - 1), line + 1)
+    lines = ctx.read(rel).split("\n")
+    if lines[-1] == "":  # a quebra no fim do arquivo não abre outra linha; arquivo vazio ou ilegível não tem nenhuma
+        lines.pop()
     rows = []
-    try:
-        with open(os.path.join(ctx.root, rel), encoding="utf-8", errors="replace") as fh:
+    in_key = False
+    for n, raw in enumerate(lines, 1):
+        raw = raw.rstrip("\r")
+        in_key = in_key or bool(_KEY_BEGIN.search(raw))
+        inside = in_key
+        if in_key and _KEY_END.search(raw):
             in_key = False
-            for n, raw in enumerate(fh, 1):
-                raw = raw.rstrip("\r\n")
-                in_key = in_key or bool(_KEY_BEGIN.search(raw))
-                inside = in_key
-                if in_key and _KEY_END.search(raw):
-                    in_key = False
-                if n >= lo:
-                    if inside:
-                        rows.append((n, "[REDACTED:private_key]", 0))
-                    elif len(raw) > MAX_LINE:
-                        rows.append((n, None, len(raw)))
-                    else:
-                        rows.append((n, _mask(raw), len(raw)))
-                if n >= hi:
-                    break
-    except OSError:
-        return None
+        if n >= lo:
+            if inside:
+                rows.append((n, "[REDACTED:private_key]", 0))
+            elif len(raw) > MAX_LINE:
+                rows.append((n, None, len(raw)))
+            else:
+                rows.append((n, _mask(raw), len(raw)))
+        if n >= hi:
+            break
     return rows if any(n == line for n, _, _ in rows) else None
 
 

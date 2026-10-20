@@ -231,6 +231,25 @@ class NoSecretInEvidence(SecretsCase):
         self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "sign/notes.txt", 8)], ["[REDACTED:private_key]", "end"])
         self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "sign/notes.txt", 1)], ["notes", "[REDACTED:private_key]"])
 
+    def test_the_excerpt_is_the_text_the_checks_read(self):
+        # O trecho vem de ctx.read, como nas verificações: a mesma decodificação e as mesmas linhas, mesmo que o
+        # arquivo mude no disco depois da varredura.
+        root = tree({"app/x.py": "a = 1\nb = 2\nc = 3\n", "app/bom.py": "\ufeffKEY = 1\nnext\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        ctx = ctx_for(root, files=["app/x.py"])
+        ctx.read("app/x.py")
+        with open(os.path.join(root, "app", "x.py"), "w", encoding="utf-8") as fh:
+            fh.write("changed\n")
+        self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "app/x.py", 2)], ["a = 1", "b = 2", "c = 3"])
+        self.assertIsNone(report_html.evidence(ctx, "app/x.py", 4))  # a quebra final não é uma quarta linha
+        self.assertIsNone(report_html.evidence(ctx, "app/missing.py", 1))
+
+        class Decoded(Context):  # uma decodificação de ctx.read, como tirar o BOM, vale também para o trecho
+            def read(self, rel):
+                return super().read(rel).lstrip("\ufeff")
+        decoded = Decoded(root=root, files=["app/bom.py"])
+        self.assertEqual([t for _, t, _ in report_html.evidence(decoded, "app/bom.py", 1)], ["KEY = 1", "next"])
+
     def test_masking_keeps_names_and_hides_values(self):
         cases = {
             "apiKey: process.env.OPENAI_API_KEY,": "apiKey: process.env.OPENAI_API_KEY,",
