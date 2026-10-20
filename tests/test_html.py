@@ -800,6 +800,48 @@ class NothingRead(unittest.TestCase):
             self.assertNotIn("README badge", out, argv)
 
 
+class SourceFailures(unittest.TestCase):
+    """Uma base que não respondeu aparece em todo formato, ao lado da situação do OSV, e não só no stderr."""
+    SAID = {"pt": "CISA KEV não respondeu", "en": "CISA KEV did not respond"}
+    WARN = {"pt": '<p class="warn">A lista CISA KEV não respondeu', "en": '<p class="warn">The CISA KEV list did not respond'}
+
+    def setUp(self):
+        self.root = tree({"package-lock.json": "{}\n"})
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.dep = Finding("DEP003", "low", "package.json", None, {"manifest": "package.json", "count": 1})
+
+    def ctx(self, **sources):
+        return ctx_for(self.root, files=["package-lock.json"], packages=2, **sources)
+
+    def test_a_kev_failure_is_shown_next_to_osv(self):
+        for lang in ("pt", "en"):
+            for findings in ([], [self.dep]):
+                with self.subTest(lang=lang, findings=len(findings)):
+                    ctx = self.ctx(osv=True, kev_error="timeout", epss=False)
+                    text = report.text(ctx, list(findings), lang)
+                    line = next(x for x in text.splitlines() if x.startswith(report.T[lang]["sources"] + ":"))
+                    self.assertIn("OSV.dev · " + self.SAID[lang], line)
+                    self.assertIn("OSV.dev · " + self.SAID[lang], report.markdown(ctx, list(findings), lang))
+                    page = report_html.render(ctx, list(findings), lang)
+                    self.assertIn(self.WARN[lang], page)
+                    self.assertIn(f"<td>{report_html.H[lang]['st_fail']}</td>", page)
+
+    def test_an_answering_kev_says_nothing_of_the_kind(self):
+        for lang in ("pt", "en"):
+            ctx = self.ctx(osv=True, kev="2026.10.16", epss=True)
+            for out in (report.text(ctx, [self.dep], lang), report.markdown(ctx, [self.dep], lang),
+                        report_html.render(ctx, [self.dep], lang)):
+                self.assertNotIn(self.SAID[lang], out)
+                self.assertNotIn(self.WARN[lang], out)
+
+    def test_the_comment_with_nothing_found_still_says_a_source_failed(self):
+        # Sem nenhum achado o comentário do PR dizia só "Nada encontrado.": com o OSV fora do ar, isso parece limpo.
+        for lang in ("pt", "en"):
+            md = report.markdown(self.ctx(osv_error="timeout"), [], lang)
+            self.assertIn(report.T[lang]["osv_fail"], md)
+            self.assertNotIn(report.T[lang]["sources"], report.markdown(self.ctx(osv=True), [], lang))
+
+
 class AreaOrder(unittest.TestCase):
     """Em "Achados em detalhe" vem primeiro a área do achado mais grave; no empate, a que tem mais itens; depois a ordem fixa."""
 

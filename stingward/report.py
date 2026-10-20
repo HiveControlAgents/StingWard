@@ -33,6 +33,7 @@ T = {
         "summary": "Resumo", "grade": "Nota", "sources": "Bases consultadas",
         "offline": "modo offline: dependências não foram checadas",
         "pkgs": "{n} pacote(s) verificado(s)", "osv_fail": "OSV.dev não respondeu: dependências não foram checadas",
+        "kev_fail": "CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com severidade abaixo da real",
         "badge": "Selo para o README",
         "verdict_bad": "🔴 Não instale ainda: há problemas graves.",
         "verdict_mid": "🟡 Instale só depois de ler os itens abaixo.",
@@ -65,6 +66,7 @@ T = {
         "summary": "Summary", "grade": "Grade", "sources": "Sources",
         "offline": "offline mode: dependencies were not checked",
         "pkgs": "{n} package(s) checked", "osv_fail": "OSV.dev did not respond: dependencies were not checked",
+        "kev_fail": "CISA KEV did not respond: a vulnerability attackers already exploit may show a lower severity than it should",
         "badge": "README badge",
         "verdict_bad": "🔴 Do not install yet: serious problems found.",
         "verdict_mid": "🟡 Install only after reading the items below.",
@@ -183,11 +185,18 @@ def _sources_line(ctx, lang):
     if ctx.sources.get("kev"):
         kv = ctx.sources["kev"]
         parts.append(f"CISA KEV {kv}" if isinstance(kv, str) else "CISA KEV")
+    elif ctx.sources.get("kev_error"):  # sem a KEV, uma falha explorada agora não sobe para crítica
+        parts.append(t["kev_fail"])
     if ctx.sources.get("epss"):
         parts.append("EPSS (FIRST)")
     if ctx.sources.get("nvd"):
         parts.append("NVD")
     return " · ".join(parts)
+
+
+def source_failed(ctx):
+    """Alguma base não respondeu (OSV ou KEV): o relatório diz isso mesmo quando não há achado."""
+    return not ctx.offline and bool(ctx.sources.get("osv_error") or ctx.sources.get("kev_error"))
 
 
 def counts_line(findings, lang):
@@ -592,6 +601,8 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
         out += ["⚠️ " + nothing_read_text(ctx, lang), ""]
     elif not shown:
         out += [t["none"], ""]
+        if source_failed(ctx):  # "nada encontrado" com o OSV fora do ar não é um comentário limpo
+            out += [f"**{t['sources']}:** {_sources_line(ctx, lang)}", ""]
     else:
         first = _fix_first(shown)
         if first:
