@@ -18,6 +18,8 @@ STINGWARD_ONLINE=1 python -m unittest discover -s tests -t .    # consulta tamb�
 
 Para rodar as demonstrações do README: `python scripts/demo/fixtures.py demo`, depois `python -m stingward skill demo/pdf-helper` e `python -m stingward demo/my-saas`.
 
+Para montar o site: `python site/build.py _site` e abra o `_site/index.html`. Com `--online`, o relatório do app inclui as dependências consultadas no OSV.dev, como no site publicado.
+
 ## Onde fica cada coisa
 
 | Caminho | O que é |
@@ -33,6 +35,7 @@ Para rodar as demonstrações do README: `python scripts/demo/fixtures.py demo`,
 | `action.yml` | A GitHub Action |
 | `npm/` | O inicializador do npm (`scripts/build-npm.sh` copia o pacote Python para dentro) |
 | `docs/` | Referência das regras e imagens do README |
+| `site/` | O site: `build.py` preenche o `page.html` com o `text.json` e com relatórios reais do Stingward, e o `.github/workflows/pages.yml` publica |
 
 ## Criar ou mudar uma regra
 

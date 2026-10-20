@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="${html_lang}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title}</title>
+<meta name="description" content="${description}">
+<link rel="canonical" href="${canonical}">
+<link rel="alternate" hreflang="pt-BR" href="${url}">
+<link rel="alternate" hreflang="en" href="${url}en/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
+<meta property="og:url" content="${canonical}">
+<meta property="og:image" content="${url}assets/social-preview.png">
+<meta property="og:locale" content="${og_locale}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#F5B83D">
+<link rel="icon" href="${root}assets/logo.svg" type="image/svg+xml">
+<link rel="preload" href="${root}fonts/schibsted-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="${root}style.css">
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+<a class="skip" href="#main">${skip}</a>
+
+<header class="hero" id="top">
+  <div class="topbar">
+    <a class="topbar__link link" href="${repo}">${nav_github}</a>
+    <a class="wordmark" href="${root}./" aria-label="Stingward"><img src="${root}assets/logo.svg" alt="" width="30" height="30"><span>Stingward</span></a>
+    <nav class="lang" aria-label="${lang_label}">${languages}</nav>
+  </div>
+  <div class="hero__title">
+    <h1 class="display" data-rise style="--i:0">${hero_h1}</h1>
+    <p class="hero__lead" data-rise style="--i:1">${hero_lead}</p>
+  </div>
+  <nav class="stack" aria-label="Stingward">
+    ${tabs}
+    <div class="folder folder--front">
+      <a class="folder__tab" href="#where">${front_tab}</a>
+      <div class="folder__body">
+        <div class="install">
+          <div class="install__cmd"><code>pipx install stingward</code>${hero_copy}</div>
+          <p class="install__more">${hero_more} <a class="link-plain" href="${repo}">${hero_source}</a></p>
+        </div>
+        <div class="peek sheet" data-ui aria-hidden="true">${hero_peek}</div>
+      </div>
+    </div>
+  </nav>
+</header>
+
+<main id="main">
+
+<section class="why" id="why" aria-labelledby="why-h">
+  <h2 class="head why__head" id="why-h" data-reveal>${why_h2}</h2>
+  <p class="why__lead" data-reveal>${why_p}</p>
+  <ol class="why__facts">
+${why_facts}
+  </ol>
+</section>
+
+<section class="report" id="report" aria-labelledby="report-h">
+  <div class="report__index">
+    <h2 class="head" id="report-h" data-reveal>${report_h2}</h2>
+    <p class="report__intro" data-reveal>${report_p}</p>
+    <div class="report__names" role="tablist" aria-labelledby="report-h" data-reveal>
+${report_names}
+    </div>
+  </div>
+  <div class="report__stage">
+${report_sheets}
+  </div>
+</section>
+
+<section class="how" id="how" aria-label="${how_label}" data-clauses="${stage_clauses}" data-details="${stage_details}">
+  <div class="how__words">
+    <h2 class="how__clause" aria-live="polite">${stage_clause}</h2>
+    <p class="how__detail">${stage_detail}</p>
+    <div class="how__control">
+      <input class="how__range" type="range" min="0" max="${stage_max}" step="1" value="0" aria-label="${how_label}">
+      <ol class="how__names">
+${stage_names}
+      </ol>
+    </div>
+  </div>
+  <div class="how__stage">
+${stage_panes}
+  </div>
+</section>
+
+<section class="finds" id="finds" aria-labelledby="finds-h">
+  <div class="board">
+    <div class="tile tile--head" data-reveal><h2 class="head" id="finds-h">${finds_h2}</h2></div>
+    ${find_mask}
+    ${find_kev}
+    ${find_hidden}
+    ${find_public}
+    ${find_rls}
+    ${find_curl}
+    ${find_bypass}
+    ${find_ssh}
+  </div>
+</section>
+
+<section class="where" id="where" aria-labelledby="where-h">
+  <h2 class="head" id="where-h" data-reveal>${where_h2}</h2>
+  <div class="index">
+    <ul class="index__list">
+${where_rows}
+    </ul>
+    <div class="index__frame">${where_frame}</div>
+  </div>
+</section>
+
+<section class="proof" aria-labelledby="proof-h">
+  <div class="proof__board">
+    <div class="proof__head" data-reveal><h2 class="head" id="proof-h">${proof_h2}</h2><p>${proof_p}</p></div>
+${proof_tiles}
+  </div>
+</section>
+
+<section class="price" id="price" aria-labelledby="price-h">
+  <div class="price__words" data-reveal>
+    <h2 class="head" id="price-h">${price_h2}</h2>
+    <p>${price_p}</p>
+  </div>
+  <div class="price__figure">
+    <p class="figure" data-reveal><span class="figure__cur">${currency}</span><span class="figure__num">0</span><span class="figure__per">${price_period}</span>
+      ${shield}</p>
+    <ul class="price__lines" data-reveal>
+${price_lines}
+    </ul>
+    <a class="button" href="#where" data-reveal>${price_button}</a>
+  </div>
+  <div class="soon" data-reveal>
+    <span class="soon__tab">${soon_tab}</span>
+    <h3 class="soon__title">${soon_h3}</h3>
+    <p>${soon_p}</p>
+    <a class="soon__link link-plain" href="${repo}/releases">${soon_link}</a>
+  </div>
+</section>
+
+<section class="faq" aria-labelledby="faq-h">
+  <h2 class="head faq__head" id="faq-h">${faq_h2}</h2>
+  <div class="faq__list">
+${faq_items}
+  </div>
+</section>
+
+<section class="cta" aria-labelledby="cta-line">
+  <p class="cta__line" id="cta-line">${cta_before} <code class="cta__cmd">${cta_cmd}</code>${cta_copy}</p>
+  <p class="cta__note">${cta_note}</p>
+</section>
+
+</main>
+
+<footer class="footer">
+  <p class="mark" aria-label="Stingward">${wordmark}</p>
+  <div class="footer__grid">
+${footer_cols}
+    <div class="footer__contact">
+      <p>${footer_contact_1} <a class="link-plain" href="${repo}/security/advisories/new">${footer_contact_link}</a></p>
+      <p>${footer_contact_2}</p>
+    </div>
+  </div>
+  <div class="footer__last">
+    <p>${footer_copy} Stingward ${version}.</p>
+    <a class="button button--small" href="#top">${footer_top}</a>
+  </div>
+</footer>
+
+<script src="${root}app.js" defer></script>
+</body>
+</html>

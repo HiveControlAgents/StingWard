@@ -18,6 +18,8 @@ STINGWARD_ONLINE=1 python -m unittest discover -s tests -t .    # also hits OSV,
 
 To try the README demos: `python scripts/demo/fixtures.py demo`, then `python -m stingward skill demo/pdf-helper` and `python -m stingward demo/my-saas`.
 
+To build the website: `python site/build.py _site`, then open `_site/index.html`. Add `--online` to include the dependency results from OSV.dev, as the published site does.
+
 ## Where things live
 
 | Path | What |
@@ -33,6 +35,7 @@ To try the README demos: `python scripts/demo/fixtures.py demo`, then `python -m
 | `action.yml` | The GitHub Action |
 | `npm/` | The npm launcher (`scripts/build-npm.sh` copies the Python package into it) |
 | `docs/` | Rules reference and README assets |
+| `site/` | The website: `build.py` fills `page.html` with `text.json` and real Stingward reports, and `.github/workflows/pages.yml` publishes it |
 
 ## Adding or changing a rule
 

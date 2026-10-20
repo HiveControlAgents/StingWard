@@ -1,6 +1,6 @@
 // Maintainers only: regenerates the README images in docs/assets from real Stingward output.
 // Needs Linux with Node 18+ and the `playwright` package (global is fine), ffmpeg, Python 3.9+ and network access (OSV, KEV, EPSS).
-// Usage: node scripts/demo/record.mjs            (the 4 demo GIFs)   node scripts/demo/record.mjs --banners   (banners + social preview)
+// Usage: node scripts/demo/record.mjs            (the 4 demo GIFs, with an MP4 and a poster of each for the website)   node scripts/demo/record.mjs --banners   (banners + social preview)
 import { createRequire } from "module";
 import { execFileSync, execSync } from "child_process";
 import fs from "fs";
@@ -184,6 +184,11 @@ async function gif(browser, demo, lines, work) {
   execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", list, "-fps_mode", "vfr",
     "-vf", "split[a][b];[a]palettegen=max_colors=256:stats_mode=diff:reserve_transparent=0[p];[b][p]paletteuse=dither=none:diff_mode=rectangle",
     "-loop", "0", outFile]);
+  // The website plays the same recording as a muted video, with the final frame as its poster.
+  execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", outFile, "-movflags", "+faststart", "-pix_fmt", "yuv420p",
+    "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2:color=0x0d1117", "-c:v", "libx264", "-crf", "30", "-tune", "animation",
+    "-preset", "veryslow", "-g", "600", "-an", outFile.replace(/\.gif$/, ".mp4")]);
+  fs.copyFileSync(frames.at(-1).file, outFile.replace(/\.gif$/, ".png"));
   return { outFile, frames: frames.length };
 }
 

@@ -1,0 +1,29 @@
+# Builds the website from site/ with real Stingward reports and publishes it on GitHub Pages.
+name: pages
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "docs/assets/**", "stingward/**", "scripts/demo/**", ".github/workflows/pages.yml"]
+  workflow_dispatch: {}
+permissions: { contents: read }
+concurrency: { group: pages, cancel-in-progress: true }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.13" }
+      - name: Build the site, with dependency results from OSV.dev in the app report
+        run: python site/build.py _site --online
+      - uses: actions/upload-pages-artifact@v5
+        with: { path: _site }
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: { pages: write, id-token: write }
+    environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5
