@@ -266,3 +266,94 @@ class NpmLauncher(unittest.TestCase):
         code = "const w = require(process.argv[1]); console.log(JSON.stringify(w.candidates('win32')))"
         run = subprocess.run([NODE, "-e", code, self.launcher], cwd=self.work, capture_output=True, text=True, timeout=60)
         self.assertEqual(json.loads(run.stdout.strip() or "null"), [["py", "-3"], ["python"], ["python3"]], run.stderr)
+
+
+# --------------------------------------------------------------------------- os passos da GitHub Action
+
+BASH = shutil.which("bash")
+
+
+def _action_step(marker):
+    """O script `run:` do passo de action.yml que contém `marker`, sem a indentação do YAML."""
+    for step in re.split(r"\n(?=    - )", _read("action.yml").split("\n  steps:\n", 1)[1]):
+        if marker in step:
+            lines = step.split("\n")
+            i = next(n for n, line in enumerate(lines) if line.strip() == "run: |")
+            pad = len(lines[i]) - len(lines[i].lstrip()) + 2
+            return "\n".join(line[pad:] for line in lines[i + 1:] if line[:pad].strip() == "").rstrip("\n") + "\n"
+    raise AssertionError(f"no step with {marker!r} in action.yml")
+
+
+@unittest.skipUnless(BASH and POSIX, "the Action runs its steps with bash; the fake gh is a shell script")
+class ActionSteps(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        os.makedirs(os.path.join(self.tmp, "runner", "stingward"))
+        with open(os.path.join(self.tmp, "runner", "stingward", "stingward.md"), "w", encoding="utf-8") as fh:
+            fh.write("<!-- stingward-report -->\n### report\n")
+        self.calls = os.path.join(self.tmp, "gh-calls")
+
+    def run_step(self, marker, env, gh=None, cwd=None):
+        bins = os.path.join(self.tmp, "bin")
+        os.makedirs(bins, exist_ok=True)
+        if gh is not None:
+            _sh(os.path.join(bins, "gh"), f'echo "$*" >> "{self.calls}"\n' + gh)
+        script = os.path.join(self.tmp, "step.sh")
+        with open(script, "w", encoding="utf-8") as fh:
+            fh.write(_action_step(marker))
+        base = {"PATH": bins + os.pathsep + os.environ["PATH"], "HOME": self.tmp, "RUNNER_TEMP": os.path.join(self.tmp, "runner"),
+                "GITHUB_OUTPUT": os.path.join(self.tmp, "output"), "GITHUB_STEP_SUMMARY": os.path.join(self.tmp, "summary")}
+        # Como o runner: bash --noprofile --norc -eo pipefail {0}
+        return subprocess.run([BASH, "--noprofile", "--norc", "-eo", "pipefail", script], cwd=cwd or self.tmp,
+                              env=dict(base, **env), capture_output=True, text=True, timeout=180)
+
+    def gh_calls(self):
+        if not os.path.exists(self.calls):
+            return []
+        with open(self.calls, encoding="utf-8") as fh:
+            return fh.read().splitlines()
+
+    PR = {"GH_TOKEN": "x", "PR": "7", "REPO": "ana/app", "HEAD_REPO": "ana/app"}
+
+    def test_the_comment_is_updated_not_posted_again(self):
+        run = self.run_step("GH_TOKEN", self.PR, gh='case "$*" in *--paginate*) echo 991; echo 992;; esac\n')
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual([c.split()[:3] for c in self.gh_calls()[1:]], [["api", "-X", "PATCH"]])
+        self.assertIn("repos/ana/app/issues/comments/991", self.gh_calls()[1])
+
+    def test_the_first_run_posts_one_comment(self):
+        run = self.run_step("GH_TOKEN", self.PR, gh="")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual([c.split()[:4] for c in self.gh_calls()[1:]], [["api", "-X", "POST", "repos/ana/app/issues/7/comments"]])
+
+    def test_a_read_only_token_leaves_a_note_not_a_failed_step(self):
+        """Num PR de fork (ou do Dependabot) o token só lê: antes o passo falhava com um 403 sem explicação."""
+        deny = 'case "$*" in *-X*) echo "HTTP 403: Resource not accessible by integration" >&2; exit 1;; esac\n'
+        fork = self.run_step("GH_TOKEN", dict(self.PR, HEAD_REPO="someone/app"), gh=deny)
+        self.assertEqual(fork.returncode, 0, fork.stderr)
+        self.assertIn("::notice::", fork.stdout)
+        self.assertIn("fork", fork.stdout)
+        own = self.run_step("GH_TOKEN", self.PR, gh=deny)
+        self.assertEqual(own.returncode, 0, own.stderr)
+        self.assertIn("::warning::", own.stdout)
+        self.assertIn("pull-requests: write", own.stdout)
+
+    def test_the_scan_step_takes_the_path_as_data(self):
+        project = os.path.join(self.tmp, "my app $(touch pwned); `touch pwned2`")
+        os.makedirs(project)
+        with open(os.path.join(project, "app.py"), "w", encoding="utf-8") as fh:
+            fh.write('print("hello")\n')
+        env = {"PY": sys.executable, "STINGWARD_HOME": ROOT, "STINGWARD_PATH": project, "STINGWARD_FAIL_ON": "high",
+               "STINGWARD_LANG": "en", "STINGWARD_CACHE": self.tmp,
+               # Sem dependências não há o que perguntar ao OSV.dev; o proxy morto garante que nada sai para a rede.
+               "HTTPS_PROXY": "http://127.0.0.1:9", "https_proxy": "http://127.0.0.1:9"}
+        run = self.run_step("id: scan", env)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        with open(os.path.join(self.tmp, "output"), encoding="utf-8") as fh:
+            out = dict(line.split("=", 1) for line in fh.read().splitlines())
+        self.assertEqual(out["grade"], "A")
+        self.assertEqual(out["exit_code"], "0")
+        with open(os.path.join(self.tmp, "summary"), encoding="utf-8") as fh:
+            self.assertIn("<!-- stingward-report -->", fh.read())
+        self.assertEqual([f for f in os.listdir(self.tmp) if f.startswith("pwned")], [])
