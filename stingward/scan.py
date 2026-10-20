@@ -6,7 +6,7 @@ import os
 import re
 
 from . import gitsafe
-from .checks import agents, app, deps, secrets
+from .checks import TESTISH, agents, app, code, deps, secrets
 from .model import SEV_RANK, Context
 
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "env", "__pycache__", ".next", ".nuxt", ".svelte-kit", ".turbo",
@@ -21,13 +21,17 @@ _LOCKFILE = re.compile(r"(^|/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.loc
                        r"poetry\.lock|uv\.lock|pdm\.lock|Pipfile\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock)$")
 _CODE_EXT = re.compile(r"\.(js|mjs|cjs|ts|py|sh|bash|ps1|rb|php|go|rs|json|md|toml|ya?ml)$", re.I)
 
-_TESTISH = re.compile(r"(?i)(^|/)(tests?|__tests__|spec|fixtures?|examples?|mocks?)(/|$)|[._-](test|spec)\.")
+_TESTISH = TESTISH
 
-# Numa skill, payload em tests/ costuma ser exemplo, mas o autor escolhe o nome da pasta: baixa só até médio.
-_TEST_DOWNGRADE = {"project": ("APP", "SKL001"), "skill": ("SKL002", "SKL004", "SKL005", "SKL007", "SKL008"), "agents": ()}
-_TEST_FLOOR = {"project": "low", "skill": "medium", "agents": "low"}
+# Severidade máxima de cada regra em código de teste e exemplo, por modo. Numa skill, payload em tests/ costuma ser
+# exemplo, mas o autor escolhe o nome da pasta: baixa só até médio. Falha de código (injeção, XSS) em teste de skill
+# não roda na máquina de quem instala, então vai a baixo.
+_CODE_RULES = ("COD", "APP009", "APP012", "APP013")
+_TEST_DOWNGRADE = {"project": {"low": ("APP", "SKL001", "COD")},
+                   "skill": {"medium": ("SKL002", "SKL004", "SKL005", "SKL007", "SKL008"), "low": _CODE_RULES},
+                   "agents": {}}
 
-CHECKS = {"deps": deps.check, "secrets": secrets.check, "app": app.check, "agents": agents.check}
+CHECKS = {"deps": deps.check, "secrets": secrets.check, "app": app.check, "code": code.check, "agents": agents.check}
 
 
 def list_files(root: str, max_files: int = 50_000, mode: str = "project"):
@@ -106,8 +110,11 @@ def run(root: str, mode: str = "project", offline: bool = False, only=None, file
         findings.extend(fn(ctx))
     for f in findings:
         # Código de teste e exemplos costuma ter problema de propósito: continua no relatório, mas baixo.
-        if _TESTISH.search(f.file) and f.rule.startswith(_TEST_DOWNGRADE[mode]) and SEV_RANK[f.severity] > SEV_RANK[_TEST_FLOOR[mode]]:
-            f.severity = _TEST_FLOOR[mode]
+        if not _TESTISH.search(f.file):
+            continue
+        for floor, prefixes in _TEST_DOWNGRADE[mode].items():
+            if f.rule.startswith(prefixes) and SEV_RANK[f.severity] > SEV_RANK[floor]:
+                f.severity = floor
     rules = load_ignore(root) if mode == "project" else []
     uniq, seen = [], set()
     # O mesmo token no config do MCP vira AGT004, que explica melhor; os outros segredos do arquivo continuam.

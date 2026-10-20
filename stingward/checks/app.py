@@ -5,6 +5,7 @@ import re
 
 from ..model import Finding
 from . import is_text_source, line_of
+from .code import ai_check
 from .secrets import drop_inline_ignored
 
 _PUBLIC = re.compile(
@@ -155,4 +156,5 @@ def check(ctx):
     for t, (rel, ln) in sql_tables.items():
         if t not in sql_rls:
             out.append(Finding("APP004", "high", rel, ln, {"table": t.split(".", 1)[1]}))
-    return drop_inline_ignored(ctx, out)
+    # APP009 em diante (IA no código: saída do modelo, prompt de sistema, rota pública) vêm da análise de código.
+    return drop_inline_ignored(ctx, out) + ai_check(ctx)
