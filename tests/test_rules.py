@@ -1302,6 +1302,17 @@ class DepRules(RuleTest):
         self.assertEqual((f[0].params["spec"], f[0].params["upper"]), ("^10.0", "11.0.0"))
         self.assertIn('replace Pillow = "^10.0" with Pillow = ">=12.3.0"', f[0].params["fix_en"])
 
+    def test_dep001_and_dep004_pick_the_fix_by_the_ecosystem_order(self):
+        # PEP 440: 1.0-1 is the post-release 1.0.post1, newer than 1.0, so it is the version that fixes both.
+        docs = {d["id"]: d for d in (_pyadv("GHSA-foo1", "foo", "1.0", database_specific={"severity": "HIGH"}),
+                                     _pyadv("GHSA-foo2", "foo", "1.0-1", database_specific={"severity": "HIGH"}))}
+        _, f, _ = self.deps({"requirements.txt": "foo==0.9\n"}, {"foo": sorted(docs)}, docs)
+        self.assertEqual([(x.rule, x.params["fixed"]) for x in f], [("DEP001", "1.0-1")])
+        _, f, _ = self.deps({"requirements.txt": "foo>=0.9\n"}, {"foo": sorted(docs)}, docs)
+        d = next(x for x in f if x.rule == "DEP004")
+        self.assertEqual(d.params["fixed"], "1.0-1")
+        self.assertIn("replace foo>=0.9 with foo>=1.0-1", d.params["fix_en"])
+
     def test_dep004_same_range_in_two_files_is_one_query(self):
         files = {"requirements.txt": "Pillow>=10\n", "pyproject.toml": '[project]\ndependencies = ["pillow>=10"]\n'}
         _, f, q = self.deps(files, {"Pillow": sorted(self.PIL), "pillow": sorted(self.PIL)}, self.PIL)

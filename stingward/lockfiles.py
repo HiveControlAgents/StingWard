@@ -371,7 +371,7 @@ class Range(namedtuple("Range", "eco name spec req floor upper inclusive prefix 
     @property
     def exact(self):
         """Faixa de uma versão só (Pillow (==10.0.0), "v1.2.3"): é versão fixada, assunto do DEP001."""
-        return self.inclusive and self.upper is not None and _vkey(self.upper) == _vkey(self.floor)
+        return self.inclusive and self.upper is not None and _vkey(self.upper, self.eco) == _vkey(self.floor, self.eco)
 
 
 def ranges(root: Path, rel: str, requirements=False):
@@ -397,12 +397,12 @@ def ranges(root: Path, rel: str, requirements=False):
 
 
 def in_range(r: Range, version: str) -> bool:
-    k = _vkey(version)
-    if k < _vkey(r.floor):
+    k = _vkey(version, r.eco)
+    if k < _vkey(r.floor, r.eco):
         return False
     if r.upper is None:
         return True
-    u = _vkey(r.upper)
+    u = _vkey(r.upper, r.eco)
     return k < u or (r.inclusive and k == u)
 
 
@@ -415,9 +415,9 @@ def raised(r: Range, version: str) -> str:
             spec = ">=" + version
         elif not inside:
             spec = "^" + version
-        elif not r.inclusive and _vkey(r.upper) == _vkey(_caret_upper(*p[:3])):
+        elif not r.inclusive and _vkey(r.upper, "npm") == _vkey(_caret_upper(*p[:3]), "npm"):
             spec = "^" + version
-        elif not r.inclusive and _vkey(r.upper) == _vkey(_tilde_upper(*p[:2])):
+        elif not r.inclusive and _vkey(r.upper, "npm") == _vkey(_tilde_upper(*p[:2]), "npm"):
             spec = "~" + version
         else:
             spec = f">={version} {'<=' if r.inclusive else '<'}{r.upper}"
@@ -436,26 +436,30 @@ def _release(v):
     return [int(x) for x in m.group(1).split(".")] if m else []
 
 
-def _pick(lows, excl, highs, skip=()):
+def _pick(lows, excl, highs, skip=(), eco=None):
     """(piso, teto, teto_inclusivo) a partir dos limites da faixa. None se o piso não é uma versão certa
-    (só >X, ou o piso tirado por !=), se ele é 0 (aceita tudo) ou se a faixa é vazia."""
+    (só >X, ou o piso tirado por !=), se ele é 0 (aceita tudo) ou se a faixa é vazia. eco escolhe a ordem das
+    versões (PEP 440 no PyPI: 1.0-1 é 1.0.post1, depois da 1.0)."""
     if not lows or not all(_VERSION.fullmatch(v) for v in lows + excl + [h for h, _ in highs]):
         return None
-    floor = max(lows, key=_vkey)
-    k, parts = _vkey(floor), _release(floor)
-    if not any(parts) or any(_vkey(v) >= k for v in excl):
+
+    def key(v):
+        return _vkey(v, eco)
+    floor = max(lows, key=key)
+    k, parts = key(floor), _release(floor)
+    if not any(parts) or any(key(v) >= k for v in excl):
         return None
     for v in skip:
         if v.endswith(".*"):
             base = _release(v[:-2])
             if base and (parts + [0] * len(base))[:len(base)] == base:
                 return None
-        elif _VERSION.fullmatch(v) and _vkey(v) == k:
+        elif _VERSION.fullmatch(v) and key(v) == k:
             return None
     if not highs:
         return floor, None, False
-    upper, inclusive = min(highs, key=lambda h: (_vkey(h[0]), h[1]))
-    u = _vkey(upper)
+    upper, inclusive = min(highs, key=lambda h: (key(h[0]), h[1]))
+    u = key(upper)
     if u < k or (u == k and not inclusive):
         return None
     return floor, upper, inclusive
@@ -515,7 +519,7 @@ def python_floor(req: str):
             highs.append((v, False))
         else:
             skip.append(v)
-    picked = _pick(lows, excl, highs, skip)
+    picked = _pick(lows, excl, highs, skip, "PyPI")
     return (name, extras, spec) + picked if picked else None
 
 
@@ -600,7 +604,7 @@ def npm_floor(spec: str):
         if not lo or not hi or lo[0] is None or hi[0] is None:
             return None
         high = (_v3(*hi), True) if hi[2] is not None else (_tilde_upper(hi[0], hi[1]), False)
-        return _pick([_v3(*lo)], [], [high])
+        return _pick([_v3(*lo)], [], [high], eco="npm")
     lows, excl, highs = [], [], []
     for c in re.sub(r"(>=|<=|>|<|=|\^|~>?)\s+", r"\1", s).split():
         m = _NPM_CMP.fullmatch(c)
@@ -630,7 +634,7 @@ def npm_floor(spec: str):
             highs.append((v, True) if patch is not None else (_tilde_upper(major, minor), False))
         else:
             highs.append((v, False))
-    return _pick(lows, excl, highs)
+    return _pick(lows, excl, highs, eco="npm")
 
 
 def _npm_ranges(text, rel):
