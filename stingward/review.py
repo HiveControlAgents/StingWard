@@ -12,6 +12,11 @@ A impressão digital não usa o número da linha: é a regra, o arquivo, alguns 
 tabela) e o texto da linha marcada, já mascarado e sem diferença de espaços. Mexer em outras partes do arquivo não
 muda nada; mudar a própria linha muda, porque aí o achado pode ser outro.
 
+Como a linha entra já mascarada, nada derivado do segredo vai para o arquivo de revisão. É de propósito, e tem um
+efeito: trocar a chave por outra na mesma linha mantém a impressão digital e, com ela, o status (um "fixed" ou
+"false_positive" passa a valer para a chave nova). Quando uma chave for trocada, confira essa linha de novo antes de
+reaproveitar a revisão.
+
 Comentários e parecer vêm de quem revisou, mas vão para o cliente: passam pelo mesmo mascaramento dos trechos de
 código e, além disso, por uma lista dos valores que esse mascaramento tirou das linhas dos achados deste projeto.
 Assim um segredo achado no código não volta pelo comentário, nem inteiro nem em pedaços.
