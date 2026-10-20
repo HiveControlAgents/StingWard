@@ -219,11 +219,13 @@ RULES = {
         "pt": ("Consulta SQL montada com {source}",
                "O valor entra no meio do texto do SQL. Quem manda algo como ' OR '1'='1 consegue ler, mudar ou apagar dados do banco.",
                "Passe os valores como parâmetros e deixe o driver juntar: cursor.execute(\"... WHERE id = %s\", (id,)), $1 no "
-               "Postgres, ? no SQLite, sql`...` ou $queryRaw`...` no Prisma."),
+               "Postgres, ? no SQLite, sql`...` ou $queryRaw`...` no Prisma. Nome de coluna ou de tabela não pode ser "
+               "parâmetro: escolha o nome numa lista fixa (SORTS[chave], if order not in ALLOWED: abort(400))."),
         "en": ("SQL query built from {source}",
                "The value goes straight into the SQL text. Someone who sends ' OR '1'='1 can read, change or delete data.",
                "Pass values as parameters and let the driver combine them: cursor.execute(\"... WHERE id = %s\", (id,)), $1 in "
-               "Postgres, ? in SQLite, sql`...` or $queryRaw`...` in Prisma."),
+               "Postgres, ? in SQLite, sql`...` or $queryRaw`...` in Prisma. A column or table name cannot be a parameter: "
+               "pick it from a fixed list (SORTS[key], if order not in ALLOWED: abort(400))."),
     },
     "COD002": {
         "group": "code",
