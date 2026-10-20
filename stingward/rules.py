@@ -291,6 +291,15 @@ RULES = {
                "With no pauses, an odd command coming from a plan, issue or file runs before you see it.",
                "Run it with restricted permissions (no unrestricted Bash) and review the plan before executing."),
     },
+    "SKL011": {
+        "group": "skills",
+        "pt": ("Abre acesso remoto à máquina (reverse shell: {snippet})",
+               "Um reverse shell entrega o terminal do seu computador para quem estiver do outro lado. Uma skill não tem motivo para isso.",
+               "Não instale. Se já rodou, tire a máquina da rede, troque senhas e chaves e confira processos e tarefas agendadas."),
+        "en": ("Opens remote access to the machine (reverse shell: {snippet})",
+               "A reverse shell hands your computer's terminal to whoever is on the other end. A skill has no reason to do this.",
+               "Do not install. If it already ran, take the machine off the network, rotate passwords and keys, and check processes and scheduled tasks."),
+    },
 }
 
 
@@ -345,4 +354,5 @@ STANDARDS = {
     "SKL008": ["CWE-200", "AST01"],
     "SKL009": ["CWE-829", "AST02"],
     "SKL010": ["LLM03:2026", "AST05"],
+    "SKL011": ["CWE-506", "AST01"],
 }

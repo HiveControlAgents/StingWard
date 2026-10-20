@@ -44,8 +44,9 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [SKL006](#skl006) | Skill requests unrestricted shell | 🟡 |
 | [SKL007](#skl007) | Obfuscated code | 🟠 |
 | [SKL008](#skl008) | Sends data to an anonymous capture service | 🟠 |
-| [SKL009](#skl009) | Install script runs commands | 🟡 |
+| [SKL009](#skl009) | Install script runs commands | 🟠 |
 | [SKL010](#skl010) | Skill tells the agent not to pause for you | 🟡 |
+| [SKL011](#skl011) | Reverse shell | 🔴 |
 
 ## Dependencies
 
@@ -236,7 +237,7 @@ Unicode tag characters (invisible text the model reads), Trojan Source bidi cont
 <a id="skl002"></a>
 ### SKL002 · Downloads a script and pipes it into a shell
 
-`curl ... | sh`, `wget -O- ... | bash`, `iex (iwr ...)` and similar, in skills, scripts and instructions.
+`curl ... | sh`, `wget -O- ... | bash`, `iex (iwr ...)` and similar, and downloading a file then running it on the same line (`curl -o x ... && chmod +x x`), in skills, scripts and instructions.
 
 **Fix:** download, read and pin the script, or install from a package manager with a fixed version.
 **Standards:** `CWE-494` · `AST02`
@@ -292,7 +293,7 @@ webhook.site, RequestBin, Pipedream, ngrok, interact.sh, Burp Collaborator, Tele
 <a id="skl009"></a>
 ### SKL009 · Install script runs commands
 
-`preinstall`, `install`, `postinstall` or `prepare` scripts in `package.json`: they run on `npm install`, before you use anything.
+`preinstall`, `install`, `postinstall` or `prepare` scripts in `package.json`: they run on `npm install`, before you use anything. High when the script downloads and runs code from the internet.
 
 **Fix:** read the script. Install with `--ignore-scripts` when in doubt.
 **Standards:** `CWE-829` · `AST02`
@@ -304,6 +305,14 @@ webhook.site, RequestBin, Pipedream, ngrok, interact.sh, Burp Collaborator, Tele
 
 **Fix:** run the skill with restricted permissions and review the plan before executing.
 **Standards:** `LLM03:2026` · `AST05`
+
+<a id="skl011"></a>
+### SKL011 · Reverse shell
+
+`bash -i >& /dev/tcp/host/port`, `nc -e /bin/sh`, `socat ... exec:/bin/bash`, `os.dup2(s.fileno(), ...)` with `pty.spawn`, PowerShell `Net.Sockets.TCPClient`: the skill hands your terminal to whoever is listening on the other end. A port check such as `</dev/tcp/localhost/5432` is not flagged.
+
+**Fix:** do not install. If it already ran, take the machine off the network, rotate passwords and keys, and check processes and scheduled tasks.
+**Standards:** `CWE-506` · `AST01`
 
 ## Ignoring a finding
 

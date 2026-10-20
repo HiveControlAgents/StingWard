@@ -52,9 +52,9 @@ No account, no telemetry, no dependencies: pure Python 3.9+ on Linux, macOS and 
 | **Secrets** | API keys (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack...), private keys, Supabase `service_role` keys, webhooks, passwords in URLs, `.env` committed or missing from `.gitignore`. Values are never printed. |
 | **AI-built apps** | Secrets behind `NEXT_PUBLIC_` / `VITE_` / `EXPO_PUBLIC_`, `dangerouslyAllowBrowser`, open CORS, Supabase tables without RLS or with `using (true)`, open Firebase rules, debug mode, JWT without signature check. |
 | **Agents and MCP** | `bypassPermissions`, `Bash(*)`, hooks that `curl \| sh`, `enableAllProjectMcpServers`, MCP servers without a pinned version, tokens in `.mcp.json`, MCP over plain HTTP, vulnerable MCP packages such as `mcp-remote` (CVE-2025-6514). |
-| **Skills and prompts** | Invisible Unicode (tag characters, Trojan Source, zero-width), "ignore previous instructions", "don't tell the user", reading `~/.ssh` or `~/.aws` and calling the internet, `curl \| bash`, obfuscated code, capture hosts (webhook.site, ngrok...), install scripts, `allowed-tools: Bash`, tool poisoning in MCP tool descriptions. |
+| **Skills and prompts** | Invisible Unicode (tag characters, Trojan Source, zero-width), "ignore previous instructions", "don't tell the user", reading `~/.ssh` or `~/.aws` and calling the internet, `curl \| bash`, reverse shells, obfuscated code, capture hosts (webhook.site, ngrok...), install scripts, `allowed-tools: Bash`, tool poisoning in MCP tool descriptions. |
 
-All 31 rules, with severity, examples and fixes: [docs/rules.md](docs/rules.md).
+All 32 rules, with severity, examples and fixes: [docs/rules.md](docs/rules.md).
 
 <p align="center">
   <img alt="stingward ./my-saas: OpenAI key exposed through NEXT_PUBLIC_, next 14.1.0 with CVE-2025-29927 (99% EPSS), Supabase table without RLS, open CORS. Grade F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-en.gif" width="820">

@@ -54,9 +54,9 @@ Sin cuenta, sin telemetría, sin dependencias: Python 3.9+ puro, en Linux, macOS
 | **Secretos** | Claves de API (OpenAI, Anthropic, GitHub, AWS, Google, Stripe, Slack...), claves privadas, `service_role` de Supabase, webhooks, contraseñas en URLs, `.env` en git o fuera del `.gitignore`. El valor nunca se imprime. |
 | **Apps hechas con IA** | Secretos detrás de `NEXT_PUBLIC_` / `VITE_` / `EXPO_PUBLIC_`, `dangerouslyAllowBrowser`, CORS abierto, tablas de Supabase sin RLS o con `using (true)`, reglas de Firebase abiertas, modo debug, JWT sin verificar la firma. |
 | **Agentes y MCP** | `bypassPermissions`, `Bash(*)`, hooks con `curl \| sh`, `enableAllProjectMcpServers`, servidores MCP sin versión fija, tokens en `.mcp.json`, MCP remoto sin HTTPS, paquetes MCP vulnerables como `mcp-remote` (CVE-2025-6514). |
-| **Skills y prompts** | Unicode invisible (caracteres de etiqueta, Trojan Source, ancho cero), "ignora las instrucciones anteriores", "no le digas al usuario", lectura de `~/.ssh` o `~/.aws` con llamada a internet, `curl \| bash`, código ofuscado, servicios de captura (webhook.site, ngrok...), scripts de instalación, `allowed-tools: Bash`, instrucciones ocultas en la descripción de herramientas MCP. |
+| **Skills y prompts** | Unicode invisible (caracteres de etiqueta, Trojan Source, ancho cero), "ignora las instrucciones anteriores", "no le digas al usuario", lectura de `~/.ssh` o `~/.aws` con llamada a internet, `curl \| bash`, reverse shells, código ofuscado, servicios de captura (webhook.site, ngrok...), scripts de instalación, `allowed-tools: Bash`, instrucciones ocultas en la descripción de herramientas MCP. |
 
-Las 31 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.md](docs/rules.md).
+Las 32 reglas, con severidad, ejemplos y corrección (en inglés): [docs/rules.md](docs/rules.md).
 
 <p align="center">
   <img alt="stingward ./my-saas: clave de OpenAI expuesta con NEXT_PUBLIC_, next 14.1.0 con CVE-2025-29927 (EPSS de 99%), tabla de Supabase sin RLS, CORS abierto. Nota F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-app-en.gif" width="820">
