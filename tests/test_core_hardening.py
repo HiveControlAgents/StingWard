@@ -418,6 +418,17 @@ class OddAnswersFromTheDatabases(unittest.TestCase):
         self.assertEqual(code, 3, err.getvalue())
         self.assertIn("osv_error", json.loads(out.getvalue())["sources"])
 
+    def test_cache_entry_dated_in_the_future_expires(self):
+        """Cache restaurado de outra máquina (CI) com relógio adiantado não pode valer para sempre."""
+        with mock.patch("urllib.request.urlopen", return_value=_resp({"n": 1})):
+            net.fetch_json("https://example.com/a", ttl=60)
+        (name,) = os.listdir(self.cache.name)
+        future = time.time() + 30 * 24 * 3600
+        os.utime(os.path.join(self.cache.name, name), (future, future))
+        with mock.patch("urllib.request.urlopen", return_value=_resp({"n": 2})) as op:
+            self.assertEqual(net.fetch_json("https://example.com/a", ttl=60), {"n": 2})
+        self.assertEqual(op.call_count, 1)
+
     def test_kev_answer_with_the_wrong_shape_is_a_failure(self):
         for bad in ({}, [], {"vulnerabilities": []}, {"vulnerabilities": "x"}):
             with self.subTest(answer=bad):
