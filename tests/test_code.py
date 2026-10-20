@@ -1699,6 +1699,24 @@ class CodeEngine(unittest.TestCase):
                                                          ("COD003", "vendor/lib.js", 3, "critical")])
         self.assertEqual(got(run(files)), [])
 
+    def test_vendored_libraries_are_skipped_in_a_project(self):
+        """Biblioteca copiada para o projeto (cabeçalho /*! nome vX.Y ou @license, pastas third_party/ e static/js/lib/)
+        não é código do projeto e fica de fora num projeto. O cabeçalho de copyright do próprio projeto não tira o
+        arquivo. Numa skill, tudo é lido."""
+        sink = "document.getElementById('x').innerHTML = location.hash\n"
+        files = {"static/js/materialize.js": "/*!\n * Materialize v0.100.1 (http://materializecss.com)\n * MIT License\n */\n" + sink,
+                 "public/react-dom.js": "/** @license React v16.13.1\n * react-dom.development.js\n */\n" + sink,
+                 "web/purify.js": "/*! @license DOMPurify 3.0.6 | (c) Cure53 */\n" + sink,
+                 "third_party/widget/w.js": sink, "app/static/js/lib/chart.js": sink,
+                 "src/app.js": "/*!\n * Copyright (c) 2014-2026 Example Corp.\n * SPDX-License-Identifier: MIT\n */\n" + sink,
+                 "src/panel.js": "/**\n * Panel v2.0 layout: draws the side panel.\n */\n" + sink}
+        own = [("COD005", "src/app.js", 5, "medium"), ("COD005", "src/panel.js", 4, "medium")]
+        self.assertEqual(got(run(files)), own)
+        self.assertEqual(got(run(files, mode="skill")), sorted(own + [
+            ("COD005", "static/js/materialize.js", 5, "medium"), ("COD005", "public/react-dom.js", 4, "medium"),
+            ("COD005", "web/purify.js", 2, "medium"), ("COD005", "third_party/widget/w.js", 1, "medium"),
+            ("COD005", "app/static/js/lib/chart.js", 1, "medium")]))
+
     def test_long_files_are_not_taken_for_minified(self):
         """Um arquivo comum de 4000 linhas é lido até o fim; só linhas realmente longas indicam bundle minificado."""
         src = EXPRESS + "const a = 1 // filler line here\n" * 4000 + "app.post('/x', (req, res) => { eval(req.body.code) })\n"
