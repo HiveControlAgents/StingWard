@@ -1,5 +1,5 @@
 """De ponta a ponta, do jeito que as pessoas usam: a skill do Claude Code, o lançador do npm, os passos da Action
-e os pacotes publicados. Nada aqui usa a rede; os segredos de teste são falsos e montados por concatenação.
+e o site. Nada aqui usa a rede; os segredos de teste são falsos e montados por concatenação.
 """
 import io
 import json
@@ -108,9 +108,20 @@ class SkillPermissions(unittest.TestCase):
             code, _, err = _cli(argv + ["--json", out, "--offline"])
             self.assertEqual(code, 2, err)
             self.assertFalse(os.path.exists(out))
-            cut = argv.index("--") if "--" in argv else len(argv)
-            code, stdout, _ = _cli(argv[:cut] + ["--offline"] + argv[cut:])
-            self.assertEqual((code, json.loads(stdout)["tool"]), (0, "stingward"))
+            # Como a skill manda: outras opções logo depois de run.py.
+            code, stdout, err = _cli(["--offline"] + argv)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(json.loads(stdout)["tool"], "stingward")
+
+    def test_the_skill_command_runs_on_python_3_9_to_3_12(self):
+        """Até o Python 3.12, o argparse não aceita `skill --opção -- alvo`: os dois posicionais opcionais já foram
+        consumidos quando o `--` chega, e sai "unrecognized arguments" (código 2). As opções vão antes de `skill`."""
+        for command in _skill_commands(target="x"):
+            args = command.split("/scripts/run.py ", 1)[1].split(" ")
+            if "skill" in args:
+                with self.subTest(command=command):
+                    self.assertEqual(args[args.index("skill") + 1:], ["--", "x"])
+        self.assertIn("right after `run.py`", _skill()[1])
 
     def test_the_launcher_never_imports_code_from_the_checked_folder(self):
         """`export PYTHONPATH=$PYTHONPATH:/x` com PYTHONPATH vazio deixa um item vazio, que o Python lê como a pasta atual."""
