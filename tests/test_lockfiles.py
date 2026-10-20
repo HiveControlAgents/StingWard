@@ -1142,5 +1142,262 @@ class OpenRanges(LockfileCase):
         self.assertEqual(self.ranges("package.json", DEEP_JSON), 0)
 
 
+# --------------------------------------------------------------------------- lowest version of a range (DEP004)
+
+
+class PythonFloor(unittest.TestCase):
+    def test_specs_with_a_floor(self):
+        cases = [
+            # requirement, (floor, upper, upper inclusive)
+            ("Pillow>=10", ("10", None, False)),
+            ("Pillow >= 10", ("10", None, False)),
+            ("foo[bar]>=1.2", ("1.2", None, False)),
+            ("foo [bar, baz] >= 1.2 , < 2", ("1.2", "2", False)),
+            ("requests~=2.25", ("2.25", "3", False)),
+            ("requests~=2.25.1", ("2.25.1", "2.26", False)),
+            ("Django==3.2.*", ("3.2", "3.3", False)),
+            ("Django==10.*", ("10", "11", False)),
+            ("Django>=3.2,<=3.2.10", ("3.2", "3.2.10", True)),
+            ("Django>=3.2,<4,<3.9", ("3.2", "3.9", False)),
+            ("pkg>=1.0,>=1.5", ("1.5", None, False)),
+            ("pkg>=1.0,!=1.2", ("1.0", None, False)),
+            ("pkg>=2.0rc1", ("2.0rc1", None, False)),
+            ("pkg (>=1.0)", ("1.0", None, False)),
+            ('pkg>=1; python_version < "3.8"', ("1", None, False)),
+            ("pkg==1.2.3", ("1.2.3", "1.2.3", True)),
+        ]
+        for req, want in cases:
+            with self.subTest(req=req):
+                got = lockfiles.python_floor(req)
+                self.assertIsNotNone(got)
+                self.assertEqual(got[3:], want)
+
+    def test_name_extras_and_spec_as_written(self):
+        self.assertEqual(lockfiles.python_floor("foo [bar, baz] >= 1.2 , < 2")[:3], ("foo", "[bar,baz]", ">= 1.2 , < 2"))
+        self.assertEqual(lockfiles.python_floor("my.pkg_name-x>=1")[:3], ("my.pkg_name-x", "", ">=1"))
+        self.assertEqual(lockfiles.python_floor("pkg (>=1.0)")[2], ">=1.0")
+
+    def test_specs_without_a_floor(self):
+        for req in ["pkg", "pkg>1.0", "pkg<2", "pkg<=2", "pkg!=1.0", "pkg>=1.0,>1.5", "pkg>=1.0,!=1.0", "pkg>=1.0,!=1.*",
+                    "pkg>=0", "pkg>=0.0", "pkg>=2,<1", "pkg>=1.0,<1.0", "pkg>=1.*", "pkg>=abc", "pkg>=1!2.0",
+                    "pkg===foobar", "pkg @ https://example.com/pkg-1.0.whl", "pkg[x] @ git+https://example.com/x.git",
+                    "git+https://example.com/x.git", "./local", "../sibling", "https://example.com/x.tgz", "-e .", "",
+                    "pkg>=", "pkg >= 1 2"]:
+            with self.subTest(req=req):
+                self.assertIsNone(lockfiles.python_floor(req))
+
+
+class NpmFloor(unittest.TestCase):
+    def test_specs_with_a_floor(self):
+        cases = [
+            ("^1.6.0", ("1.6.0", "2.0.0", False)),
+            ("^0.2.3", ("0.2.3", "0.3.0", False)),
+            ("^0.0.3", ("0.0.3", "0.0.4", False)),
+            ("^1.2", ("1.2.0", "2.0.0", False)),
+            ("^1", ("1.0.0", "2.0.0", False)),
+            ("^0.2", ("0.2.0", "0.3.0", False)),
+            ("^1.x", ("1.0.0", "2.0.0", False)),
+            ("~1.2.3", ("1.2.3", "1.3.0", False)),
+            ("~1.2", ("1.2.0", "1.3.0", False)),
+            ("~1", ("1.0.0", "2.0.0", False)),
+            ("~>1.2", ("1.2.0", "1.3.0", False)),
+            (">=1.2.3", ("1.2.3", None, False)),
+            (">=1.2", ("1.2.0", None, False)),
+            (">= 1.2.3 < 2", ("1.2.3", "2.0.0", False)),
+            (">=1.2.3 <2.0.0", ("1.2.3", "2.0.0", False)),
+            (">=1.2.3 <=1.9.0", ("1.2.3", "1.9.0", True)),
+            (">=1.2.3 <=1.9", ("1.2.3", "1.10.0", False)),
+            ("^1.2.3 <1.5", ("1.2.3", "1.5.0", False)),
+            ("1.2.x", ("1.2.0", "1.3.0", False)),
+            ("1.2.*", ("1.2.0", "1.3.0", False)),
+            ("1.x", ("1.0.0", "2.0.0", False)),
+            ("1.x.x", ("1.0.0", "2.0.0", False)),
+            ("1.2", ("1.2.0", "1.3.0", False)),
+            ("1", ("1.0.0", "2.0.0", False)),
+            ("=1.2", ("1.2.0", "1.3.0", False)),
+            ("1.2.3 - 2.3.4", ("1.2.3", "2.3.4", True)),
+            ("1.2 - 2.3", ("1.2.0", "2.4.0", False)),
+            ("^1.2.3-beta.1", ("1.2.3-beta.1", "2.0.0", False)),
+            ("v1.2.3", ("1.2.3", "1.2.3", True)),
+            (" ^1.6.0 ", ("1.6.0", "2.0.0", False)),
+        ]
+        for spec, want in cases:
+            with self.subTest(spec=spec):
+                self.assertEqual(lockfiles.npm_floor(spec), want)
+
+    def test_specs_without_a_floor(self):
+        for spec in ["*", "", "x", "X", "latest", "next", "beta", ">=1 || <0.5", "^1.0.0 || ^2.0.0", ">1.2.3", "<2.0.0",
+                     "<=2", ">1.2.3 <2", ">=1.2.3 >1.5.0", "^0.0", "^0.x", ">=0.0.0", "0.x", "^1.0.0 <1.0.0",
+                     "git+https://example.com/x.git", "git://example.com/x.git", "github:user/repo", "user/repo",
+                     "file:../x", "link:../x", "workspace:*", "workspace:^1.0.0", "portal:../x", "catalog:",
+                     "https://example.com/x.tgz", "npm:foo", "1.2.3.4", "^abc", "<*", "1.2.3 - x", "abc - 1.2.3"]:
+            with self.subTest(spec=spec):
+                self.assertIsNone(lockfiles.npm_floor(spec))
+
+
+class PyprojectRequirements(unittest.TestCase):
+    def test_project_dependencies_and_optional_dependencies(self):
+        doc = D('''\
+            [build-system]
+            requires = ["setuptools>=40"]
+
+            [project]
+            name = "sample"
+            description = """
+            dependencies = ["not-a-dependency>=1"]
+            """
+            version = "1.0"  # comment
+            authors = [{name = "A", email = "a@example.com"}]
+            dependencies = [
+                "Pillow>=10",  # imaging
+                'foo[bar,baz]>=1.2; python_version < "3.10"',
+                "quote\\"d>=1",
+                # "commented>=1",
+                "trailing>=2",
+            ]
+            optional-dependencies.extra = ["dotted>=3"]
+
+            [project.optional-dependencies]
+            dev = ["pytest>=7", "black[jupyter]>=23.1"]
+            docs = [
+              "sphinx>=5",
+            ]
+
+            [tool.hatch.envs.default]
+            dependencies = ["other-table>=1"]
+
+            [tool.poetry.dependencies]
+            requests = "^2.28"
+
+            [[tool.custom]]
+            when = 1979-05-27 07:32:00
+            ''')
+        self.assertEqual(lockfiles.pyproject_requirements(doc), [
+            ("Pillow>=10", 12), ('foo[bar,baz]>=1.2; python_version < "3.10"', 13), ('quote"d>=1', 14),
+            ("trailing>=2", 16), ("dotted>=3", 18), ("pytest>=7", 21), ("black[jupyter]>=23.1", 21), ("sphinx>=5", 23)])
+
+    def test_other_toml_shapes(self):
+        cases = [
+            ('[project]\noptional-dependencies = { dev = ["a>=1"], test = ["b>=2"] }\ndependencies=["c>=3"]\n',
+             [("a>=1", 2), ("b>=2", 2), ("c>=3", 3)]),
+            ('project.dependencies = ["root>=1"]\n[project."optional-dependencies"]\nq = [\'quoted>=1\']\n',
+             [("root>=1", 1), ("quoted>=1", 3)]),
+            ("[ project ]\ndependencies = ['''multi>=1''', \"\"\"\nnl>=2\"\"\"]\n", [("multi>=1", 2), ("\nnl>=2", 2)]),
+            ('[project]\r\ndependencies = [\r\n  "crlf>=1",\r\n]\r\n', [("crlf>=1", 3)]),
+            ('[project]\nx = """a""""\ny = """b\\"""c"""\ndependencies = ["after>=1"]\n', [("after>=1", 4)]),
+            ('[project]\ndependencies = ["caf\\u00e9>=1", "tab\\there>=1"]\n', [("caf\u00e9>=1", 2), ("tab\there>=1", 2)]),
+            ('[project]\ndependencies = []\n', []),
+            ('[tool.x]\ndependencies = ["a>=1"]\n[project]\nname = "x"\n', []),
+            ("[project]\n'dependencies' = ['literal-key>=1']\n", [("literal-key>=1", 2)]),
+            ('[project]\nname = "x" junk\nx = \r\ndependencies = ["after-junk>=1"]\n', [("after-junk>=1", 4)]),
+            ('[project]\noptional-dependencies = { dev = ["lost>=1"] junk }\ndependencies = ["kept>=1"]\n', [("kept>=1", 3)]),
+        ]
+        for doc, want in cases:
+            with self.subTest(doc=doc[:50]):
+                self.assertEqual(lockfiles.pyproject_requirements(doc), want)
+
+    def test_malformed_lines_are_skipped_not_fatal(self):
+        doc = D('''\
+            [project]
+            name = "unterminated
+            dependencies = [
+             "a>=1",
+             not toml at all
+            ]
+            weird = ]
+            [project.optional-dependencies
+            [project.optional-dependencies]
+            z = ["z>=1"]
+            ''')
+        self.assertEqual(lockfiles.pyproject_requirements(doc), [("a>=1", 4), ("z>=1", 10)])
+        deep = '[project]\ndependencies = ' + "[" * 50 + '"deep>=1"' + "]" * 50 + '\n[project.optional-dependencies]\nok = ["ok>=1"]\n'
+        self.assertEqual(lockfiles.pyproject_requirements(deep), [("ok>=1", 4)])
+        for doc in ["[" * 100000, '[project]\ndependencies = ["a>=1"', '[project]\ndependencies = """x', "\x00\xff", "= 1",
+                    '[project]\ndependencies = ["\\U99999999"]\n', "[project]\n" + "dependencies = [" * 5000]:
+            with self.subTest(doc=doc[:40]):
+                self.assertIsInstance(lockfiles.pyproject_requirements(doc), list)
+
+
+class Ranges(LockfileCase):
+    def got(self, rel, content):
+        self.write(rel, content)
+        return [(r.eco, r.name, r.spec, r.req, r.floor, r.upper, r.inclusive, r.line) for r in lockfiles.ranges(self.root, rel)]
+
+    def test_requirements_txt(self):
+        req = D('''\
+            # comment
+            Pillow>=10
+            django==4.2.1
+            -r base.txt
+            -e .
+            requests>=2.25 \\
+                --hash=sha256:abc
+            flask
+            numpy~=1.21  # inline
+            foo[bar] >= 1.2, < 2 ; python_version < "3.12"
+            pinned (==1.0)
+            https://example.com/x.whl
+            ''')
+        self.assertEqual(self.got("requirements.txt", req), [
+            ("PyPI", "Pillow", ">=10", "Pillow>=10", "10", None, False, 2),
+            ("PyPI", "requests", ">=2.25", "requests>=2.25", "2.25", None, False, 6),
+            ("PyPI", "numpy", "~=1.21", "numpy~=1.21", "1.21", "2", False, 9),
+            ("PyPI", "foo", ">= 1.2, < 2", "foo[bar] >= 1.2, < 2", "1.2", "2", False, 10),
+            ("PyPI", "pinned", "==1.0", "pinned (==1.0)", "1.0", "1.0", True, 11)])
+        self.assertTrue(lockfiles.ranges(self.root, "requirements.txt")[-1].exact)
+        self.assertFalse(lockfiles.ranges(self.root, "requirements.txt")[0].exact)
+
+    def test_package_json(self):
+        pkg = '{\n  "name": "app",\n  "dependencies": {\n    "axios": "^1.6.0",\n    "react": "18.2.0",\n' \
+              '    "lib": "file:../lib",\n    "my-lodash": "npm:lodash@~4.17.0",\n    "tagged": "latest"\n  },\n' \
+              '  "devDependencies": {\n    "jest": ">=29 <30"\n  },\n  "optionalDependencies": {\n    "fsevents": "2.x"\n  },\n' \
+              '  "peerDependencies": {\n    "react-dom": "^18"\n  }\n}\n'
+        self.assertEqual(self.got("package.json", pkg), [
+            ("npm", "axios", "^1.6.0", '"axios": "^1.6.0"', "1.6.0", "2.0.0", False, 4),
+            ("npm", "lodash", "~4.17.0", '"my-lodash": "npm:lodash@~4.17.0"', "4.17.0", "4.18.0", False, 7),
+            ("npm", "jest", ">=29 <30", '"jest": ">=29 <30"', "29.0.0", "30.0.0", False, 11),
+            ("npm", "fsevents", "2.x", '"fsevents": "2.x"', "2.0.0", "3.0.0", False, 14)])
+
+    def test_pyproject_toml(self):
+        doc = '[project]\nname = "x"\ndependencies = [\n  "Pillow>=10",\n  "flask",\n  "attrs==23.1.0",\n]\n' \
+              '[project.optional-dependencies]\ndev = ["pytest~=7.4"]\n'
+        self.assertEqual(self.got("pyproject.toml", doc), [
+            ("PyPI", "Pillow", ">=10", "Pillow>=10", "10", None, False, 4),
+            ("PyPI", "attrs", "==23.1.0", "attrs==23.1.0", "23.1.0", "23.1.0", True, 6),
+            ("PyPI", "pytest", "~=7.4", "pytest~=7.4", "7.4", "8", False, 9)])
+
+    def test_other_and_broken_files(self):
+        self.assertEqual(self.got("go.mod", "require x v1.0.0\n"), [])
+        self.assertEqual(lockfiles.ranges(self.root, "requirements.txt"), [])  # missing file
+        for content in ("", "{", "[]", "null", '{"dependencies": ["a"]}', '{"dependencies": {"a": 1}}', DEEP_JSON):
+            with self.subTest(content=content[:20]):
+                self.assertEqual(self.got("package.json", content), [])
+
+    def test_rewriting_the_minimum(self):
+        def raised(spec_file, content, version):
+            self.write(spec_file, content)
+            return lockfiles.raised(lockfiles.ranges(self.root, spec_file)[0], version)
+        self.assertEqual(raised("requirements.txt", "Pillow>=10\n", "12.3.0"), "Pillow>=12.3.0")
+        self.assertEqual(raised("requirements.txt", "foo [bar] >= 1.2, < 2\n", "1.4.1"), "foo[bar]>=1.4.1,<2")
+        self.assertEqual(raised("requirements.txt", "foo>=1.2,<2\n", "2.0.1"), "foo>=2.0.1")  # fix outside: range opens
+        self.assertEqual(raised("requirements.txt", "requests~=2.25\n", "2.32.4"), "requests>=2.32.4,<3")
+        self.assertEqual(raised("requirements.txt", "Django>=3.2,<=3.2.30\n", "3.2.25"), "Django>=3.2.25,<=3.2.30")
+        cases = [('"^1.6.0"', "1.12.0", '"axios": "^1.12.0"'), ('"~1.6.0"', "1.6.8", '"axios": "~1.6.8"'),
+                 ('"1.6.x"', "1.6.8", '"axios": "~1.6.8"'), ('"1.x"', "1.12.0", '"axios": "^1.12.0"'),
+                 ('">=1.6.0"', "1.12.0", '"axios": ">=1.12.0"'), ('">=1.6.0 <1.10.0"', "1.8.2", '"axios": ">=1.8.2 <1.10.0"'),
+                 ('">=1.6.0 <=1.9.0"', "1.8.2", '"axios": ">=1.8.2 <=1.9.0"'), ('">=0.2.0 <1"', "0.5.0", '"axios": ">=0.5.0 <1.0.0"'), ('"0.5.x"', "0.5.3", '"axios": "^0.5.3"'),
+                 ('"~1.6.0"', "1.12.0", '"axios": "^1.12.0"'), ('"npm:axios@^1.6.0"', "1.12.0", '"axios": "npm:axios@^1.12.0"')]
+        for spec, version, want in cases:
+            with self.subTest(spec=spec):
+                self.assertEqual(raised("package.json", '{"dependencies": {"axios": %s}}' % spec, version), want)
+
+    def test_in_range(self):
+        self.write("package.json", '{"dependencies": {"a": "^1.6.0", "b": ">=1.0.0 <=1.9.0", "c": ">=2.0.0"}}')
+        a, b, c = lockfiles.ranges(self.root, "package.json")
+        self.assertEqual([lockfiles.in_range(a, v) for v in ("1.5.9", "1.6.0", "1.99.0", "2.0.0")], [False, True, True, False])
+        self.assertEqual([lockfiles.in_range(b, v) for v in ("1.9.0", "1.9.1")], [True, False])
+        self.assertTrue(lockfiles.in_range(c, "99.0.0"))
+
+
 if __name__ == "__main__":
     unittest.main()
