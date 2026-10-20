@@ -1566,12 +1566,17 @@ def _builds_string(node):
     return _const_str(node)
 
 
+# %s, %(nome)s, %-05.2f: a largura começa com 1-9 (o 0 é flag), para flags e largura não disputarem os mesmos zeros,
+# e o nome tem teto (milhares de "%(" sem ")" liam cada um o resto do texto).
+_PERCENT = re.compile(r"%(?:\(([^)]{0,100})\))?[-#0 +]*(?:[1-9]\d*)?(?:\.\d+)?([sdifrxXeEgGcab%])")
+
+
 def _percent_pieces(fmt, right):
     vals = right.elts if isinstance(right, ast.Tuple) else None
     names = right if isinstance(right, ast.Dict) else None
     out, i = [], 0
     pos = 0
-    for m in re.finditer(r"%(?:\(([^)]*)\))?[-#0 +]*\d*(?:\.\d+)?([sdifrxXeEgGcab%])", fmt):
+    for m in _PERCENT.finditer(fmt):
         out.append(("lit", fmt[pos:m.start()]))
         pos = m.end()
         if m.group(2) == "%":
