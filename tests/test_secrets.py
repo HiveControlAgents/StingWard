@@ -181,5 +181,28 @@ class PrivateKeys(Case):
             ("SEC001", "keys/AuthKey_7QW3ER5TY8.p8", 1, "critical")])
 
 
+# =========================================================================== formatos de token
+
+META = "EAA" + "BwzLixnjYBOZBq3ZAy7ZCZAkZBN8Vx" + R36
+
+
+class TokenFormats(Case):
+    def test_meta_prefix_inside_base64_data_is_not_a_token(self):
+        # Binary data (images, fonts, wasm) in base64 is full of "AAAA", and "/EAA..." or "+EAA..." started a Meta token.
+        blob = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHe/" + META[:40] + "+AAAAElFTkSuQmCC"
+        wasm = "AGFzbQEAAAABJ" + "+" + META[:30] + "/AX9gAX8AYAJ/fwBgBH9/f38Bf2AAAGADf39/AALLAQgDZW52"
+        files = {"src/logo.ts": f'export const LOGO = "data:image/png;base64,{blob}";\n',
+                 "src/wasm.js": f'module.exports = Buffer.from("{wasm}", "base64");\n',
+                 "src/end.js": f'const b = "AAAA/{META[:40]}";\n'}
+        self.assertEqual(brief(scan_files(files), "SEC001"), [])
+
+    def test_meta_tokens_still_fire(self):
+        files = {"src/fb.py": f'FB_TOKEN = "{META}"\n',
+                 "src/graph.js": f'fetch("https://graph.facebook.com/v18.0/me?access_token={META}&fields=id")\n',
+                 "src/env.sh": f"export FB_TOKEN={META}\n"}
+        self.assertEqual(brief(scan_files(files), "SEC001"), [
+            ("SEC001", "src/env.sh", 1, "high"), ("SEC001", "src/fb.py", 1, "high"), ("SEC001", "src/graph.js", 1, "high")])
+
+
 if __name__ == "__main__":
     unittest.main()

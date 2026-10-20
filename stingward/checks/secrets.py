@@ -26,7 +26,8 @@ TOKEN_PATTERNS = [
     ("stripe_key", re.compile(r"\b[rs]k_(?:live|test)_[A-Za-z0-9]{20,}")),
     ("stripe_webhook", re.compile(r"\bwhsec_[A-Za-z0-9]{32,}")),
     ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_-]{30,}")),
-    ("meta_token", re.compile(r"\bEAA[A-Za-z0-9]{20,}")),
+    # Dado binário em base64 (imagem, fonte, wasm) é cheio de "AAAA": "/EAA..." e "+EAA..." no meio dele não são token.
+    ("meta_token", re.compile(r"(?<![\w+/])EAA[A-Za-z0-9]{20,}(?![\w+/=])")),
     ("twilio_key", re.compile(r"\bSK[0-9a-fA-F]{32}\b")),
     ("npm_token", re.compile(r"\bnpm_[A-Za-z0-9]{30,}\b")),
     ("gitlab_token", re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}")),
