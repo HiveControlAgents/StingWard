@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -169,3 +170,99 @@ class SkillReportBack(unittest.TestCase):
     def test_the_skill_offers_the_html_report(self):
         _, body = _skill()
         self.assertIn("--html", body)
+
+
+# --------------------------------------------------------------------------- o lançador do npm (npx stingward)
+
+NODE = shutil.which("node")
+POSIX = os.name == "posix"
+
+
+def _sh(path, body):
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("#!/bin/sh\n" + body)
+    os.chmod(path, 0o755)
+
+
+@unittest.skipUnless(NODE, "needs Node.js, like npx")
+class NpmLauncher(unittest.TestCase):
+    """npm/bin/stingward.js como o npm instala: bin/ e a cópia do pacote Python lado a lado, numa pasta com espaço."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.pkg = os.path.join(cls.tmp.name, "node modules", "stingward")
+        os.makedirs(os.path.join(cls.pkg, "bin"))
+        shutil.copy(os.path.join(ROOT, "npm", "bin", "stingward.js"), os.path.join(cls.pkg, "bin"))
+        shutil.copytree(os.path.join(ROOT, "stingward"), os.path.join(cls.pkg, "stingward"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        cls.launcher = os.path.join(cls.pkg, "bin", "stingward.js")
+        cls.work = os.path.join(cls.tmp.name, "work")
+        os.makedirs(cls.work)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def bin_dir(self, **shims):
+        """Uma pasta só com estes "Pythons": good repassa ao Python dos testes; old diz 3.8 e quebra com -I, como um
+        Python velho quebra no código do pacote; killed responde a versão e morre com SIGTERM ao rodar o pacote."""
+        d = tempfile.mkdtemp(dir=self.tmp.name)
+        real = sys.executable
+        bodies = {"good": f'exec "{real}" "$@"\n',
+                  "old": "case \"$*\" in *-I*) echo 'SyntaxError: future feature annotations is not defined' >&2; exit 1;; esac\n"
+                         "printf 3.8\n",
+                  "killed": f'case "$*" in *-I*) kill -TERM $$;; esac\nexec "{real}" "$@"\n'}
+        for name, kind in shims.items():
+            _sh(os.path.join(d, name), bodies[kind])
+        return d
+
+    def run_launcher(self, args, path_dir, cwd=None):
+        env = {k: v for k, v in os.environ.items() if k.upper() not in ("PATH", "PYTHONPATH")}
+        env.update({"PATH": path_dir, "STINGWARD_CACHE": self.tmp.name})
+        return subprocess.run([NODE, self.launcher] + args, cwd=cwd or self.work, env=env, capture_output=True, text=True,
+                              encoding="utf-8", timeout=180)
+
+    def test_without_python_it_says_what_it_needs(self):
+        run = self.run_launcher(["--version"], tempfile.mkdtemp(dir=self.tmp.name))
+        self.assertEqual(run.returncode, 2, run.stderr)
+        self.assertIn("Python 3.9", run.stderr)
+
+    @unittest.skipUnless(POSIX, "the fake Pythons are shell scripts")
+    def test_a_python_older_than_3_9_is_not_run(self):
+        """Antes, o Python 3.8 rodava o pacote, quebrava e o código de saída era 1, o mesmo de "achou problema"."""
+        run = self.run_launcher(["--version"], self.bin_dir(python3="old"))
+        self.assertEqual(run.returncode, 2, run.stderr)
+        self.assertIn("Python 3.9", run.stderr)
+        self.assertIn("3.8", run.stderr)
+        self.assertNotIn("SyntaxError", run.stderr)
+
+    @unittest.skipUnless(POSIX, "the fake Pythons are shell scripts")
+    def test_an_old_python3_falls_back_to_python(self):
+        run = self.run_launcher(["--version"], self.bin_dir(python3="old", python="good"))
+        self.assertEqual((run.returncode, run.stdout.strip()), (0, f"stingward {cli.__version__}"), run.stderr)
+
+    @unittest.skipUnless(POSIX, "the fake Pythons are shell scripts")
+    def test_exit_codes_and_arguments_pass_through_unchanged(self):
+        project = os.path.join(self.work, "my app; touch pwned $(touch pwned2)")
+        os.makedirs(project, exist_ok=True)
+        with open(os.path.join(project, "config.js"), "w", encoding="utf-8") as fh:
+            fh.write('const key = "' + "sk-ant-" + "api03-" + "Q7wErTy8UiOp2AsDfGh5JkLzXcVbNm1234567890abcd" + '";\n')
+        bins = self.bin_dir(python3="good")
+        run = self.run_launcher([project, "--offline", "--format", "json"], bins)
+        self.assertEqual(run.returncode, 1, run.stderr)
+        self.assertIn("SEC001", {f["rule"] for f in json.loads(run.stdout)["findings"]})
+        self.assertEqual(self.run_launcher([project, "--offline", "--fail-on", "never"], bins).returncode, 0)
+        self.assertEqual(self.run_launcher([project, "--format", "xml"], bins).returncode, 2)
+        self.assertEqual([f for f in os.listdir(self.work) if f.startswith("pwned")], [])
+
+    @unittest.skipUnless(POSIX, "signals")
+    def test_a_python_killed_by_a_signal_is_not_reported_as_findings(self):
+        """Código 1 quer dizer "achou problema". Um Python morto por sinal sai com o mesmo sinal."""
+        run = self.run_launcher(["--version"], self.bin_dir(python3="killed"))
+        self.assertIn(run.returncode, (-15, 143), run.stderr)
+
+    def test_on_windows_it_asks_the_py_launcher_for_python_3(self):
+        code = "const w = require(process.argv[1]); console.log(JSON.stringify(w.candidates('win32')))"
+        run = subprocess.run([NODE, "-e", code, self.launcher], cwd=self.work, capture_output=True, text=True, timeout=60)
+        self.assertEqual(json.loads(run.stdout.strip() or "null"), [["py", "-3"], ["python"], ["python3"]], run.stderr)
