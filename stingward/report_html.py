@@ -19,7 +19,7 @@ from . import __version__, gitsafe, report
 from . import _redact as redact
 from .checks import secrets
 from .model import SEV_RANK, SEVERITIES
-from .rules import RULES, STANDARDS
+from .rules import RULES, standards
 
 CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
 GROUPS = ["deps", "secrets", "app", "code", "agents", "skills"]
@@ -606,7 +606,7 @@ def _finding(ctx, entry, n, t):
     vulns = _vulns_html(entry, t)
     if vulns:
         rows.append(_row("", vulns, " long cont"))
-    std = " · ".join(_link(_std_link(s), s) if _std_link(s) else _h(s) for s in STANDARDS.get(entry.rule, []))
+    std = " · ".join(_link(_std_link(s), s) if _std_link(s) else _h(s) for s in standards(entry.rule, entry.params))
     if std:
         rows.append(_row(_html.escape(t["standards"]), f'<p class="std">{std}</p>'))
     refs = "".join(f"<li>{_link(r)}</li>" for r in entry.refs)
