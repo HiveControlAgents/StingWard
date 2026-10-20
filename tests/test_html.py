@@ -834,6 +834,18 @@ class SourceFailures(unittest.TestCase):
                 self.assertNotIn(self.SAID[lang], out)
                 self.assertNotIn(self.WARN[lang], out)
 
+    def test_the_catalog_version_from_the_network_is_plain_text(self):
+        # A versão do catálogo vem da resposta da CISA (ou de um proxy no meio): no terminal e no comentário do PR ela
+        # é texto, sem cor, imagem ou link.
+        ctx = self.ctx(osv=True, kev="2026.10.16 \x1b[31m<img src=x onerror=alert(1)> [go](https://example.test) @team")
+        text = report.text(ctx, [self.dep], "en")
+        self.assertNotIn("\x1b", text)
+        md = report.markdown(ctx, [self.dep], "en")
+        self.assertNotIn("\x1b", md)
+        for raw in ("<img", "[go](", "@team"):
+            self.assertNotIn(raw, md)
+        self.assertIn("CISA KEV 2026.10.16", md)
+
     def test_the_comment_with_nothing_found_still_says_a_source_failed(self):
         # Sem nenhum achado o comentário do PR dizia só "Nada encontrado.": com o OSV fora do ar, isso parece limpo.
         for lang in ("pt", "en"):

@@ -184,7 +184,7 @@ def _sources_line(ctx, lang):
         parts.append("OSV.dev")
     if ctx.sources.get("kev"):
         kv = ctx.sources["kev"]
-        parts.append(f"CISA KEV {kv}" if isinstance(kv, str) else "CISA KEV")
+        parts.append(f"CISA KEV {_clean(kv)}" if isinstance(kv, str) else "CISA KEV")  # a versão vem da rede
     elif ctx.sources.get("kev_error"):  # sem a KEV, uma falha explorada agora não sobe para crítica
         parts.append(t["kev_fail"])
     if ctx.sources.get("epss"):
@@ -602,14 +602,14 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
     elif not shown:
         out += [t["none"], ""]
         if source_failed(ctx):  # "nada encontrado" com o OSV fora do ar não é um comentário limpo
-            out += [f"**{t['sources']}:** {_sources_line(ctx, lang)}", ""]
+            out += [f"**{t['sources']}:** {_esc(_sources_line(ctx, lang))}", ""]
     else:
         first = _fix_first(shown)
         if first:
             out += [f"**{t['first']}**", ""]
             out += [f"{i}. {ICON[e.severity]} {_esc(e.title)} · <sub>{_esc(_first_place(e))}</sub>" for i, e in enumerate(first, 1)]
             out.append("")
-        out += [f"**{t['summary']}:** {counts_line(valid, lang) or '0'} · {t['sources']}: {_sources_line(ctx, lang)}", "",
+        out += [f"**{t['summary']}:** {counts_line(valid, lang) or '0'} · {t['sources']}: {_esc(_sources_line(ctx, lang))}", "",
                 "| | | |", "|---|---|---|"]
         for e in shown[:50]:
             note = f"<br><sub>{_md_comment(audit, e, lang)}</sub>" if rv is not None else ""
