@@ -247,7 +247,9 @@ def _known(line, n, rel, low_conf, out, nxt=""):
             continue
         out.append(Finding("SEC001", "low" if low_conf else _known_sev(kind, m.group(0)), rel, n, _kind(kind)))
     for rx, kind in ((redact._DISCORD_HOOK, "discord_webhook"), (redact._SLACK_HOOK, "slack_webhook")):
-        if rx.search(line) and not _PLACEHOLDER.search(line):
+        # O exemplo está no token do próprio webhook (XXXX, YOUR/WEBHOOK/URL), não no resto da linha: um "your build
+        # finished" ou um process.env.X || "https://hooks..." ao lado escondia o webhook de verdade.
+        if any(not _PLACEHOLDER.search(m["tok"]) for m in itertools.islice(rx.finditer(line), 50)):
             out.append(Finding("SEC001", "low" if low_conf else "high", rel, n, _kind(kind)))
 
 

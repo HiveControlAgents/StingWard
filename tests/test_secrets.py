@@ -224,6 +224,19 @@ class TokenFormats(Case):
                 self.assertEqual(brief(scan_files({"src/keys.py": line + "\n"}), "SEC001"), [])
 
 
+    def test_webhook_is_judged_by_its_own_url_not_by_the_rest_of_the_line(self):
+        slack = "https://hooks.slack.com/services/" + "T01ABCDEF/B02GHIJKL/" + "q8W3e5R7t9Y1u3I5o7P9a1S3"
+        discord = "https://discord.com/api/webhooks/" + "112233445566778899/" + "Zq8W3e5R7t9Y1u3I5o7P9a1S3d5F7g9H"
+        real = {"src/notify.js": f'await axios.post("{slack}", {{ text: "your build finished" }})\n',
+                "src/alert.ts": f'const hook = process.env.DISCORD_WEBHOOK || "{discord}"\n'}
+        self.assertEqual(brief(scan_files(real), "SEC001"), [("SEC001", "src/alert.ts", 1, "high"),
+                                                              ("SEC001", "src/notify.js", 1, "high")])
+        examples = {"src/a.js": 'post("https://hooks.slack.com/services/' + 'T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX")\n',
+                    "src/b.js": 'post("https://hooks.slack.com/services/YOUR/WEBHOOK/URL")\n',
+                    "src/c.js": 'post("https://discord.com/api/webhooks/123456/your-webhook-token")\n'}
+        self.assertEqual(brief(scan_files(examples), "SEC001"), [])
+
+
 # =========================================================================== atribuição a campo sensível
 
 class GenericAssignments(Case):
