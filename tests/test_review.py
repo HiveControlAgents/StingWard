@@ -292,6 +292,29 @@ class ReviewFile(Case):
             fh.write('[{"fingerprint": "0123456789abcdef", "status": "fixed"}]')
         self.assertEqual(review.load(self.path("r.json")).entries, {"0123456789abcdef": ("fixed", "")})
 
+    def test_utf16_review_and_notes_files(self):
+        # Windows PowerShell 5 writes UTF-16 LE with a byte order mark on `>` (and Notepad on "Unicode").
+        doc = '[{"fingerprint": "0123456789abcdef", "status": "fixed", "comment": "Conferido à mão."}]\r\n'
+        notes = "Resumo **curto**: tudo conferido.\r\n\r\n- Ação feita\r\n"
+        for name, bom, codec in (("le", b"\xff\xfe", "utf-16-le"), ("be", b"\xfe\xff", "utf-16-be")):
+            with self.subTest(utf16=name):
+                with open(self.path("r.json"), "wb") as fh:
+                    fh.write(bom + doc.encode(codec))
+                with open(self.path("notes.md"), "wb") as fh:
+                    fh.write(bom + notes.encode(codec))
+                self.assertEqual(review.load(self.path("r.json")).entries, {"0123456789abcdef": ("fixed", "Conferido à mão.")})
+                self.assertEqual(review.load_notes(self.path("notes.md")), "Resumo **curto**: tudo conferido.\n\n- Ação feita\n")
+                code, out, err = run([self.root, "--offline", "--format", "markdown", "--notes", self.path("notes.md")])
+                self.assertIn(code, (0, 1), err)
+                self.assertIn("tudo conferido", out)
+
+    def test_review_file_that_is_not_utf8_is_refused(self):
+        with open(self.path("r.json"), "wb") as fh:
+            fh.write('[{"fingerprint": "0123456789abcdef", "comment": "Conferido à mão."}]'.encode("cp1252"))
+        code, out, err = run([self.root, "--offline", "--review", self.path("r.json")])
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("not UTF-8", err)
+
     def test_warnings_for_stale_and_unreviewed_entries(self):
         doc = self.template()
         doc["findings"][0]["status"] = "confirmed"
