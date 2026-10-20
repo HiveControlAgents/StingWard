@@ -3,6 +3,8 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -61,6 +63,22 @@ class Site(unittest.TestCase):
         with open(os.path.join(SITE, "text.json"), encoding="utf-8") as fh:
             text = json.load(fh)
         self.assertEqual(_shape(text["pt"]), _shape(text["en"]))
+
+    def test_a_list_that_no_longer_matches_the_page_fails_the_build(self):
+        # The page pairs some text.json lists with what it builds (reports, stages, where). One entry more or less in
+        # both languages keeps the shapes equal, so the build has to say so instead of dropping the extra one.
+        pt = _text()["pt"]
+        demo = os.path.join(self.tmp.name, "demo")
+        subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "demo", "fixtures.py"), demo], check=True, capture_output=True)
+        for key in ("reports", "stages", "where"):
+            t = dict(pt, **{key: pt[key] + pt[key][-1:]})
+            with self.assertRaises(SystemExit) as caught:
+                getattr(self.build.Page("pt", t, demo, False, 0), key)()
+            self.assertIn(f"site/text.json: {key} has {len(pt[key]) + 1} entries", str(caught.exception))
+        for page, text in (([1, 2, 3, 4], [1, 2, 3, 4, 5]), ([1, 2, 3, 4], [1, 2, 3])):
+            with self.assertRaises(SystemExit):
+                list(self.build.pairs("where", page, text))
+        self.assertEqual(list(self.build.pairs("where", [1, 2], ["a", "b"])), [(1, "a"), (2, "b")])
 
     def test_nothing_is_left_unfilled(self):
         for lang, rel, page in self.every_page():
