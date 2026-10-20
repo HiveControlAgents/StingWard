@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from unittest import mock
 
 from stingward import _redact as redact, cli, gitsafe, net, report, scan, vulndb
@@ -223,12 +223,36 @@ class DepsDegradeGracefully(unittest.TestCase):
         for rel, content in files.items():
             with open(os.path.join(tmp.name, rel), "w") as fh:
                 json.dump(content, fh)
-        ctx = Context(tmp.name, sorted(files))
-        with mock.patch.object(vulndb, "osv_query", return_value=[list(ids)]), \
-                mock.patch.object(vulndb, "osv_vulns", side_effect=lambda want: {i: docs[i] for i in want if i in docs}), \
-                mock.patch.object(vulndb, "kev", return_value=({}, "")), mock.patch.object(vulndb, "epss", return_value={}), \
-                mock.patch.object(vulndb, "nvd_severity", return_value=None):
+        self.ctx = ctx = Context(tmp.name, sorted(files))
+        with self.osv(ids, docs):
             return deps.check(ctx)
+
+    @staticmethod
+    def osv(ids, docs):
+        stack = ExitStack()
+        for name, kw in (("osv_query", {"return_value": [list(ids)]}),
+                         ("osv_vulns", {"side_effect": lambda want: {i: docs[i] for i in want if i in docs}}),
+                         ("kev", {"return_value": ({}, "")}), ("epss", {"return_value": {}}), ("nvd_severity", {"return_value": None})):
+            stack.enter_context(mock.patch.object(vulndb, name, **kw))
+        return stack
+
+    def test_missing_details_mark_the_check_incomplete(self):
+        self.check_ids(["GHSA-1", "GHSA-gone", "MAL-2025-1"], {"GHSA-1": self.vuln("GHSA-1", "1.2.0")})
+        self.assertIn("2 vulnerability detail(s)", self.ctx.sources["osv_error"])
+        self.assertIn("GHSA-gone, MAL-2025-1", self.ctx.sources["osv_error"])
+        self.check_ids(["GHSA-1"], {"GHSA-1": self.vuln("GHSA-1", "1.2.0")})
+        self.assertNotIn("osv_error", self.ctx.sources)
+
+    def test_missing_details_fail_the_ci_gate_and_still_list_the_package(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with open(os.path.join(tmp.name, "package-lock.json"), "w") as fh:
+            json.dump({"lockfileVersion": 3, "packages": {"": {}, "node_modules/left": {"version": "1.0.0"}}}, fh)
+        out, err = io.StringIO(), io.StringIO()
+        with self.osv(["GHSA-gone"], {}), redirect_stdout(out), redirect_stderr(err):
+            code = cli.main([tmp.name, "--format", "json", "--lang", "en"])
+        self.assertEqual(code, 3)
+        self.assertEqual([f["rule"] for f in json.loads(out.getvalue())["findings"]], ["DEP001"])
 
     def test_advisory_whose_details_did_not_download_is_still_reported(self):
         got = self.check_ids(["GHSA-gone"], {})
