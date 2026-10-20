@@ -18,7 +18,9 @@ LOCKFILES = {
 # nome==versão exata; "3.2.*" e afins não passam (é faixa, não versão)
 _PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*===?\s*([A-Za-z0-9._+!-]+)(?=[\s;,\\]|$)")
 _EXACT = re.compile(r"=?\d+\.\d+\.\d+[\w.\-+]*")
-_YARN_LOCAL = ("workspace:", "link:", "portal:", "file:")
+_YARN_LOCAL = ("workspace:", "link:", "portal:", "file:", "exec:")
+# Faixa que aponta para fora do registro: repositório git, atalho do GitHub ou tarball por URL.
+_YARN_REMOTE = ("git", "github:", "gitlab:", "bitbucket:", "gist:", "http:", "https:", "ssh:")
 
 
 def is_dependency_file(rel: str) -> bool:
@@ -82,6 +84,9 @@ def _npm_lock(text):
             # Só o que está em node_modules/ vem do registro; "packages/app" é pasta de workspace.
             if "node_modules/" not in path or not isinstance(info, dict) or info.get("link") or "version" not in info:
                 continue
+            # Repositório git e tarball local também não, como no formato v1 abaixo.
+            if str(info.get("resolved") or "").startswith(("git", "github:", "file:")):
+                continue
             name = info.get("name") or path.rsplit("node_modules/", 1)[-1]
             yield "npm", name, info["version"], find(f'"{path}"')
         return
@@ -126,7 +131,7 @@ def _yarn_name(spec):
     if at < 0:
         return spec
     name, rng = spec[:at], spec[at + 1:]
-    if rng.startswith(_YARN_LOCAL):
+    if rng.startswith(_YARN_LOCAL + _YARN_REMOTE) or ("/" in rng and ":" not in rng):  # "dono/repo" é o GitHub
         return None
     if rng.startswith("npm:") and rng.find("@", 5) > 0:  # alias: apelido@npm:nome-real@faixa
         return rng[4:rng.index("@", 5)]
@@ -176,23 +181,28 @@ def _requirements(text):
 
 
 def _toml_packages(eco, local=None):
-    """local(source) diz se o pacote é do próprio projeto (pasta, workspace) e não do registro."""
+    """local(pkg) diz se o pacote é do próprio projeto (pasta, workspace) ou de um repositório git, e não do
+    registro. pkg tem as chaves name, version, source, git e path do pacote e "source.type" do [package.source]."""
     def parse(text):
-        pkg, start = {}, 0
+        pkg, start, sub = {}, 0, ""
         for i, line in enumerate(_lines(text) + ["[[package]]"], 1):
             if line.strip() == "[[package]]":
-                if pkg.get("name") and pkg.get("version") and not (local and local(pkg.get("source"))):
+                if pkg.get("name") and pkg.get("version") and not (local and local(pkg)):
                     yield eco, pkg["name"], pkg["version"], start
-                pkg, start = {}, i
+                pkg, start, sub = {}, i, ""
                 continue
-            m = re.match(r'^(name|version|source)\s*=\s*(?:"([^"]+)"|(\{.*))', line)
-            if m and start:
-                pkg.setdefault(m.group(1), m.group(2) or m.group(3))
+            if line.startswith("["):  # subtabela do pacote: só a [package.source] do Poetry interessa
+                sub = "source." if line.strip() == "[package.source]" else None
+                continue
+            m = re.match(r'^(name|version|source|git|path|type)\s*=\s*(?:"([^"]+)"|(\{.*))', line)
+            if m and start and sub is not None:
+                pkg.setdefault(sub + m.group(1), m.group(2) or m.group(3))
     return parse
 
 
-def _uv_local(source):
-    return bool(source) and re.match(r"\{\s*(editable|virtual|path|directory)\s*=", source) is not None
+def _uv_local(pkg):
+    source = pkg.get("source")
+    return bool(source) and re.match(r"\{\s*(editable|virtual|path|directory|git)\s*=", source) is not None
 
 
 def _pipfile_lock(text):
@@ -266,12 +276,13 @@ _PARSERS = {
     "bun.lock": _bun_lock,
     "package.json": _package_json,
     "requirements.txt": _requirements,
-    "poetry.lock": _toml_packages("PyPI"),
+    "poetry.lock": _toml_packages("PyPI", lambda pkg: pkg.get("source.type") in ("git", "directory", "file")),
     "uv.lock": _toml_packages("PyPI", _uv_local),
-    "pdm.lock": _toml_packages("PyPI"),
+    "pdm.lock": _toml_packages("PyPI", lambda pkg: "git" in pkg or "path" in pkg),
     "Pipfile.lock": _pipfile_lock,
     "go.mod": _go_mod,
-    "Cargo.lock": _toml_packages("crates.io", lambda source: source is None),  # sem source: crate do próprio projeto
+    # Sem source é crate do próprio projeto; "git+..." vem de um repositório, não do crates.io.
+    "Cargo.lock": _toml_packages("crates.io", lambda pkg: not pkg.get("source") or pkg["source"].startswith("git+")),
     "Gemfile.lock": _gemfile_lock,
     "composer.lock": _composer_lock,
 }
