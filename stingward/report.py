@@ -102,7 +102,9 @@ def _sources_line(ctx, lang):
 
 def counts_line(findings, lang):
     c = Counter(f.severity for f in findings)
-    return ", ".join(f"{c[s]} {LABEL[lang][s].lower()}" for s in reversed(SEVERITIES) if c[s])
+    # "2 críticos", "1 alto": em português o rótulo concorda com o número; em inglês ele funciona como adjetivo.
+    plural = lambda s: "s" if lang == "pt" and c[s] > 1 and s != "info" else ""
+    return ", ".join(f"{c[s]} {LABEL[lang][s].lower()}{plural(s)}" for s in reversed(SEVERITIES) if c[s])
 
 
 def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False, max_low=15):
@@ -194,7 +196,7 @@ def sarif(ctx, findings, lang="pt", prefix=""):
     for r, f in sorted(first.items()):
         title, why, fix = texts(r, lang, f.params)
         rules.append({"id": r, "name": r, "shortDescription": {"text": title}, "fullDescription": {"text": why},
-                      "help": {"text": fix}, "helpUri": f"{REPO_URL}#{r.lower()}",
+                      "help": {"text": fix}, "helpUri": f"{REPO_URL}/blob/main/docs/rules.md#{r.lower()}",
                       "properties": {"tags": ["security", RULES[r]["group"]] + STANDARDS.get(r, []),
                                      "security-severity": _SARIF_SCORE[f.severity]}})
     results = []

@@ -1,17 +1,32 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "stingward"
-version = "0.1.0"
+version = "0.1.1"
 description = "Security check for AI-built projects, Claude Code skills and MCP servers"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.9"
 authors = [{name = "Isaque Moutta"}]
-keywords = ["security", "vulnerability", "cve", "osv", "mcp", "claude-code", "supabase", "vibe-coding"]
-classifiers = ["Programming Language :: Python :: 3", "Topic :: Security", "Environment :: Console"]
+keywords = ["security", "vulnerability", "cve", "osv", "sca", "secrets", "mcp", "claude-code", "skills", "prompt-injection", "supabase", "vibe-coding"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = []
 
 [project.scripts]
@@ -19,6 +34,10 @@ stingward = "stingward.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/HiveControlAgents/StingWard"
+Documentation = "https://github.com/HiveControlAgents/StingWard/blob/main/docs/rules.md"
+Changelog = "https://github.com/HiveControlAgents/StingWard/blob/main/CHANGELOG.md"
+Issues = "https://github.com/HiveControlAgents/StingWard/issues"
+Source = "https://github.com/HiveControlAgents/StingWard"
 
 [tool.setuptools]
 packages = ["stingward", "stingward.checks"]

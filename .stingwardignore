@@ -1,0 +1,2 @@
+# The README demo builds a vulnerable app and a hostile skill on purpose. Everything else must stay clean.
+scripts/demo/*

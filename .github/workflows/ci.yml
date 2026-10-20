@@ -27,7 +27,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.13" }
-      - run: python -m unittest discover -s tests -t . -v
+      - run: python -m pip install coverage
+      - name: Tests with coverage (the README promises more than 90%)
+        run: |
+          python -m coverage run --source=stingward -m unittest discover -s tests -t . -v
+          python -m coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          python -m coverage report --fail-under=90
         env: { STINGWARD_ONLINE: "1" }
 
   package:

@@ -13,5 +13,4 @@ if os.path.isfile(os.path.join(root, "stingward", "cli.py")):
 exe = shutil.which("stingward")
 if exe:
     sys.exit(subprocess.call([exe] + sys.argv[1:]))
-sys.exit("stingward não encontrado. Instale com: pipx install git+https://github.com/HiveControlAgents/StingWard "
-         "(ou uvx --from git+https://github.com/HiveControlAgents/StingWard stingward)")
+sys.exit("stingward não encontrado / not found. Instale / install: pipx install stingward (ou / or: uvx stingward, npx stingward)")
