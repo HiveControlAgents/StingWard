@@ -1316,6 +1316,15 @@ class CodeEngine(unittest.TestCase):
         self.assertEqual([js.open_before(i) for i in (9, 19, 21, 26, 32)], [2, 17, 14, 24, 1])
         self.assertEqual(js.open_before(0), -1)
 
+    def test_long_names_in_expressions_stay_fast(self):
+        """Um nome de 2900 letras numa expressão com chamada: a busca de chamadas tentava começar em cada letra dele."""
+        src = "const q = req.query.a\neval(q)\n" + ("x = q + " + "a" * 2900 + " + f()\n") * 50
+        t = time.time()
+        found = code.scan_js("a.js", src)
+        self.assertLess(time.time() - t, 2)
+        self.assertEqual([(f.rule, f.line) for f in found], [("COD003", 2)])
+        self.assertEqual(code._opaque_calls("a(b) + c.d(e, f(g)) + h"), "a( ) + c.d(       ) + h")
+
     def test_line_numbers_follow_comments_and_strings(self):
         src = EXPRESS + ("/* a comment\n   eval(req.body.a)\n*/\n"
                          "const s = `multi\nline ${1}\ntext`\n"
