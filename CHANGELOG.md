@@ -41,6 +41,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - On Python 3.9 to 3.11, a project or skill with folders nested about a thousand levels deep no longer stops the scan with a `RecursionError`. The file listing no longer recurses; its order and what it skips are the same.
 - An output file that cannot be written (`--json`, `--sarif`, `--markdown`, `--html` or `--review-template` in a folder that does not exist, or pointing at a folder) gives a one-line error and exit code 2. It used to crash with a traceback and exit code 1, the code for findings.
 - A password with an `@` in a database URL (`postgres://admin:xxxx@xxxx@db.example.com/app`) is masked whole in every report. Masking stopped at the first `@`, so the HTML excerpt showed the rest of the password. The same fix makes such a URL to `localhost` count as a local database (low), as other local URLs already did.
+- A PGP/GPG private key (the armored block that GnuPG exports) is reported as a private key (SEC001, critical) and masked like the other private keys. Only PEM keys (`-----BEGIN ... PRIVATE KEY-----`) were.
 
 ## [0.1.5] - 2026-10-20
 

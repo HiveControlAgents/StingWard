@@ -100,6 +100,27 @@ class MaskerFormats(unittest.TestCase):
         self.assertEqual((m["pw"], secrets._url_password(m, m.string)), ("p@ss", "low"))
 
 
+class PgpPrivateKey(unittest.TestCase):
+    BODY = "lQOYBGZ" + "Demo7Fake9Key0Not4Real" + "AQgA0x7Kq2"
+    KIND = "PGP " + "PRIVATE KEY BLOCK"  # em pedaços: o próprio repositório passa na auditoria
+    BLOCK = f"-----BEGIN {KIND}-----\n\n{BODY}\n=AbCd\n-----END {KIND}-----\n"
+
+    def test_masked(self):
+        out = redact.sanitize_text("key:\n" + self.BLOCK + "after")
+        self.assertNotIn("Demo7Fake9", out)
+        self.assertEqual(out, "key:\n[REDACTED:private_key]\nafter")
+
+    def test_found_in_a_project(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        os.makedirs(os.path.join(tmp.name, "deploy"))
+        with open(os.path.join(tmp.name, "deploy", "signing-key.txt"), "w") as fh:
+            fh.write(self.BLOCK)
+        _, findings = scan.run(tmp.name, offline=True, only={"secrets"})
+        self.assertEqual([(f.rule, f.severity, f.file, f.line, f.params["kind_en"]) for f in findings],
+                         [("SEC001", "critical", "deploy/signing-key.txt", 1, "private key")])
+
+
 class ErrorsFollowTheLanguage(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
