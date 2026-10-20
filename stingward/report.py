@@ -12,7 +12,7 @@ from collections import Counter
 from urllib.parse import quote
 
 from . import __version__
-from .checks import secrets
+from .checks import code, secrets
 from .model import SEV_RANK, SEVERITIES
 from .rules import RULES, STANDARDS, fill, standards, texts
 
@@ -208,8 +208,34 @@ class Entry:
         return out
 
 
+# Ordem dos itens, de "corrija primeiro" e do plano: depois da severidade, o que um atacante aproveita mais rápido.
+# 0 falha com ataque em uso (KEV); 1 chave ou segredo exposto, que qualquer um usa sem esforço; 2 execução de código
+# ou comando, que entrega o servidor ou a máquina; 3 acesso aberto aos dados; 4 o resto. No empate, a ordem da
+# varredura: regra, arquivo e linha. Por regra ou prefixo; regra sem entrada fica no fim (4).
+PRIORITY = {
+    "SEC": 1, "APP001": 1, "APP002": 1,
+    "COD002": 2, "COD003": 2, "COD004": 2, "APP012": 2, "APP013": 2, "AGT002": 2, "SKL002": 2, "SKL009": 2, "SKL011": 2,
+    "APP004": 3, "APP005": 3, "APP006": 3, "APP008": 3, "COD001": 3,
+}
+# APP009 e APP014 dependem de onde chega o que o modelo escreveu.
+PRIORITY_BY_SINK = {
+    "APP009": {"code": 2, "shell": 2, "template": 2, "sql": 3},
+    "APP014": {"shell": 2, "code": 2, "template": 2, "deserialize": 2, "sql": 3},
+}
+_LLM_KIND = {v[1]: k for k, v in code._LLM_SINK.items()}  # a APP009 guarda o destino só como texto: "a shell command"
+
+
+def priority(entry):
+    if any("kev" in f.tags for f in entry.findings):
+        return 0
+    by_sink = PRIORITY_BY_SINK.get(entry.rule)
+    if by_sink is not None:
+        return by_sink.get(entry.params.get("kind") or _LLM_KIND.get(entry.params.get("sink_en"), ""), 4)
+    return PRIORITY.get(entry.rule, PRIORITY.get(entry.rule[:3], 4))
+
+
 def merge(findings, lang, review=None):
-    """Mesma regra e mesmo título viram um item só, na ordem em que os achados vêm (o pior primeiro).
+    """Mesma regra e mesmo título viram um item só, do pior para o menos grave e, na mesma severidade, pela PRIORITY.
 
     O "por quê" e o "como corrigir" também entram na chave: na SKL001 o "por quê" traz a mensagem escondida, e
     duas mensagens diferentes não podem virar uma. A severidade também: o mesmo segredo dentro de tests/ fica baixo
@@ -225,6 +251,7 @@ def merge(findings, lang, review=None):
         else:
             index[key] = Entry(f, title, why, fix, status, comment)
             entries.append(index[key])
+    entries.sort(key=lambda e: (-SEV_RANK[e.severity], priority(e)))  # estável: o empate fica na ordem da varredura
     return entries
 
 

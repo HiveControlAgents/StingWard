@@ -669,6 +669,59 @@ class TextAndMarkdown(unittest.TestCase):
 
 
 
+class Priority(unittest.TestCase):
+    """Depois da severidade: KEV, segredo exposto, execução de código ou comando, acesso aberto aos dados, o resto."""
+    ctx = Context(root=".", files=["a.py"], offline=True)
+
+    def findings(self):
+        from stingward.checks.code import _llm_params, _tool_params
+        # na ordem da varredura: severidade, KEV, regra, arquivo, linha
+        return [Finding("DEP001", "critical", "package-lock.json", None, {"pkg": "next", "version": "14.1.0"}, tags=["kev"]),
+                Finding("AGT002", "critical", ".claude/settings.json", 3, {}),
+                Finding("APP004", "critical", "db.sql", 1, {"table": "profiles"}),
+                Finding("APP007", "critical", "app.py", 2, {"framework": "Flask"}),
+                Finding("APP009", "critical", "chat.js", 4, _llm_params("html")),
+                Finding("APP009", "critical", "run.py", 5, _llm_params("shell")),
+                Finding("APP014", "critical", "tools.py", 6, _tool_params("path", True)),
+                Finding("APP014", "critical", "tools.py", 7, _tool_params("sql", True)),
+                Finding("COD002", "critical", "ops.py", 8, {"source_en": "request input"}),
+                Finding("SEC001", "critical", "config.py", 9, {"kind_en": "GitHub token"}),
+                Finding("SEC001", "high", "old.py", 1, {"kind_en": "GitHub token"})]
+
+    def test_order_inside_a_severity(self):
+        got = [(e.rule, e.findings[0].file) for e in report.merge(self.findings(), "en")]
+        self.assertEqual(got, [("DEP001", "package-lock.json"),                                # KEV
+                               ("SEC001", "config.py"),                                       # segredo exposto
+                               ("AGT002", ".claude/settings.json"), ("APP009", "run.py"), ("COD002", "ops.py"),  # execução
+                               ("APP004", "db.sql"), ("APP014", "tools.py"),                  # dados (APP014 sql)
+                               ("APP007", "app.py"), ("APP009", "chat.js"), ("APP014", "tools.py"),  # o resto
+                               ("SEC001", "old.py")])                                         # alto vem depois de todo crítico
+        self.assertEqual(got[6], ("APP014", "tools.py"))
+        self.assertEqual(report.merge(self.findings(), "en")[6].findings[0].line, 7)  # a de SQL
+
+    def test_every_rule_has_a_place(self):
+        for rule in RULES:
+            self.assertIn(report.priority(report.merge([Finding(rule, "high", "a.py", 1, {})], "en")[0]), range(5), rule)
+
+    def test_fix_first_and_the_plan_follow_it(self):
+        f = self.findings()
+        text = report.text(self.ctx, f, "en")
+        block = text.split("Fix these first:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertEqual([line.split(" · ")[-1].split(" ")[0] for line in block.split("\n")],
+                         ["package-lock.json", "config.py:9", ".claude/settings.json:3"])
+        md = report.markdown(self.ctx, f, "en")
+        self.assertLess(md.index("config.py:9"), md.index(".claude/settings.json:3"))
+        root = tree({"a.py": "x = 1\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        page = report_html.render(ctx_for(root, files=["a.py"]), f, "en").replace("<wbr>", "")
+        plan = page.split('id="plan"', 1)[1].split("</section>", 1)[0]
+        order = re.findall(r'<td class="where"><code>([^<]+)</code>', plan)
+        self.assertEqual(order[:6], ["package-lock.json", "config.py:9", ".claude/settings.json:3", "run.py:5", "ops.py:8", "db.sql:1"])
+        first = page.split('class="first"', 1)[1].split("</ol>", 1)[0]
+        self.assertEqual(re.findall(r'<p class="first-where"><span>[^<]*</span><code>([^<]+)</code>', first),
+                         ["package-lock.json", "config.py:9", ".claude/settings.json:3"])
+
+
 class Layout(unittest.TestCase):
     """O CSS do relatório: o que só um navegador mostraria, conferido no texto do CSS."""
 
