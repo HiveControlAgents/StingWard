@@ -408,6 +408,22 @@ class CodeRules(Checks):
                          "app.get('/g/:name', (req, res) => res.sendFile(req.params.name))\n")
         self.check({"server.js": src}, [("COD007", "server.js", 6, "high"), ("COD007", "server.js", 8, "high")])
 
+    def test_cod007_js_named_fs_imports(self):
+        """import { writeFile } from 'fs/promises', const { readFileSync } = require('fs'): o "fs" só aparece no texto
+        entre aspas, que a máscara apaga; a função chamada sozinha é a mesma do fs."""
+        route = ("import { writeFile, readFile } from 'fs/promises'\nimport path from 'path'\n"
+                 "export async function POST(request) {\n"
+                 "  const data = await request.formData()\n"
+                 "  const file = data.get('file')\n"
+                 "  await writeFile(path.join(process.cwd(), 'public', 'uploads', file.name), Buffer.from(await file.arrayBuffer()))\n"
+                 "  const txt = await readFile(path.join(process.cwd(), 'data', data.get('name')), 'utf8')\n"
+                 "  return Response.json({ txt })\n}\n")
+        server = EXPRESS + ("const { readFileSync } = require('fs')\n"
+                            "app.get('/f', (req, res) => res.send(readFileSync('files/' + req.query.name)))\n")
+        self.check({"app/api/upload/route.ts": route, "server.js": server},
+                   [("COD007", "app/api/upload/route.ts", 6, "high"), ("COD007", "app/api/upload/route.ts", 7, "high"),
+                    ("COD007", "server.js", 4, "high")])
+
     def test_cod007_js_basename_root_and_upload_path_stay_silent(self):
         src = EXPRESS + ("const fs = require('fs')\nconst path = require('path')\n"
                          "app.get('/f', (req, res) => {\n"

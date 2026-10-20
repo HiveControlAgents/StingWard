@@ -2741,9 +2741,11 @@ class _Js:
         if any(t in mask for t in ("innerHTML", "outerHTML", "insertAdjacentHTML", "dangerouslySetInnerHTML")) or \
                 "document" in mask and "write" in mask:
             rules.append((_JS_HTML, self.html))
-        if (req or tool) and any(t in mask for t in ("fs", "sendFile", "download", "Bun", "Deno")):
+        # import { readFile } from 'fs/promises': o "fs" está só no texto entre aspas, que a máscara apaga.
+        fs_import = (req or tool) and bool(_FS_IMPORT.search(code))
+        if fs_import or (req or tool) and any(t in mask for t in ("fs", "sendFile", "download", "Bun", "Deno")):
             rules.append((_JS_FS, self.files))
-            if _FS_IMPORT.search(code):
+            if fs_import:
                 rules.append((_JS_FS_BARE, self.files))
         if any(t in mask for t in ("fetch", "got", "ky", "needle", "axios", "superagent", "http")) and \
                 (req and self.server or tool and not self.use_client):
