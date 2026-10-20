@@ -157,12 +157,12 @@ RULES = {
     "APP009": {
         "group": "app",
         "pt": ("Texto escrito pelo modelo chega a {sink}",
-               "A resposta do modelo, e os argumentos que ele preenche numa ferramenta, podem ser guiados por qualquer coisa que ele leu "
-               "(uma página, um arquivo, a mensagem de alguém). Usar isso direto transforma uma injeção de prompt em {impact}.",
+               "A resposta do modelo pode ser guiada por qualquer coisa que ele leu (uma página, um arquivo, a mensagem de alguém). "
+               "Usar isso direto transforma uma injeção de prompt em {impact}.",
                "Trate a saída do modelo como entrada de usuário: {fix}"),
         "en": ("Text written by the model reaches {sink}",
-               "The model's answer, and the arguments it fills in for a tool, can be steered by anything it read (a web page, a file, "
-               "someone's message). Using it as is turns a prompt injection into {impact}.",
+               "The model's answer can be steered by anything it read (a web page, a file, someone's message). Using it as is turns "
+               "a prompt injection into {impact}.",
                "Treat model output like user input: {fix}"),
     },
     "APP010": {
@@ -200,6 +200,18 @@ RULES = {
         "group": "app",
         "pt": ("Agente pode executar o que o modelo escrever ({what})", "{why}", "{fix}"),
         "en": ("Agent can run whatever the model writes ({what})", "{why}", "{fix}"),
+    },
+    "APP014": {
+        "group": "app",
+        "pt": ("Argumento que o modelo escreve na ferramenta chega a {sink}",
+               "Quem preenche os argumentos desta ferramenta é o modelo de IA, não você nem o seu código. Qualquer coisa que ele "
+               "leu antes de chamá-la (uma página, um arquivo, uma issue, um e-mail) pode esconder instruções que mudam o que ele "
+               "escreve aqui. {detail}",
+               "{fix}"),
+        "en": ("Tool argument written by the model reaches {sink}",
+               "The AI model fills in this tool's arguments, not you or your code. Anything it read before calling the tool (a web "
+               "page, a file, an issue, an email) can hide instructions that change what it writes here. {detail}",
+               "{fix}"),
     },
     # ------------------------------------------------------------------ falhas no código
     "COD001": {
@@ -485,6 +497,28 @@ RULES = {
 }
 
 
+# Na APP014 o CWE e o ASI dependem de onde o argumento chega (params["kind"]): (antes, depois) dos padrões da regra.
+KIND_STANDARDS = {
+    "APP014": {
+        "shell": (["CWE-78"], ["ASI05"]),
+        "code": (["CWE-94"], ["ASI05"]),
+        "template": (["CWE-94"], ["ASI05"]),
+        "deserialize": (["CWE-502"], ["ASI05"]),
+        "sql": (["CWE-89"], ["ASI02"]),
+        "path": (["CWE-22"], ["ASI02"]),
+        "url": (["CWE-918"], ["ASI02"]),
+        "html": (["CWE-79"], []),
+    },
+}
+
+
+def standards(rule: str, params: dict | None = None):
+    """Padrões do achado: os da regra, mais os que dependem do tipo de sink."""
+    base = STANDARDS.get(rule, [])
+    extra = KIND_STANDARDS.get(rule, {}).get((params or {}).get("kind"))
+    return extra[0] + base + extra[1] if extra else list(base)
+
+
 def texts(rule: str, lang: str, params: dict):
     """Devolve (título, por quê, como corrigir) já preenchidos."""
     lang = lang if lang in ("pt", "en") else "en"
@@ -530,6 +564,7 @@ STANDARDS = {
     "APP011": ["CWE-306", "CWE-770", "LLM06:2026"],
     "APP012": ["CWE-502", "CWE-829", "LLM04:2026"],
     "APP013": ["CWE-94", "LLM03:2026", "ASI05"],
+    "APP014": ["LLM03:2026"],
     "COD001": ["CWE-89"],
     "COD002": ["CWE-78"],
     "COD003": ["CWE-94", "CWE-95"],

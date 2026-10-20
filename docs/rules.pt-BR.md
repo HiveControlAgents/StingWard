@@ -36,6 +36,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [APP011](#app011) | Rota de IA sem login e sem limite de uso | 🟡 |
 | [APP012](#app012) | Carregar o modelo pode executar código | 🟠 |
 | [APP013](#app013) | Agente pode executar o que o modelo escrever | 🟠 |
+| [APP014](#app014) | Argumento que o modelo escreve na ferramenta chega a shell, código, SQL, caminho ou URL | 🔴 |
 | [COD001](#cod001) | Consulta SQL montada com dado de fora | 🟠 |
 | [COD002](#cod002) | Comando de shell montado com dado de fora | 🔴 |
 | [COD003](#cod003) | Código montado com dado de fora é executado | 🔴 |
@@ -202,7 +203,7 @@ Regras do Firestore ou Storage com `allow read, write: if true` (ou a data do mo
 <a id="app009"></a>
 ### APP009 · Saída do modelo chega a código, shell, SQL ou HTML
 
-A resposta de uma chamada de LLM (OpenAI, Anthropic, Gemini, LangChain, AI SDK...) ou os argumentos de uma ferramenta MCP ou do AI SDK chegam a `eval`/`exec`, um comando de shell, um template, uma consulta SQL, ou `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. Uma injeção de prompt em qualquer coisa que o modelo leu vira código no seu servidor ou script no navegador de quem usa o app. Crítico quando a resposta é executada, alto para argumentos de ferramenta e SQL, médio para HTML. `JSON.parse`, `json.loads` e DOMPurify cortam a cadeia.
+A resposta de uma chamada de LLM (OpenAI, Anthropic, Gemini, LangChain, AI SDK...) chega a `eval`/`exec`, um comando de shell, um template, uma consulta SQL, ou `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. Uma injeção de prompt em qualquer coisa que o modelo leu vira código no seu servidor ou script no navegador de quem usa o app. Crítico quando a resposta é executada, alto para SQL, médio para HTML. `JSON.parse`, `json.loads` e DOMPurify cortam a cadeia. Os argumentos que o modelo escreve numa ferramenta ficam com a [APP014](#app014).
 
 **Como corrigir:** trate a saída do modelo como entrada de usuário: peça JSON e valide, mapeie para uma lista fixa de ações, passe os argumentos do shell em lista, rode o SQL com um usuário só de leitura e limpe o HTML com DOMPurify.
 **Padrões:** `CWE-1426` · `LLM10:2026`
@@ -239,6 +240,20 @@ Uma rota do servidor que chama um modelo (`app/api/**/route.ts` do Next.js, serv
 **Como corrigir:** tire a ferramenta, ou rode numa sandbox (container sem segredos e sem rede) e confirme cada execução. Dê aos agentes de SQL um usuário de banco só de leitura.
 **Padrões:** `CWE-94` · `LLM03:2026` · `ASI05`
 
+<a id="app014"></a>
+### APP014 · Argumento que o modelo escreve na ferramenta chega a shell, código, SQL, caminho ou URL
+
+Um servidor MCP ou uma ferramenta de agente passa um dos seus argumentos para uma chamada perigosa. Quem preenche esses argumentos é o modelo de IA, não você nem o seu código, e qualquer coisa que ele leu antes da chamada (uma página, um arquivo, uma issue, um e-mail) pode esconder instruções que mudam o que ele escreve. Contam como argumento de ferramenta: os parâmetros das funções com `@mcp.tool()`/`@server.tool()` do FastMCP e de `mcp.add_tool(f)`, o `arguments` de um handler `@server.call_tool()` de baixo nível, os handlers de `server.tool(...)`, `server.registerTool(...)` e `setRequestHandler(CallToolRequestSchema, ...)` em TypeScript, `@tool` e `BaseTool._run` do LangChain, `tool({ execute })` do AI SDK, e `tool_call.function.arguments` ou `block.input` lidos da resposta da OpenAI ou da Anthropic. O valor passado a um helper do mesmo arquivo, a uma função que a ferramenta importa de outro arquivo do projeto (até dois níveis), ou por uma tabela `{"nome": funcao}`, é seguido.
+
+A severidade segue o sink. Crítico quando o argumento entra no meio de um comando de shell ou de um código escrito no código (`os.system("git log " + ref)`, `` exec(`ls ${dir}`) ``, `["sh", "-c", f"..."]`). Alto quando a ferramenta roda o comando ou o código inteiro que recebe, para SQL montado com o argumento, para pickle ou YAML inseguro e para um caminho que junta o argumento a uma pasta do código (`os.path.join(BASE, nome)`, de onde `../` sai). Médio para qualquer outro caminho, para um endereço que o servidor busca e para HTML. Em skills o achado mantém a severidade cheia; em testes e exemplos cai para baixa, como os outros achados de código.
+
+Não entram: parâmetros tipados como número, booleano, `Literal`, `Enum` do arquivo ou `Field(pattern=...)`, `z.number()`/`z.enum()` do Zod, parâmetros que o framework injeta (`ctx: Context`), lista de argumentos sem shell com o programa escrito no código, argumento que passa antes por uma checagem como `validate_name(arg)` ou `check_path(arg)` (em TypeScript, checagens de caminho como `validatePath(p)`), `shlex.quote`, parâmetros de consulta, `basename`, `resolve()` com checagem de `is_relative_to`/`startsWith`, nome de arquivo fixo dentro de uma pasta que o modelo escolhe, host fixo, lista de hosts permitidos e código que roda no navegador. Uma ferramenta que roda a consulta SQL inteira que recebe é uma ferramenta de SQL por escolha e não entra. Um JSON Schema só com `"type": "string"` não conta como validação.
+
+O CWE e o item do OWASP Top 10 for Agentic Applications dependem do sink: CWE-78 e ASI05 para comandos de shell, CWE-94 e ASI05 para código e templates, CWE-502 e ASI05 para pickle e YAML, CWE-89 e ASI02 para SQL, CWE-22 e ASI02 para caminhos, CWE-918 e ASI02 para URLs, CWE-79 para HTML.
+
+**Como corrigir:** trate todo argumento de ferramenta como entrada não confiável: rode programas com lista de argumentos e sem shell, passe valores de SQL como parâmetro, mantenha caminhos dentro de uma pasta (resolva e confira o prefixo), aceite só os hosts de que a ferramenta precisa e tipe os argumentos do jeito mais estreito possível (número, enum, padrão). Se a ferramenta precisa rodar comandos, peça confirmação a quem usa antes de cada um.
+**Padrões:** `LLM03:2026`
+
 ## Código
 
 Arquivos Python são lidos com `ast` e JavaScript/TypeScript (também o `<script>` de `.vue`, `.svelte` e `.astro`) com padrões justos, seguindo de onde veio cada valor dentro da função: a requisição (Flask, FastAPI, Django, Express, Next.js, Hono...), um argumento da função ou outro servidor. A chamada a um helper seu (`get_file_by_id(id)`) não é seguida, porque devolve outra coisa, nem um parâmetro que o framework já converteu em número, booleano ou UUID (`item_id: int`, `<int:id>`). Bundles minificados ficam de fora, e testes, exemplos e fixtures caem para baixa.
@@ -254,7 +269,7 @@ f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `rea
 <a id="cod002"></a>
 ### COD002 · Comando de shell montado com dado de fora
 
-`os.system`, `subprocess.run(..., shell=True)`, `exec`/`execSync` do `child_process` e parecidos com dado da requisição no comando (crítico), ou argumento de função misturado no texto do comando num app web (médio). Lista de argumentos sem shell (`subprocess.run(["ping", host])`, `execFile`) e ferramentas de linha de comando (click, typer) não entram.
+`os.system`, `subprocess.run(..., shell=True)`, `["sh", "-c", ...]`, `exec`/`execSync` do `child_process`, `spawn(cmd, { shell: true })`, `spawn("sh", ["-c", cmd])`, execa com `shell: true` e parecidos com dado da requisição no comando (crítico), ou argumento de função misturado no texto do comando num app web (médio). Lista de argumentos sem shell (`subprocess.run(["ping", host])`, `execFile`, `spawn("ls", [dir])`) e ferramentas de linha de comando (click, typer) não entram.
 
 **Como corrigir:** rode o programa com uma lista de argumentos e sem shell, e aceite só valores de uma lista conhecida.
 **Padrões:** `CWE-78`
@@ -278,7 +293,7 @@ f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `rea
 <a id="cod005"></a>
 ### COD005 · HTML inserido sem limpar
 
-`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, `{@html}`, `set:html`, `Markup()` ou HTML devolvido como texto por uma rota Flask, com dado da URL ou da requisição (médio). No JavaScript, HTML montado com outras variáveis é baixo. `DOMPurify.sanitize`, `textContent`, JSX comum e HTML constante não entram.
+`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, `{@html}`, `set:html`, `Markup()`, `res.send`/`res.write`/`res.end` do Express, `c.html` do Hono, ou HTML devolvido como texto por uma rota Flask ou por uma rota FastAPI com `response_class=HTMLResponse`, com dado da URL ou da requisição (médio). No JavaScript, HTML montado com outras variáveis é baixo. `DOMPurify.sanitize`, `escapeHtml`, `textContent`, JSX comum, HTML constante, `res.json` e texto sem tag HTML não entram.
 
 **Como corrigir:** mostre como texto (`textContent`, ou a variável direto no JSX) ou limpe antes com `DOMPurify.sanitize` (sanitize-html ou bleach no servidor).
 **Padrões:** `CWE-79`
@@ -318,7 +333,7 @@ f-string, `+`, `%` ou `.format()` com SQL que vai para `execute`, `text()`, `rea
 <a id="cod010"></a>
 ### COD010 · Número aleatório previsível usado num segredo
 
-`Math.random()` ou o `random` do Python atribuído a (ou devolvido por) algo com nome de segredo: `reset_token`, `apiKey`, `password`, `otp`, `verification_code`. Nomes como `token_count`, `delay` ou `session_id` não entram, nem testes.
+`Math.random()` ou o `random` do Python atribuído a (ou devolvido por) algo com nome de segredo: `reset_token`, `apiKey`, `password`, `otp`, `verification_code`, também no nível do módulo e quando o valor é montado num callback (`[...Array(32)].map(() => ...Math.random()...)`). Um id de sessão (`session_id`, `sessionId`, `sid`) conta quando vai para um cookie. Nomes como `token_count` ou `delay`, id de sessão que nunca chega a um cookie e testes não entram.
 
 **Como corrigir:** use `crypto.randomUUID()` ou `crypto.getRandomValues` no JavaScript e o módulo `secrets` no Python (`secrets.token_urlsafe`).
 **Padrões:** `CWE-338`
