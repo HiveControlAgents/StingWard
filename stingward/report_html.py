@@ -52,6 +52,7 @@ H = {
         },
         "warn_offline": "Modo offline: as dependências não foram checadas contra as bases de falhas conhecidas.",
         "warn_osv": "O OSV.dev não respondeu: as dependências não foram checadas contra as bases de falhas conhecidas.",
+        "warn_kev": "A lista CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com severidade abaixo da real.",
         "warn_only": "Só parte das verificações rodou: {checks}.",
         "toc": "Conteúdo",
         "s_summary": "Resumo executivo", "s_plan": "Plano de correção", "s_findings": "Achados em detalhe", "s_scope": "Escopo e método",
@@ -164,6 +165,7 @@ H = {
         },
         "warn_offline": "Offline mode: dependencies were not checked against the vulnerability databases.",
         "warn_osv": "OSV.dev did not respond: dependencies were not checked against the vulnerability databases.",
+        "warn_kev": "The CISA KEV list did not respond: a vulnerability attackers already exploit may show a lower severity than it should.",
         "warn_only": "Only some checks ran: {checks}.",
         "toc": "Contents",
         "s_summary": "Executive summary", "s_plan": "Remediation plan", "s_findings": "Findings in detail", "s_scope": "Scope and method",
@@ -312,8 +314,9 @@ def _code_html(s, t):
 
 _SECRET_FILE = re.compile(r"(?i)(?:^|/)(?:\.env(?:\.[\w.-]+)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|credentials|id_[a-z0-9_]+|"
                           r"[^/]*\.(?:pem|key|p12|pfx|jks|keystore))$")
-_KEY_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
-_KEY_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY-----")
+# Bloco de chave privada. O do PGP termina em "PRIVATE KEY BLOCK-----".
+_KEY_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")
+_KEY_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")
 _RUN = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
 # Referência a variável de ambiente é nome, não valor: apiKey: process.env.X fica à vista. Só quando ela é o valor
 # inteiro (vem antes de , ; ) } ] ou do fim da linha). Assim process.env.TOKEN = "..." e password: process.env.X ||
@@ -398,31 +401,33 @@ def evidence(ctx, rel, line):
     """[(número, texto mascarado ou None se a linha é longa demais, tamanho)] da linha e uma de cada lado.
 
     Arquivo de segredos (.env, .npmrc, chave) mostra só a linha do achado. Linha dentro de um bloco de chave
-    privada nunca aparece, mesmo quando o bloco começa fora da janela."""
+    privada nunca aparece, mesmo quando o bloco começa fora da janela.
+
+    O texto vem de ctx.read, o mesmo que as verificações leram: a mesma decodificação e as mesmas linhas (só "\\n"
+    quebra linha), e não o arquivo de novo do disco, que pode ter mudado depois da varredura."""
     if not line:
         return None
     lo, hi = (line, line) if _SECRET_FILE.search(rel) else (max(1, line - 1), line + 1)
+    lines = ctx.read(rel).split("\n")
+    if lines[-1] == "":  # a quebra no fim do arquivo não abre outra linha; arquivo vazio ou ilegível não tem nenhuma
+        lines.pop()
     rows = []
-    try:
-        with open(os.path.join(ctx.root, rel), encoding="utf-8", errors="replace") as fh:
+    in_key = False
+    for n, raw in enumerate(lines, 1):
+        raw = raw.rstrip("\r")
+        in_key = in_key or bool(_KEY_BEGIN.search(raw))
+        inside = in_key
+        if in_key and _KEY_END.search(raw):
             in_key = False
-            for n, raw in enumerate(fh, 1):
-                raw = raw.rstrip("\r\n")
-                in_key = in_key or bool(_KEY_BEGIN.search(raw))
-                inside = in_key
-                if in_key and _KEY_END.search(raw):
-                    in_key = False
-                if n >= lo:
-                    if inside:
-                        rows.append((n, "[REDACTED:private_key]", 0))
-                    elif len(raw) > MAX_LINE:
-                        rows.append((n, None, len(raw)))
-                    else:
-                        rows.append((n, _mask(raw), len(raw)))
-                if n >= hi:
-                    break
-    except OSError:
-        return None
+        if n >= lo:
+            if inside:
+                rows.append((n, "[REDACTED:private_key]", 0))
+            elif len(raw) > MAX_LINE:
+                rows.append((n, None, len(raw)))
+            else:
+                rows.append((n, _mask(raw), len(raw)))
+        if n >= hi:
+            break
     return rows if any(n == line for n, _, _ in rows) else None
 
 
@@ -531,8 +536,10 @@ def _status_chip(status, t):
 
 
 def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, audit, findings):
-    g = report.grade(valid)
-    level, verdict = _verdict(valid, ctx.mode, lang, t)
+    empty = report.nothing_read(ctx, findings)  # nada lido: sem nota e sem veredito verde
+    g = "–" if empty else report.grade(valid)
+    level, verdict = ("none", report.nothing_read_text(ctx, lang)) if empty else _verdict(valid, ctx.mode, lang, t)
+    label = report.T[lang]["no_grade"] if empty else f'{t["grade"]} {g}'
     rows = []
     if audit is not None and audit.client:
         rows.append((t["client"], f"<strong>{_h(audit.client)}</strong>"))
@@ -555,6 +562,8 @@ def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, 
         warns.append(t["warn_offline"])
     elif "deps" in checks and ctx.sources.get("osv_error"):
         warns.append(t["warn_osv"])
+    elif "deps" in checks and ctx.sources.get("kev_error"):
+        warns.append(t["warn_kev"])
     warn = "".join(f'<p class="warn">{_html.escape(w)}</p>' for w in warns)
     toc = "".join(f'<li><a href="#{a}"><span class="toc-n">{n}</span>{_html.escape(label)}</a></li>' for a, n, label in toc_items)
     return f"""<section class="cover" id="cover">
@@ -563,7 +572,7 @@ def _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc_items, 
 <p class="eyebrow">{_html.escape(t["kind"].get(ctx.mode, t["kind"]["project"]))}</p>
 <h1 class="title">{_h(name)}</h1>
 <div class="verdict">
-<div class="grade grade-{g}" role="img" aria-label="{_html.escape(t["grade"])} {g}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
+<div class="grade grade-{"none" if empty else g}" role="img" aria-label="{_html.escape(label)}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
 <p class="verdict-text verdict-{level}">{_html.escape(verdict)}</p>
 </div>
 {warn}
@@ -580,8 +589,9 @@ def _notes_html(audit, t, today, lang):
     return f'<div class="analyst"><h3 class="analyst-h">{_html.escape(t["notes_h"])}</h3><div class="md">{_md_html(audit.notes)}</div>{sign}</div>'
 
 
-def _summary(valid, shown, numbers, lang, t, audit, findings, today):
-    g = report.grade(valid)
+def _summary(valid, shown, numbers, lang, t, audit, findings, today, nothing=""):
+    """nothing: o aviso de que nenhum arquivo foi lido, quando for o caso; então não há nota."""
+    g = "–" if nothing else report.grade(valid)
     reviewed = audit is not None and audit.review is not None
     scale = "".join(f'<li class="grade-{k}{" on" if k == g else ""}"><span class="scale-g">{k}</span>'
                     f'<span class="scale-t">{_html.escape(v)}</span></li>' for k, v in t["scale"].items())
@@ -607,13 +617,15 @@ def _summary(valid, shown, numbers, lang, t, audit, findings, today):
     elif valid:
         accepted = any(e.status == "accepted_risk" and SEV_RANK[e.severity] >= SEV_RANK["high"] for e in shown)
         first = f'<h3>{_html.escape(t["first"])}</h3><p class="calm">{_html.escape(t["first_none_accepted" if accepted else "first_none"])}</p>'
+    elif nothing:
+        first = f'<p class="warn">{_html.escape(nothing)}</p>'
     else:
         first = f'<p class="calm">{_html.escape(t["clean_reviewed" if reviewed and findings else "clean"])}</p>'
     return f"""<section id="summary">
 <h2><span class="sec-n">1</span>{_html.escape(t["s_summary"])}</h2>
 {_notes_html(audit, t, today, lang)}
 <div class="grade-box">
-<div class="grade grade-{g}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
+<div class="grade grade-{"none" if nothing else g}"><span class="grade-k">{_html.escape(t["grade"])}</span><span class="grade-v">{g}</span></div>
 <div><h3 class="grade-h">{_html.escape(t["grade_means"])}</h3><p>{_html.escape(intro)}</p></div>
 </div>
 <ol class="scale">{scale}</ol>
@@ -623,8 +635,9 @@ def _summary(valid, shown, numbers, lang, t, audit, findings, today):
 </section>"""
 
 
-def _plan(shown, numbers, t):
-    if not shown:
+def _plan(shown, numbers, t, gone=()):
+    """gone: o que foi corrigido durante a auditoria e sumiu da varredura (review.Gone), no grupo sem ação prevista."""
+    if not shown and not gone:
         body = f'<p class="calm">{_html.escape(t["plan_empty"])}</p>'
     else:
         rows = []
@@ -637,11 +650,15 @@ def _plan(shown, numbers, t):
                 eff = report.effort(e.rule, e.params)
                 rows.append(f'<tr class="sev-line-{e.severity}"><td class="num">{n}</td><td class="problem"><a href="#f{n}">{_h(e.title)}</a></td>'
                             f'<td class="where">{_where_short(e, t)}</td><td class="effort effort-{eff}">{_html.escape(t["effort"][eff])}</td></tr>')
-        if done:
+        if done or gone:
             rows.append(f'<tr class="band band-done"><th colspan="4" scope="colgroup">{_html.escape(t["band_done"])}</th></tr>')
             for e in done:
                 n = numbers[id(e)]
                 rows.append(f'<tr class="sev-line-{e.severity}"><td class="num">{n}</td><td class="problem"><a href="#f{n}">{_h(e.title)}</a> '
+                            f'{_badge(e.severity, t)}</td><td class="where">{_where_short(e, t)}</td>'
+                            f'<td class="effort">{_status_chip(e.status, t)}</td></tr>')
+            for e in gone:  # sem ficha em "achados em detalhe": não estão mais no código
+                rows.append(f'<tr class="sev-line-{e.severity}"><td class="num"></td><td class="problem">{_h(e.title)} '
                             f'{_badge(e.severity, t)}</td><td class="where">{_where_short(e, t)}</td>'
                             f'<td class="effort">{_status_chip(e.status, t)}</td></tr>')
         body = (f'<p class="legend">{_html.escape(t["effort_legend"])}</p><table class="plan"><thead><tr><th class="num" scope="col">{t["col_n"]}</th>'
@@ -751,8 +768,15 @@ def _findings(ctx, entries, numbers, t, audit=None):
 <h2><span class="sec-n">3</span>{_html.escape(t["s_findings"])}</h2>
 <p class="calm">{_html.escape(t["no_findings"])}</p>
 </section>"""
+    # Primeiro a área do achado mais grave que ainda vale (o corrigido durante a auditoria não puxa a área), depois a
+    # que tem mais desses itens; no empate, a ordem fixa de GROUPS.
     present = {e.group for e in entries}
-    order = [g for g in GROUPS if g in present] + sorted(present - set(GROUPS))
+    fixed = [g for g in GROUPS if g in present] + sorted(present - set(GROUPS))
+
+    def weight(g):
+        standing = [e for e in entries if e.group == g and e.status not in report.NOT_COUNTED]
+        return (-max((SEV_RANK[e.severity] for e in standing), default=-1), -len(standing), fixed.index(g))
+    order = sorted(fixed, key=weight)
     parts = []
     for g in order:
         mine = [e for e in entries if e.group == g]
@@ -853,6 +877,7 @@ def render(ctx, findings, lang="pt", target=None, checks=None, today=None, audit
     valid = report.counted(findings, rv)
     shown, discarded = report.split(report.merge(findings, lang, rv))
     numbers = {id(e): i for i, e in enumerate(shown + discarded, 1)}
+    target = report.shown_target(target) if target else target  # sem o token de uma URL https://token@...
     name = _name(ctx, target, t)
     commit = gitsafe.head(ctx.root) if ctx.mode != "agents" else None
     toc = [("summary", 1, t["s_summary"]), ("plan", 2, t["s_plan"]), ("findings", 3, t["s_findings"]), ("scope", 4, t["s_scope"])]
@@ -860,8 +885,9 @@ def render(ctx, findings, lang="pt", target=None, checks=None, today=None, audit
         toc.append(("appendix", "A", t["s_appendix"]))
     parts = [
         _cover(ctx, valid, lang, t, name, target, today, commit, checks, toc, audit, findings),
-        _summary(valid, shown, numbers, lang, t, audit, findings, today),
-        _plan(shown, numbers, t),
+        _summary(valid, shown, numbers, lang, t, audit, findings, today,
+                 report.nothing_read_text(ctx, lang) if report.nothing_read(ctx, findings) else ""),
+        _plan(shown, numbers, t, audit.gone if audit is not None else ()),
         _findings(ctx, shown, numbers, t, audit),
         _scope(ctx, lang, t, checks, audit, findings),
     ]
@@ -931,7 +957,7 @@ code{font-family:var(--mono);font-size:.88em;unicode-bidi:isolate;overflow-wrap:
 border-radius:16px;background:#fff;color:var(--g)}
 .grade-k{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
 .grade-v{font-size:64px;font-weight:800;line-height:.95}
-.grade-A{--g:var(--gA)}.grade-B{--g:var(--gB)}.grade-C{--g:var(--gC)}.grade-D{--g:var(--gD)}.grade-F{--g:var(--gF)}
+.grade-A{--g:var(--gA)}.grade-B{--g:var(--gB)}.grade-C{--g:var(--gC)}.grade-D{--g:var(--gD)}.grade-F{--g:var(--gF)}.grade-none{--g:var(--faint)}
 .meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 32px;margin-top:36px}
 .meta div{padding:10px 0;border-bottom:1px solid var(--line)}
 .meta dt{font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
@@ -966,7 +992,8 @@ border-radius:16px;background:#fff;color:var(--g)}
 .sev{display:inline-block;padding:1px 7px;border:1.5px solid var(--c);border-radius:4px;background:var(--cb);color:var(--c);font-size:11px;font-weight:800;
 letter-spacing:.07em;text-transform:uppercase;line-height:1.5;white-space:nowrap;vertical-align:1px}
 .first{list-style:none;padding:0;display:grid;gap:10px;counter-reset:first}
-.first-item{position:relative;padding:12px 16px 12px 50px;border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;break-inside:avoid}
+.first-item{position:relative;min-width:0;padding:12px 16px 12px 50px;border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;
+break-inside:avoid;overflow-wrap:anywhere}
 .first-item::before{counter-increment:first;content:counter(first);position:absolute;left:16px;top:11px;font-size:20px;font-weight:800;color:var(--faint)}
 .first-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
 .first-title{font-weight:700;text-decoration:none;font-size:16px;line-height:1.35}
@@ -1063,7 +1090,7 @@ section{padding:36px 16px}
 .plan thead{display:none}
 .plan,.plan tbody{display:block}
 .plan tr{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:2px 8px;padding:10px 0;border-bottom:1px solid var(--line)}
-.plan td,.plan th{border:0;padding:0;width:auto}
+.plan td,.plan th,.plan .num,.plan .where,.plan .effort{border:0;padding:0;width:auto}
 .plan .num{grid-row:1/3}
 .plan .problem{grid-column:2;grid-row:1}
 .plan .effort{grid-column:3;grid-row:1;text-align:right}
@@ -1102,6 +1129,7 @@ a{text-decoration:none}
 .f-row{grid-template-columns:28mm minmax(0,1fr)}
 .f-top,.f-row{break-inside:avoid}
 .f-row.long{break-inside:auto}
+.finding>.f-row:last-child,tbody tr:last-child{break-before:avoid}
 table{font-size:9.5pt}
 .code{font-size:8.5pt}
 .toc a{padding:3pt 0}

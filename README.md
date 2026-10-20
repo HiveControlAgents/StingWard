@@ -125,6 +125,7 @@ It comments the report on the PR (and updates the same comment on every run), up
 | `1` | Something at or above `--fail-on` was found |
 | `2` | Usage error: a wrong option, a folder that does not exist, a skill that could not be downloaded or an output file that could not be written |
 | `3` | OSV.dev did not answer, so dependencies were not checked. A CI gate should not pass silently; use `--offline` to skip them on purpose. |
+| `4` | No file was read, so there was nothing to grade: an empty folder, a wrong path, or in CI the code was not checked out first. A CI gate should not pass silently; `--fail-on never` accepts it. |
 
 Environment: `STINGWARD_LANG` sets the default language, `NVD_API_KEY` raises the NVD rate limit and `STINGWARD_CACHE` moves the cache folder.
 
@@ -134,7 +135,7 @@ Environment: `STINGWARD_LANG` sets the default language, `NVD_API_KEY` raises th
 [![stingward: A](https://img.shields.io/badge/stingward-A-brightgreen)](https://github.com/HiveControlAgents/StingWard)
 ```
 
-**Human review:** for an audit you hand over to someone, write the review file with `stingward . --review-template review.json`. Each entry points at a finding by its `fingerprint` (also in the JSON and SARIF output), which does not change when other parts of the file are edited. Set `status` to `confirmed`, `false_positive`, `accepted_risk` or `fixed`, add a `comment`, then run `stingward . --review review.json --client "Client name" --notes notes.md --html report.html`. False positives move to an appendix; they and the findings fixed during the audit leave the grade, the fix-first list and `--fail-on`. Accepted risks stay in the grade but leave the fix-first list. The text and Markdown reports follow the review too. Comments and notes are escaped and go through the same secret masking as code excerpts.
+**Human review:** for an audit you hand over to someone, write the review file with `stingward . --review-template review.json`. Each entry points at a finding by its `fingerprint` (also in the JSON and SARIF output), which does not change when other parts of the file are edited. It is built from the flagged line with the secret already masked, so nothing derived from a secret goes into the review file. That is on purpose, and it means a key replaced by another key on the same line keeps its status: when a key is rotated, check that line again before you reuse the review. Set `status` to `confirmed`, `false_positive`, `accepted_risk` or `fixed`, add a `comment`, then run `stingward . --review review.json --client "Client name" --notes notes.md --html report.html`. False positives move to an appendix; they and the findings fixed during the audit leave the grade, the fix-first list and `--fail-on`. Accepted risks stay in the grade but leave the fix-first list. The text and Markdown reports follow the review too. Comments and notes are escaped and go through the same secret masking as code excerpts.
 
 **False positives:** add a line to `.stingwardignore` in the project root (`RULE path/glob`, `RULE` or `path/glob`), or put `stingward:ignore` in a comment on the line. If a rule is wrong, [tell us](https://github.com/HiveControlAgents/StingWard/issues/new?template=false-positive.yml) with a minimal sample.
 

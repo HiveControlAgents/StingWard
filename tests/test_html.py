@@ -218,6 +218,38 @@ class NoSecretInEvidence(SecretsCase):
         self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "deploy/key.txt", 6)], ["[REDACTED:private_key]", "end"])
         self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "deploy/key.txt", 1)], ["notes", "[REDACTED:private_key]"])
 
+    def test_pgp_private_key_lines_never_show(self):
+        # A armadura do PGP termina em "PRIVATE KEY BLOCK-----". A última linha do corpo costuma ser curta e, sozinha,
+        # não tem cara de segredo: só o bloco inteiro escondido a protege.
+        pgp = ("-----BEGIN PGP " + "PRIVATE KEY BLOCK-----\n\n" + PEM_BODY + "\n" + OPAQUE[:11] + "\n=Ab3x\n"
+               "-----END PGP " + "PRIVATE KEY BLOCK-----\n")
+        root = tree({"sign/notes.txt": "notes\n" + pgp + "end\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        ctx = ctx_for(root)
+        # 1 notes, 2 BEGIN, 3 vazia, 4 corpo, 5 fim do corpo, 6 soma de controle, 7 END, 8 end
+        self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "sign/notes.txt", 5)], ["[REDACTED:private_key]"] * 3)
+        self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "sign/notes.txt", 8)], ["[REDACTED:private_key]", "end"])
+        self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "sign/notes.txt", 1)], ["notes", "[REDACTED:private_key]"])
+
+    def test_the_excerpt_is_the_text_the_checks_read(self):
+        # O trecho vem de ctx.read, como nas verificações: a mesma decodificação e as mesmas linhas, mesmo que o
+        # arquivo mude no disco depois da varredura.
+        root = tree({"app/x.py": "a = 1\nb = 2\nc = 3\n", "app/bom.py": "\ufeffKEY = 1\nnext\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        ctx = ctx_for(root, files=["app/x.py"])
+        ctx.read("app/x.py")
+        with open(os.path.join(root, "app", "x.py"), "w", encoding="utf-8") as fh:
+            fh.write("changed\n")
+        self.assertEqual([t for _, t, _ in report_html.evidence(ctx, "app/x.py", 2)], ["a = 1", "b = 2", "c = 3"])
+        self.assertIsNone(report_html.evidence(ctx, "app/x.py", 4))  # a quebra final não é uma quarta linha
+        self.assertIsNone(report_html.evidence(ctx, "app/missing.py", 1))
+
+        class Decoded(Context):  # uma decodificação de ctx.read, como tirar o BOM, vale também para o trecho
+            def read(self, rel):
+                return super().read(rel).lstrip("\ufeff")
+        decoded = Decoded(root=root, files=["app/bom.py"])
+        self.assertEqual([t for _, t, _ in report_html.evidence(decoded, "app/bom.py", 1)], ["KEY = 1", "next"])
+
     def test_masking_keeps_names_and_hides_values(self):
         cases = {
             "apiKey: process.env.OPENAI_API_KEY,": "apiKey: process.env.OPENAI_API_KEY,",
@@ -412,7 +444,7 @@ class Content(unittest.TestCase):
         self.assertIn('class="f-row long"', out)
 
     def test_sources_and_warnings(self):
-        on = ctx_for(self.root, packages=3, osv=True, kev="2026.10.16", epss=True, nvd=False)
+        on = ctx_for(self.root, files=["package-lock.json"], packages=3, osv=True, kev="2026.10.16", epss=True, nvd=False)
         out = report_html.render(on, [], "en")
         self.assertIn("3 packages found", out)
         self.assertIn("consulted, catalog 2026.10.16", out)
@@ -534,6 +566,39 @@ class TextAndMarkdown(unittest.TestCase):
         self.assertEqual(len(json.loads(report.as_json(self.ctx, f, "en"))["findings"]), 4)
         self.assertEqual(len(json.loads(report.sarif(self.ctx, f, "en"))["runs"][0]["results"]), 4)
 
+    def test_sarif_describes_the_rule_not_its_first_finding(self):
+        # O GitHub mostra a descrição e a ajuda da regra ao lado de cada alerta dela. Elas não podem falar do pacote ou
+        # do destino do primeiro achado: o alerta do axios diria "atualize o next".
+        f = [Finding("DEP001", "critical", "package-lock.json", None,
+                     {"pkg": "next", "version": "14.1.0", "headline": "34 known vulnerabilities",
+                      "why": "Middleware can be skipped.", "fix": "Upgrade next to 15.5.24 or later."}),
+             Finding("DEP001", "high", "package-lock.json", None,
+                     {"pkg": "axios", "version": "0.21.0", "headline": "SSRF", "why": "Requests can be redirected.",
+                      "fix": "Upgrade axios to 0.21.2 or later."}),
+             Finding("APP009", "critical", "api/run.py", 4, {"sink_en": "subprocess.run", "impact_en": "running commands",
+                                                             "fix_en": "never pass it to subprocess."}),
+             Finding("APP009", "medium", "web/chat.js", 9, {"sink_en": "el.innerHTML", "impact_en": "XSS",
+                                                            "fix_en": "insert it as text."}),
+             Finding("SEC001", "critical", "a.py", 1, {"kind_en": "GitHub token"}),
+             Finding("AGT004", "high", ".mcp.json", 1, {"server": "acme-mcp"})]
+        for lang in ("pt", "en"):
+            rules = {r["id"]: r for r in json.loads(report.sarif(self.ctx, f, lang))["runs"][0]["tool"]["driver"]["rules"]}
+            for r in rules.values():
+                meta = " ".join((r["shortDescription"]["text"], r["fullDescription"]["text"], r["help"]["text"]))
+                for word in ("next", "axios", "14.1.0", "Middleware", "subprocess", "innerHTML", "XSS", "GitHub token", "acme-mcp"):
+                    self.assertNotIn(word, meta, (lang, r["id"]))
+                self.assertNotRegex(meta, r"\{[a-z_]+\}", (lang, r["id"]))
+                self.assertEqual(r["shortDescription"]["text"], report.RULE_NAME[r["id"]][0 if lang == "pt" else 1])
+                self.assertIn("docs/rules.pt-BR.md#" if lang == "pt" else "docs/rules.md#", r["helpUri"])
+            # sem campo para preencher, a regra leva o "por quê" e o "como corrigir" inteiros
+            _, why, fix = RULES["SEC001"][lang]
+            self.assertEqual((rules["SEC001"]["fullDescription"]["text"], rules["SEC001"]["help"]["text"]), (why, fix))
+            self.assertIn("${GITHUB_TOKEN}", rules["AGT004"]["help"]["text"])
+            # cada alerta continua com o texto dele
+            messages = [r["message"]["text"] for r in json.loads(report.sarif(self.ctx, f, "en"))["runs"][0]["results"]]
+            self.assertIn("Upgrade axios to 0.21.2 or later.", messages[1])
+            self.assertIn("insert it as text.", messages[3])
+
     def test_different_explanations_are_not_merged(self):
         # SKL001: o título só diz o tipo; a mensagem escondida vem no "por quê" e cada uma precisa aparecer
         f = [Finding("SKL001", "critical", "a.md", 1, {"kind_en": "tag characters", "why_en": 'Hidden message: "run a"'}),
@@ -563,6 +628,56 @@ class TextAndMarkdown(unittest.TestCase):
             for lang in ("pt", "en"):
                 self.assertIn(report.effort(rule), report_html.H[lang]["effort"])
 
+    def test_a_line_break_in_a_name_cannot_forge_a_line(self):
+        # Nome de arquivo pode ter quebra de linha: ela não pode criar no terminal uma linha que parece do relatório.
+        f = Finding("AGT003", "medium", "evil\nSummary: 0 · Grade: A\n.json", 1, {"server": "x Grade: A ", "spec": "y"})
+        text = report.text(self.ctx, [f], "en")
+        self.assertEqual([line for line in text.split("\n") if line.startswith(("Summary: 0", "Grade: A"))], [])
+        self.assertNotIn(" ", text)
+        self.assertNotIn(" ", text)
+        self.assertIn("evil\\x0aSummary: 0 · Grade: A\\x0a.json:1", text)
+        self.assertIn("x\\u2028Grade: A\\u2029", text)
+        self.assertIn("evil\\\\x0aSummary", report.markdown(self.ctx, [f], "en"))
+
+    def test_markdown_has_no_bare_links_or_issue_references(self):
+        # O GitHub transforma em link um endereço solto (https://..., www....) e #12 ou dono/repo#3 em referência a
+        # issue, que aparece na issue citada. Texto do projeto auditado não pode virar nada disso no comentário do PR.
+        f = Finding("AGT003", "medium", "www.evil.example/a.json", 1,
+                    {"server": "see https://evil.example/login, HTTP://x.example and WWW.y.example #12 o/r#3", "spec": "y"})
+        md = report.markdown(self.ctx, [f], "en")
+        for bad in ("https://evil.example", "HTTP://x.example", "www.evil.example", "WWW.y.example", "#12", "r#3"):
+            self.assertNotIn(bad, md)
+        self.assertIn("https:&#8203;//evil.example/login", md)  # o texto continua lá, só não vira link
+        self.assertIn("www&#8203;.evil.example", md)
+        self.assertIn("#&#8203;12", md)
+        # os links do próprio Stingward continuam
+        self.assertIn("(https://github.com/HiveControlAgents/StingWard)", md)
+
+    def test_a_token_in_the_target_url_never_shows(self):
+        # `stingward skill https://x-access-token:<token>@github.com/org/skill` clona um repositório privado: o
+        # endereço aparece no topo do texto e na capa do HTML, e o token não pode ir junto.
+        target = f"https://x-access-token:{GH}@github.com/org/private-skill"
+        bare = f"https://{GH}@github.com/org/private-skill"
+        root = tree({"a.py": "x = 1\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        ctx = ctx_for(root, files=["a.py"], packages=0)
+        for t in (target, bare):
+            for out in (report.text(ctx, [], "en", target=t), report_html.render(ctx, [], "en", target=t)):
+                self.assertNotIn(FAKE_KEY_PART, out)
+                self.assertIn("@github.com/", out)  # o resto do endereço continua
+                self.assertIn("private-skill", out)
+
+    def test_markdown_says_what_the_rows_left_out_are(self):
+        # A tabela do comentário para em 50 itens. Os que sobram podem ser altos: a linha final não pode chamá-los de baixos.
+        f = [Finding("APP004", "high", "db.sql", i + 1, {"table": f"t{i:02d}"}) for i in range(52)]
+        f += [Finding("DEP003", "low", "requirements.txt", None, {"manifest": "requirements.txt", "count": 2})]
+        md = report.markdown(self.ctx, f, "en")
+        self.assertNotIn("low-severity", md)
+        self.assertIn("| | and 3 more item(s): 2 high, 1 low | |", md)
+        pt = report.markdown(self.ctx, f, "pt")
+        self.assertNotIn("severidade baixa", pt)
+        self.assertIn("| | e mais 3 item(ns): 2 altos, 1 baixo | |", pt)
+
     def test_every_impact_text_fills(self):
         for rule in RULES:
             entry = report.merge([Finding(rule, "high", "a.py", 1, {})], "en")[0]
@@ -571,6 +686,233 @@ class TextAndMarkdown(unittest.TestCase):
                 self.assertTrue(text)
                 self.assertNotRegex(text, r"\{\w+\}", (rule, lang))
 
+
+
+class Priority(unittest.TestCase):
+    """Depois da severidade: KEV, segredo exposto, execução de código ou comando, acesso aberto aos dados, o resto."""
+    ctx = Context(root=".", files=["a.py"], offline=True)
+
+    def findings(self):
+        from stingward.checks.code import _llm_params, _tool_params
+        # na ordem da varredura: severidade, KEV, regra, arquivo, linha
+        return [Finding("DEP001", "critical", "package-lock.json", None, {"pkg": "next", "version": "14.1.0"}, tags=["kev"]),
+                Finding("AGT002", "critical", ".claude/settings.json", 3, {}),
+                Finding("APP004", "critical", "db.sql", 1, {"table": "profiles"}),
+                Finding("APP007", "critical", "app.py", 2, {"framework": "Flask"}),
+                Finding("APP009", "critical", "chat.js", 4, _llm_params("html")),
+                Finding("APP009", "critical", "run.py", 5, _llm_params("shell")),
+                Finding("APP014", "critical", "tools.py", 6, _tool_params("path", True)),
+                Finding("APP014", "critical", "tools.py", 7, _tool_params("sql", True)),
+                Finding("COD002", "critical", "ops.py", 8, {"source_en": "request input"}),
+                Finding("SEC001", "critical", "config.py", 9, {"kind_en": "GitHub token"}),
+                Finding("SEC001", "high", "old.py", 1, {"kind_en": "GitHub token"})]
+
+    def test_order_inside_a_severity(self):
+        got = [(e.rule, e.findings[0].file) for e in report.merge(self.findings(), "en")]
+        self.assertEqual(got, [("DEP001", "package-lock.json"),                                # KEV
+                               ("SEC001", "config.py"),                                       # segredo exposto
+                               ("AGT002", ".claude/settings.json"), ("APP009", "run.py"), ("COD002", "ops.py"),  # execução
+                               ("APP004", "db.sql"), ("APP014", "tools.py"),                  # dados (APP014 sql)
+                               ("APP007", "app.py"), ("APP009", "chat.js"), ("APP014", "tools.py"),  # o resto
+                               ("SEC001", "old.py")])                                         # alto vem depois de todo crítico
+        self.assertEqual(got[6], ("APP014", "tools.py"))
+        self.assertEqual(report.merge(self.findings(), "en")[6].findings[0].line, 7)  # a de SQL
+
+    def test_every_rule_has_a_place(self):
+        for rule in RULES:
+            self.assertIn(report.priority(report.merge([Finding(rule, "high", "a.py", 1, {})], "en")[0]), range(5), rule)
+
+    def test_fix_first_and_the_plan_follow_it(self):
+        f = self.findings()
+        text = report.text(self.ctx, f, "en")
+        block = text.split("Fix these first:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertEqual([line.split(" · ")[-1].split(" ")[0] for line in block.split("\n")],
+                         ["package-lock.json", "config.py:9", ".claude/settings.json:3"])
+        md = report.markdown(self.ctx, f, "en")
+        self.assertLess(md.index("config.py:9"), md.index(".claude/settings.json:3"))
+        root = tree({"a.py": "x = 1\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        page = report_html.render(ctx_for(root, files=["a.py"]), f, "en").replace("<wbr>", "")
+        plan = page.split('id="plan"', 1)[1].split("</section>", 1)[0]
+        order = re.findall(r'<td class="where"><code>([^<]+)</code>', plan)
+        self.assertEqual(order[:6], ["package-lock.json", "config.py:9", ".claude/settings.json:3", "run.py:5", "ops.py:8", "db.sql:1"])
+        first = page.split('class="first"', 1)[1].split("</ol>", 1)[0]
+        self.assertEqual(re.findall(r'<p class="first-where"><span>[^<]*</span><code>([^<]+)</code>', first),
+                         ["package-lock.json", "config.py:9", ".claude/settings.json:3"])
+
+
+class NothingRead(unittest.TestCase):
+    """Nenhum arquivo lido (pasta vazia, caminho errado, checkout esquecido no CI): o relatório não pode parecer um A limpo."""
+    EN = "No file was read (0 files), so there is nothing to grade."
+    PT = "Nenhum arquivo foi lido (0 arquivos), então não há o que avaliar e não há nota."
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="stingward-empty-")
+        self.addCleanup(shutil.rmtree, self.root, True)
+
+    def test_text_and_markdown_warn_and_give_no_badge(self):
+        for mode in ("project", "skill"):
+            ctx = ctx_for(self.root, offline=True, mode=mode)
+            for lang, warning in (("en", self.EN), ("pt", self.PT)):
+                text = report.text(ctx, [], lang, show_verdict=mode == "skill")
+                md = report.markdown(ctx, [], lang, show_verdict=mode == "skill")
+                for out in (text, md):
+                    self.assertIn(warning, out, (mode, lang))
+                    self.assertNotIn("img.shields.io", out, (mode, lang))
+                    self.assertNotIn("🟢", out, (mode, lang))
+                    self.assertNotRegex(out, r"(?:Grade|Nota)\W+A\b", (mode, lang))
+                self.assertIn({"en": "Summary: 0 files read · no grade", "pt": "Resumo: 0 arquivos lidos · sem nota"}[lang], text)
+
+    def test_agents_mode_says_no_configuration_was_found(self):
+        ctx = ctx_for(self.root, offline=True, mode="agents")
+        self.assertIn("No agent configuration was found on this machine (0 files read), so there is nothing to grade.",
+                      report.text(ctx, [], "en"))
+
+    def test_json_has_no_grade_and_says_why(self):
+        doc = json.loads(report.as_json(ctx_for(self.root, offline=True), [], "en"))
+        self.assertEqual((doc["grade"], doc["warning"]), (None, "nothing_read"))
+
+    def test_html_has_no_green_verdict(self):
+        for lang, warning in (("en", self.EN), ("pt", self.PT)):
+            for mode in ("project", "skill", "agents"):
+                page = report_html.render(ctx_for(self.root, offline=True, mode=mode), [], lang)
+                self.assertNotIn('class="grade grade-A"', page, (lang, mode))
+                self.assertNotIn('class="grade-A on"', page, (lang, mode))  # a escala não marca nenhuma nota
+                self.assertEqual(page.count('<div class="grade grade-none"'), 2)
+                self.assertIn('<span class="grade-v">–</span>', page)
+                self.assertNotIn(report_html.H[lang]["verdict"]["project"]["ok"], page)
+                self.assertNotIn(report.T[lang]["verdict_ok"].split(" ", 1)[1], page)
+                self.assertNotIn(report_html.H[lang]["clean"], page)
+                if mode != "agents":
+                    self.assertEqual(page.count(warning), 2, (lang, mode))  # na capa e no resumo
+
+    def test_a_folder_that_was_read_still_gets_its_grade(self):
+        ctx = ctx_for(self.root, offline=True, files=["a.py"])
+        self.assertIn("README badge", report.text(ctx, [], "en"))
+        self.assertEqual(json.loads(report.as_json(ctx, [], "en"))["grade"], "A")
+        self.assertNotIn("warning", json.loads(report.as_json(ctx, [], "en")))
+        self.assertIn('<span class="grade-v">A</span>', report_html.render(ctx, [], "en"))
+
+    def test_the_command_line_on_an_empty_folder_and_an_empty_skill(self):
+        for argv in ([self.root], ["skill", self.root]):
+            code, out = run(argv + ["--offline", "--lang", "en"])
+            self.assertIn(self.EN, out, argv)
+            self.assertNotIn("README badge", out, argv)
+
+
+class SourceFailures(unittest.TestCase):
+    """Uma base que não respondeu aparece em todo formato, ao lado da situação do OSV, e não só no stderr."""
+    SAID = {"pt": "CISA KEV não respondeu", "en": "CISA KEV did not respond"}
+    WARN = {"pt": '<p class="warn">A lista CISA KEV não respondeu', "en": '<p class="warn">The CISA KEV list did not respond'}
+
+    def setUp(self):
+        self.root = tree({"package-lock.json": "{}\n"})
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.dep = Finding("DEP003", "low", "package.json", None, {"manifest": "package.json", "count": 1})
+
+    def ctx(self, **sources):
+        return ctx_for(self.root, files=["package-lock.json"], packages=2, **sources)
+
+    def test_a_kev_failure_is_shown_next_to_osv(self):
+        for lang in ("pt", "en"):
+            for findings in ([], [self.dep]):
+                with self.subTest(lang=lang, findings=len(findings)):
+                    ctx = self.ctx(osv=True, kev_error="timeout", epss=False)
+                    text = report.text(ctx, list(findings), lang)
+                    line = next(x for x in text.splitlines() if x.startswith(report.T[lang]["sources"] + ":"))
+                    self.assertIn("OSV.dev · " + self.SAID[lang], line)
+                    self.assertIn("OSV.dev · " + self.SAID[lang], report.markdown(ctx, list(findings), lang))
+                    page = report_html.render(ctx, list(findings), lang)
+                    self.assertIn(self.WARN[lang], page)
+                    self.assertIn(f"<td>{report_html.H[lang]['st_fail']}</td>", page)
+
+    def test_an_answering_kev_says_nothing_of_the_kind(self):
+        for lang in ("pt", "en"):
+            ctx = self.ctx(osv=True, kev="2026.10.16", epss=True)
+            for out in (report.text(ctx, [self.dep], lang), report.markdown(ctx, [self.dep], lang),
+                        report_html.render(ctx, [self.dep], lang)):
+                self.assertNotIn(self.SAID[lang], out)
+                self.assertNotIn(self.WARN[lang], out)
+
+    def test_the_catalog_version_from_the_network_is_plain_text(self):
+        # A versão do catálogo vem da resposta da CISA (ou de um proxy no meio): no terminal e no comentário do PR ela
+        # é texto, sem cor, imagem ou link.
+        ctx = self.ctx(osv=True, kev="2026.10.16 \x1b[31m<img src=x onerror=alert(1)> [go](https://example.test) @team")
+        text = report.text(ctx, [self.dep], "en")
+        self.assertNotIn("\x1b", text)
+        md = report.markdown(ctx, [self.dep], "en")
+        self.assertNotIn("\x1b", md)
+        for raw in ("<img", "[go](", "@team"):
+            self.assertNotIn(raw, md)
+        self.assertIn("CISA KEV 2026.10.16", md)
+
+    def test_the_comment_with_nothing_found_still_says_a_source_failed(self):
+        # Sem nenhum achado o comentário do PR dizia só "Nada encontrado.": com o OSV fora do ar, isso parece limpo.
+        for lang in ("pt", "en"):
+            md = report.markdown(self.ctx(osv_error="timeout"), [], lang)
+            self.assertIn(report.T[lang]["osv_fail"], md)
+            self.assertNotIn(report.T[lang]["sources"], report.markdown(self.ctx(osv=True), [], lang))
+
+
+class AreaOrder(unittest.TestCase):
+    """Em "Achados em detalhe" vem primeiro a área do achado mais grave; no empate, a que tem mais itens; depois a ordem fixa."""
+
+    def areas(self, findings, audit=None):
+        root = tree({"a.py": "x = 1\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        page = report_html.render(ctx_for(root, files=["a.py"]), findings, "en", audit=audit)
+        return re.findall(r'<h3 class="area">([^<]+) <span class="area-n">', page)
+
+    def findings(self):
+        return [Finding("SEC001", "critical", "config.py", 1, {"kind_en": "GitHub token"}, fingerprint="sec"),
+                Finding("APP003", "high", "api.js", 2, {}, fingerprint="app"),
+                Finding("AGT003", "high", ".mcp.json", 3, {"server": "fs", "spec": "x"}, fingerprint="agt"),
+                Finding("COD001", "high", "a.py", 4, {"source_en": "request input"}, fingerprint="cod1"),
+                Finding("COD002", "high", "b.py", 5, {"source_en": "request input"}, fingerprint="cod2"),
+                Finding("DEP003", "low", "requirements.txt", None, {"manifest": "requirements.txt", "count": 2}, fingerprint="dep")]
+
+    def test_worst_severity_then_count_then_the_fixed_order(self):
+        self.assertEqual(self.areas(self.findings()), ["Secrets", "Code", "Application", "Agents and MCP", "Dependencies"])
+
+    def test_what_was_fixed_during_the_audit_does_not_lead(self):
+        from stingward import review
+        f = self.findings()
+        audit = review.Audit(Context(root=".", files=[]), f, review.Review({"sec": ("fixed", "")}))
+        self.assertEqual(self.areas(f, audit), ["Code", "Application", "Agents and MCP", "Dependencies", "Secrets"])
+
+
+class Layout(unittest.TestCase):
+    """O CSS do relatório: o que só um navegador mostraria, conferido no texto do CSS."""
+
+    def blocks(self, css):
+        return [({x.strip() for x in sel.split(",")}, body) for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)]
+
+    def test_on_a_phone_the_plan_cells_drop_their_desktop_widths(self):
+        # No celular o plano vira grade: largura fixa de coluna da tabela (80px no esforço) cortava "RISCO ACEITO" e
+        # fazia a página rolar para o lado; os 34% do "onde" espremiam o caminho numa coluna estreita.
+        desktop, phone = report_html.CSS.split("@media (max-width:700px){", 1)
+        phone = phone.split("\n}\n", 1)[0]
+        fixed = {s for sels, body in self.blocks(desktop) if re.search(r"(?:^|;)width:", body) for s in sels if s.startswith(".plan .")}
+        self.assertEqual(fixed, {".plan .num", ".plan .where", ".plan .effort"})
+        reset = {s for sels, body in self.blocks(phone) if re.search(r"(?:^|;)width:auto", body) for s in sels}
+        self.assertEqual(fixed - reset, set())
+
+    def test_in_print_the_last_row_of_a_finding_keeps_company(self):
+        # Sem isso, a última linha de um achado (Padrões ou Referências) ou a última linha do plano podia ir sozinha
+        # para uma página quase vazia.
+        printed = report_html.CSS.split("@media print{", 1)[1]
+        rules = {s: body for sels, body in self.blocks(printed) for s in sels}
+        for sel in (".finding>.f-row:last-child", "tbody tr:last-child"):
+            self.assertIn("break-before:avoid", rules.get(sel, ""), sel)
+
+    def test_long_names_wrap_in_the_fix_first_list(self):
+        # NEXT_PUBLIC_OPENAI_API_KEY no título não tem onde quebrar: num celular de 320px o item saía da tela.
+        rules = {}
+        for sels, body in self.blocks(report_html.CSS):
+            for sel in sels:
+                rules[sel] = rules.get(sel, "") + ";" + body
+        self.assertIn("overflow-wrap:anywhere", rules[".first-item"])
+        self.assertIn("min-width:0", rules[".first-item"])
 
 
 class LowestVersion(unittest.TestCase):
