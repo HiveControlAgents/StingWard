@@ -161,6 +161,7 @@ MSG = {
            "timeout": f"stingward: não consegui baixar {{target}}: o git clone passou de {CLONE_TIMEOUT} s",
            "nogit": "stingward: não consegui baixar {target}: o git não está instalado ou não abriu ({detail})",
            "outside": "stingward: não vou auditar {target}: a subpasta {detail} fica fora do repositório baixado",
+           "write": "stingward: não consegui gravar {path}: {detail}",
            "osv_down": "stingward: o OSV.dev não respondeu e as dependências não foram checadas (use --offline para pular de propósito).",
            "kev_down": "stingward: a lista CISA KEV não respondeu: uma falha que atacantes já exploram pode aparecer com "
                        "severidade abaixo da real.",
@@ -175,6 +176,7 @@ MSG = {
            "timeout": f"stingward: could not download {{target}}: git clone took more than {CLONE_TIMEOUT} s",
            "nogit": "stingward: could not download {target}: git is not installed or did not start ({detail})",
            "outside": "stingward: will not audit {target}: the subfolder {detail} is outside the downloaded repository",
+           "write": "stingward: could not write {path}: {detail}",
            "osv_down": "stingward: OSV.dev did not respond, so dependencies were not checked (use --offline to skip them on purpose).",
            "kev_down": "stingward: the CISA KEV list did not respond: a vulnerability attackers already exploit may show a lower "
                        "severity than it should.",
@@ -187,6 +189,22 @@ MSG = {
 
 def _say(lang, key, **kw):
     print(MSG[lang][key].format(**{k: _shown(v) for k, v in kw.items()}), file=sys.stderr)
+
+
+class WriteError(Exception):
+    """Arquivo de saída (--json, --sarif, --html...) que não deu para gravar."""
+
+    def __init__(self, path, err):
+        super().__init__(path, err)
+        self.path, self.detail = path, err.strerror or str(err)
+
+
+def _write(path, text):
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    except OSError as e:
+        raise WriteError(path, e) from None
 
 
 def _emit(args, ctx, findings, lang, label, only, remote, audit=None):
@@ -211,8 +229,7 @@ def _emit(args, ctx, findings, lang, label, only, remote, audit=None):
     sys.stdout.write(out(args.format))
     for fmt, path in (("sarif", args.sarif), ("markdown", args.markdown), ("json", args.json), ("html", args.html)):
         if path:
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(out(fmt))
+            _write(path, out(fmt))
 
 
 def main(argv=None):
@@ -282,9 +299,12 @@ def main(argv=None):
             _say(lang, "masked")
         if args.review_template:
             text, kept, stale = review.template(findings, lang, old=old, target=report_html._name(ctx, label, report_html.H[lang]))
-            with open(args.review_template, "w", encoding="utf-8") as fh:
-                fh.write(text)
+            _write(args.review_template, text)
             _say(lang, "template", path=args.review_template, n=len(findings), kept=kept, stale=stale)
+    except WriteError as e:
+        # Caminho errado em --sarif não pode sair como traceback e código 1, que quer dizer "achou problema".
+        _say(lang, "write", path=e.path, detail=e.detail)
+        return 2
     finally:
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)

@@ -39,6 +39,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 - Files that start with a UTF-8 byte order mark (Notepad, PowerShell) are audited. An `.mcp.json` or agent settings file saved that way could not be parsed and was skipped without a word.
 - A `.stingwardignore` that is not valid UTF-8 (a comment saved in Latin-1) no longer crashes the scan with a traceback, and one that starts with a byte order mark no longer loses its first line.
 - On Python 3.9 to 3.11, a project or skill with folders nested about a thousand levels deep no longer stops the scan with a `RecursionError`. The file listing no longer recurses; its order and what it skips are the same.
+- An output file that cannot be written (`--json`, `--sarif`, `--markdown`, `--html` or `--review-template` in a folder that does not exist, or pointing at a folder) gives a one-line error and exit code 2. It used to crash with a traceback and exit code 1, the code for findings.
 
 ## [0.1.5] - 2026-10-20
 
