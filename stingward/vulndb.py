@@ -22,15 +22,39 @@ NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={}"
 HOUR = 3600
 
 
+def _list_of(d, key):
+    """d[key] quando d é objeto e d[key] é lista; senão None (resposta fora da forma)."""
+    v = d.get(key) if isinstance(d, dict) else None
+    return v if isinstance(v, list) else None
+
+
+def _osv_batch_ok(n):
+    """Lote do OSV com a forma certa: uma resposta por pergunta, cada falha com seu ID. Sem isso, um {} de um proxy
+    viraria "nenhuma falha" (e passaria no portão de CI) e ficaria seis horas no cache."""
+    def ok(d):
+        results = _list_of(d, "results")
+        if results is None or len(results) != n or not all(isinstance(r, dict) for r in results):
+            return False
+        for r in results:
+            vulns = r.get("vulns") or []
+            if not isinstance(vulns, list) or not all(isinstance(v, dict) and isinstance(v.get("id"), str) for v in vulns):
+                return False
+        return True
+    return ok
+
+
 def osv_query(pkgs):
     """pkgs: lista de (ecossistema, nome, versão). Devolve lista de listas de IDs, na mesma ordem."""
     out = []
     for i in range(0, len(pkgs), 500):
         chunk = pkgs[i:i + 500]
         body = {"queries": [{"package": {"ecosystem": e, "name": n}, "version": v} for e, n, v in chunk]}
-        res = fetch_json(OSV_BATCH, body, ttl=6 * HOUR)
-        for r in res.get("results", []):
-            ids = [v["id"] for v in r.get("vulns", [])]
+        ok = _osv_batch_ok(len(chunk))
+        res = fetch_json(OSV_BATCH, body, ttl=6 * HOUR, valid=ok)
+        if not ok(res):  # respostas fora de ordem atribuiriam a falha ao pacote errado
+            raise NetError(f"{OSV_BATCH}: unexpected response")
+        for r in res["results"]:
+            ids = [v["id"] for v in r.get("vulns") or []]
             # A resposta pode vir paginada para pacotes com muitas falhas; os IDs da primeira página bastam
             # para avisar, e o detalhe de cada uma vem de osv_vulns.
             out.append(ids)
@@ -40,35 +64,52 @@ def osv_query(pkgs):
 def osv_vulns(ids):
     ids = sorted(set(ids))
     with ThreadPoolExecutor(8) as ex:
-        docs = list(ex.map(lambda i: _safe(fetch_json, OSV_VULN.format(i), ttl=24 * HOUR), ids))
+        docs = list(ex.map(lambda i: _safe(fetch_json, OSV_VULN.format(i), ttl=24 * HOUR,
+                                           valid=lambda d: isinstance(d, dict)), ids))
     return {i: d for i, d in zip(ids, docs) if d}
 
 
 def kev():
-    d = fetch_json(KEV_URL, ttl=12 * HOUR, timeout=60)
-    return {v["cveID"]: v for v in d.get("vulnerabilities", [])}, d.get("catalogVersion", "")
+    """Catálogo vazio ou fora da forma é falha (NetError), não "nada sendo explorado"."""
+    d = fetch_json(KEV_URL, ttl=12 * HOUR, timeout=60, valid=lambda d: bool(_list_of(d, "vulnerabilities")))
+    if not _list_of(d, "vulnerabilities"):
+        raise NetError(f"{KEV_URL}: unexpected response")
+    return ({v["cveID"]: v for v in d["vulnerabilities"] if isinstance(v, dict) and isinstance(v.get("cveID"), str)},
+            str(d.get("catalogVersion") or ""))
 
 
 def epss(cves):
     cves = sorted({c for c in cves if c.startswith("CVE-")})
     out = {}
     for i in range(0, len(cves), 80):
-        d = _safe(fetch_json, EPSS_URL.format(",".join(cves[i:i + 80])), ttl=24 * HOUR)
+        d = _safe(fetch_json, EPSS_URL.format(",".join(cves[i:i + 80])), ttl=24 * HOUR,
+                  valid=lambda d: _list_of(d, "data") is not None)
         for row in (d or {}).get("data", []):
-            out[row["cve"]] = (float(row["epss"]), float(row["percentile"]))
+            try:
+                out[row["cve"]] = (float(row["epss"]), float(row["percentile"]))
+            except (KeyError, TypeError, ValueError):
+                continue
     return out
 
 
 def nvd_severity(cve):
     headers = {"apiKey": os.environ["NVD_API_KEY"]} if os.environ.get("NVD_API_KEY") else None
-    d = _safe(fetch_json, NVD_URL.format(cve), ttl=7 * 24 * HOUR, headers=headers)
+    d = _safe(fetch_json, NVD_URL.format(cve), ttl=7 * 24 * HOUR, headers=headers,
+              valid=lambda d: _list_of(d, "vulnerabilities") is not None)
     for item in (d or {}).get("vulnerabilities", []):
-        m = item.get("cve", {}).get("metrics", {})
+        m = (item.get("cve") if isinstance(item, dict) else None) or {}
+        m = m.get("metrics") if isinstance(m, dict) else None
+        if not isinstance(m, dict):
+            continue
         for key in ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30"):
-            for metric in m.get(key, []):
-                data = metric.get("cvssData", {})
-                if "baseScore" in data:
-                    return float(data["baseScore"])
+            metrics = m.get(key)
+            for metric in metrics if isinstance(metrics, list) else []:
+                data = metric.get("cvssData") if isinstance(metric, dict) else None
+                if isinstance(data, dict) and "baseScore" in data:
+                    try:
+                        return float(data["baseScore"])
+                    except (TypeError, ValueError):
+                        continue
     return None
 
 
@@ -174,23 +215,32 @@ _PRE = {"dev": 0, "a": 1, "alpha": 1, "b": 2, "beta": 2, "c": 3, "pre": 3, "prev
 _POST = ("post", "rev", "r")
 
 
+def _int(digits: str) -> int:
+    """int() de um pedaço de versão. A versão vem do lockfile (de uma skill de terceiros, inclusive) e o OSV responde
+    com falhas até para "1.0.0-999...9": com mais de 4300 dígitos o int() do Python 3.11+ levanta ValueError."""
+    try:
+        return int(digits[:30])
+    except ValueError:  # "²".isdigit() é True, mas int("²") não existe
+        return 0
+
+
 def _vkey(v: str):
     """Ordem de semver, PEP 440, RubyGems e Go: pré-lançamento (dev, alpha, rc...) antes da final, post depois."""
     v = v.strip().lstrip("vV").split("+", 1)[0].lower()
     epoch, _, v = v.rpartition("!")
     m = re.match(r"\d+(?:\.\d+)*", v)
-    release = [int(x) for x in m.group().split(".")] if m else []
+    release = [_int(x) for x in m.group().split(".")] if m else []
     while release and release[-1] == 0:  # 1.0 == 1.0.0
         release.pop()
     rest = re.findall(r"\d+|[a-z]+", v[m.end():] if m else v)
     phase = 1 if not rest else 2 if rest[0] in _POST else 0
-    tags = [(0, int(t), "") if t.isdigit() else (1, _PRE.get(t, 2), t) for t in rest]
-    return int(epoch) if epoch.isdigit() else 0, release, phase, tags
+    tags = [(0, _int(t), "") if t.isdigit() else (1, _PRE.get(t, 2), t) for t in rest]
+    return _int(epoch) if epoch.isdigit() else 0, release, phase, tags
 
 
 def _major(v: str):
     m = re.match(r"\d+", v.strip().lstrip("vV"))
-    return int(m.group()) if m else None
+    return _int(m.group()) if m else None
 
 
 def fixed_version(vuln: dict, ecosystem: str, name: str, version: str):
