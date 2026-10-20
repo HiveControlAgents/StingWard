@@ -18,6 +18,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [DEP001](#dep001) | Dependency version with known vulnerabilities | 🔴 |
 | [DEP002](#dep002) | Malicious package | 🔴 |
 | [DEP003](#dep003) | Manifest without a lockfile | 🔵 |
+| [DEP004](#dep004) | Version range allows vulnerable versions | 🔴 |
 | [SEC001](#sec001) | Secret in code | 🔴 |
 | [SEC002](#sec002) | `.env` committed to git | 🟠 |
 | [SEC003](#sec003) | `.env` missing from `.gitignore` | 🟡 |
@@ -69,9 +70,17 @@ OSV `MAL-*` records and GitHub "malware" advisories: packages published to steal
 <a id="dep003"></a>
 ### DEP003 · Manifest without a lockfile
 
-`package.json`, `pyproject.toml` or `requirements.txt` with version ranges and no lockfile: the versions you deploy cannot be audited and can change on every install.
+`package.json` or `requirements.txt` with version ranges and no lockfile: the versions you deploy cannot be audited and can change on every install.
 
 **Fix:** commit the lockfile (`npm install`, `uv lock`, `poetry lock`, `pip freeze`...).
+**Standards:** `CWE-1395`
+
+<a id="dep004"></a>
+### DEP004 · Version range allows vulnerable versions
+
+Without a lockfile, a range such as `Pillow>=10` or `"axios": "^1.6.0"` is all that decides the version, and its lowest version still counts: a machine that already has it keeps it, and installers can pick it. Stingward asks OSV.dev about the lowest version of each range (`>=`, `~=` and `==X.*` in Python; `^`, `~`, `>=`, `1.2.x` and `>=a <b` in npm), in the same batch as the pinned packages, for `requirements*.txt` and `package.json` without a lockfile beside them and for the `[project]` dependencies of a `pyproject.toml` without `poetry.lock`, `uv.lock` or `pdm.lock`. A package pinned elsewhere in the project is left to DEP001. The installed version is often newer, so the finding is medium at most (low when the worst issue is below high), unless the range's upper bound leaves out the fix: then every version it allows is affected and the severity is the full DEP001 one.
+
+**Fix:** raise the minimum to the version shown, for example replace `Pillow>=10` with `Pillow>=12.3.0`. If no version in the range has the fix, widen the range.
 **Standards:** `CWE-1395`
 
 ## Secrets
