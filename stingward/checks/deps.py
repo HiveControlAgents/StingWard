@@ -76,6 +76,20 @@ def _workspace_members(ctx, files):
     return covered
 
 
+def _requirement_files(ctx, files):
+    """requirements*.txt e os .txt de uma pasta requirements/, mais o que eles incluem com -r ou -c, com
+    qualquer nome (constraints.txt, dev-requirements.txt), desde que o arquivo esteja no projeto."""
+    todo = [rel for rel in ctx.files if "node_modules/" not in rel and lockfiles.is_requirements(rel)]
+    found = set(todo)
+    while todo:
+        for inc in lockfiles.requirement_includes(Path(ctx.root), todo.pop()):
+            # Um lockfile ou package.json citado por engano continua sendo lido pelo leitor dele.
+            if inc in files and inc not in found and not lockfiles.is_dependency_file(inc) and not inc.endswith("pyproject.toml"):
+                found.add(inc)
+                todo.append(inc)
+    return found
+
+
 def collect(ctx):
     """Pacotes fixados (eco, nome, versão, arquivo, linha) sem repetição, os manifestos sem lockfile e as faixas
     de versão (lockfiles.Range) desses manifestos, menos as de pacotes que o projeto já fixa em outro lugar."""
@@ -83,6 +97,7 @@ def collect(ctx):
     files = set(ctx.files)
     pkgs, seen, open_manifests, ranges = [], set(), [], []
     members = _workspace_members(ctx, files)
+    reqs = _requirement_files(ctx, files)
 
     def add(item):
         if item[:3] not in seen:
@@ -91,26 +106,27 @@ def collect(ctx):
 
     for rel in ctx.files:
         name = rel.rsplit("/", 1)[-1]
-        if "node_modules/" in rel or not (name == "pyproject.toml" or lockfiles.is_dependency_file(rel)):
+        is_req = rel in reqs
+        if "node_modules/" in rel or not (name == "pyproject.toml" or is_req or lockfiles.is_dependency_file(rel)):
             continue
         d = rel.rsplit("/", 1)[0] + "/" if "/" in rel else ""
-        locks = _LOCK_FOR.get("requirements.txt" if name.startswith("requirements") else name, ())
+        locks = _LOCK_FOR.get("requirements.txt" if is_req else name, ())
         # Num monorepo o lockfile fica na raiz e trava também os pacotes dos workspaces.
         has_lock = any(d + lk in files for lk in locks) or (name == "package.json" and d in members)
         if name in ("package.json", "pyproject.toml") and has_lock:
             continue
-        if name in ("package.json", "pyproject.toml") or (name.startswith("requirements") and not has_lock):
+        if name in ("package.json", "pyproject.toml") or (is_req and not has_lock):
             # pyproject.toml fica fora do DEP003: biblioteca declara faixa de propósito.
-            n = lockfiles.open_ranges(root, rel) if name != "pyproject.toml" else 0
+            n = lockfiles.open_ranges(root, rel, is_req) if name != "pyproject.toml" else 0
             if n:
                 open_manifests.append((rel, n))
-            for r in lockfiles.ranges(root, rel):
+            for r in lockfiles.ranges(root, rel, is_req):
                 if r.exact:  # Pillow (==10.0.0) também é versão fixada
                     add((r.eco, r.name, r.floor, r.file, r.line))
                 else:
                     ranges.append(r)
         if name != "pyproject.toml":
-            for item in lockfiles.parse(root, rel):
+            for item in lockfiles.parse(root, rel, is_req):
                 add(item)
     for item in mcp_packages(ctx):
         add(item)
