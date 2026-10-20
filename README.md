@@ -67,7 +67,7 @@ All 33 rules, with severity, examples and fixes: [docs/rules.md](docs/rules.md).
 1. **Lists your files**, skipping dependency and build folders such as `node_modules` and `dist`. When auditing a third-party skill it does read build output, since that is what actually runs.
 2. **Reads lockfiles** and asks [OSV.dev](https://osv.dev) about every package and version in one batch. CVEs in [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) become critical; [EPSS](https://www.first.org/epss/) and [NVD](https://nvd.nist.gov) fill in likelihood and missing scores.
 3. **Runs pattern checks** for secrets, app mistakes, agent settings and skill content, aware of context: test folders, docs and examples count less, and in third-party skills reassuring wording can lower a finding to medium but never hide it.
-4. **Writes the report** in English or Portuguese: a verdict, findings worst first with where, why and how to fix, a grade from A to F and a badge.
+4. **Writes the report** in English or Portuguese: a verdict, what to fix first, findings worst first with where, why and how to fix (the same problem in several files is listed once, with every place), a grade from A to F and a badge. `--html FILE` also writes a single-file report to hand over or print to PDF: summary, remediation plan with rough effort, findings with the code excerpt (secrets masked), and scope and method.
 
 Only package names and versions leave your machine (to `api.osv.dev`, `www.cisa.gov`, `api.first.org` and `services.nvd.nist.gov`). Your code never does. Responses are cached for a few hours in `~/.cache/stingward`.
 
@@ -107,8 +107,8 @@ It comments the report on the PR (and updates the same comment on every run), up
 | Option | |
 |---|---|
 | `--lang en\|pt` | Report language (default: `STINGWARD_LANG`, then your system locale) |
-| `--format text\|json\|markdown\|sarif` | What goes to standard output |
-| `--json FILE`, `--markdown FILE`, `--sarif FILE` | Also write these files, in one run |
+| `--format text\|json\|markdown\|sarif\|html` | What goes to standard output |
+| `--json FILE`, `--markdown FILE`, `--sarif FILE`, `--html FILE` | Also write these files, in one run |
 | `--fail-on critical\|high\|medium\|low\|never` | Exit code 1 at this severity or above (default `high`) |
 | `--only deps,secrets,app,agents` | Run only some checks |
 | `--offline` | Skip the online databases (dependencies are not checked) |
