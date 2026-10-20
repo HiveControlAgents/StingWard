@@ -639,6 +639,71 @@ class TextWithABom(unittest.TestCase):
 
 
 
+class TextInUtf16(unittest.TestCase):
+    """PowerShell grava UTF-16 com BOM (pip freeze > requirements.txt, echo > .env): o arquivo é lido como texto,
+    as verificações e o trecho do relatório veem o mesmo texto do arquivo em UTF-8, e nenhum segredo vaza."""
+
+    TOKEN = "ghp_" + "Qx7Lm2Vt9Rk4Wz8Np3Hs6Jd1Fb5Cg0Ya2Ue"
+    FILES = {
+        "config.py": "import os\n\nGITHUB_TOKEN = \"%s\"\nprint(os.getcwd())\r\n" % TOKEN,
+        ".env": "DEBUG=1\r\nGITHUB_TOKEN=%s\r\n" % TOKEN,
+        ".mcp.json": json.dumps({"mcpServers": {"x": {"command": "npx", "args": ["-y", "some-mcp-server"]}}}),
+        "requirements.txt": "requests==2.19.0\r\nflask==0.12\r\n",
+        "notes.txt": "deploy key: %s\n" % TOKEN,
+    }
+    ENCODINGS = {"utf-8": lambda t: t.encode("utf-8"),
+                 "utf-16-le": lambda t: b"\xff\xfe" + t.encode("utf-16-le"),
+                 "utf-16-be": lambda t: b"\xfe\xff" + t.encode("utf-16-be")}
+
+    def _project(self, enc):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        for rel, text in self.FILES.items():
+            with open(os.path.join(tmp.name, rel), "wb") as fh:
+                fh.write(self.ENCODINGS[enc](text))
+        return tmp.name
+
+    def test_every_check_sees_the_same_text(self):
+        def run(root):
+            ctx, findings = scan.run(root, offline=True)
+            return ctx, sorted((f.rule, f.file, f.line) for f in findings)
+        ctx8, want = run(self._project("utf-8"))
+        self.assertTrue(any(r == "AGT003" for r, _, _ in want) and any(f == "config.py" for _, f, _ in want), want)
+        for enc in ("utf-16-le", "utf-16-be"):
+            with self.subTest(enc=enc):
+                ctx, got = run(self._project(enc))
+                self.assertEqual(sorted(ctx.files), sorted(ctx8.files))
+                self.assertEqual(got, want)
+                for rel in self.FILES:
+                    self.assertEqual(ctx.read(rel), ctx8.read(rel))
+
+    def test_no_secret_leaks_and_the_excerpt_shows_the_line(self):
+        root = self._project("utf-16-le")
+        out_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(out_dir.cleanup)
+        paths = {fmt: os.path.join(out_dir.name, "report." + fmt) for fmt in ("json", "sarif", "markdown", "html")}
+        code, text, err = run_main([root, "--offline", "--lang", "en", "--json", paths["json"], "--sarif", paths["sarif"],
+                                    "--markdown", paths["markdown"], "--html", paths["html"]])
+        self.assertEqual(code, 1, err)
+        outputs = {"text": text, "stderr": err}
+        for fmt, path in paths.items():
+            with open(path, encoding="utf-8") as fh:
+                outputs[fmt] = fh.read()
+        for fmt, body in outputs.items():
+            with self.subTest(fmt=fmt):
+                self.assertNotIn(self.TOKEN, body)
+                self.assertNotIn(self.TOKEN[4:20], body)
+                self.assertNotIn("\x00", body)
+        self.assertIn("GITHUB_TOKEN", outputs["html"])
+
+    def test_ignore_file_written_by_powershell(self):
+        root = self._project("utf-8")
+        with open(os.path.join(root, ".stingwardignore"), "wb") as fh:
+            fh.write(b"\xff\xfe" + "AGT003\r\nSEC001\r\nSEC002\r\n".encode("utf-16-le"))
+        _, findings = scan.run(root, offline=True)
+        self.assertFalse({"AGT003", "SEC001", "SEC002"} & {f.rule for f in findings})
+
+
 class DeepFolders(unittest.TestCase):
     def test_folder_deeper_than_the_recursion_limit(self):
         """No Python até 3.11 o os.walk é recursivo: uma skill com centenas de pastas aninhadas derrubava a varredura."""
