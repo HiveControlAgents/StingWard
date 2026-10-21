@@ -23,10 +23,10 @@
     "why_h2": "Por que ele existe",
     "why_p": "A IA escreve o código, escolhe as versões dos pacotes e monta a configuração. Ela faz funcionar, mas não avisa o que deixou aberto, e quem publica muitas vezes nunca ouviu falar em CVE, RLS ou chave exposta. Você não precisa virar especialista: o Stingward lê o projeto e explica, sem jargão, o que está errado e como resolver.",
     "why_facts": [
-      ["45%", "dos testes de código feitos com mais de 100 modelos de IA saíram com uma falha da lista OWASP Top 10, as mais comuns da web.", "Veracode, 2025", "https://www.veracode.com/press-release/ai-generated-code-poses-major-security-risks-in-nearly-half-of-all-development-tasks-veracode-research-reveals/", [[45, 100]]],
-      ["170", "de 1.645 apps feitos com IA, numa vitrine pública, deixavam o banco de dados aberto, com nomes, e-mails, chaves de API e pagamentos.", "CVE-2025-48757", "https://mattpalmer.io/posts/statement-on-CVE-2025-48757/", [[170, 1645]]],
-      ["36%", "de 3.984 skills públicas para agentes tinham pelo menos uma falha de segurança, e 13% tinham uma falha crítica.", "Snyk, 2026", "https://snyk.io/pt-BR/blog/toxicskills-malicious-ai-agent-skills-clawhub", [[13, 100], [36, 100]]],
-      ["23,8 milhões", "de chaves e senhas vazaram no GitHub público em 2024, 25% a mais que no ano anterior.", "GitGuardian, 2025", "https://blog.gitguardian.com/the-state-of-secrets-sprawl-2025/", []]
+      ["45%", "dos testes de código feitos com mais de 100 modelos de IA saíram com uma falha da lista OWASP Top 10, as mais comuns da web.", "Veracode, 2025", "https://www.veracode.com/press-release/ai-generated-code-poses-major-security-risks-in-nearly-half-of-all-development-tasks-veracode-research-reveals/"],
+      ["170", "de 1.645 apps feitos com IA, numa vitrine pública, deixavam o banco de dados aberto, com nomes, e-mails, chaves de API e pagamentos.", "CVE-2025-48757", "https://mattpalmer.io/posts/statement-on-CVE-2025-48757/"],
+      ["36%", "de 3.984 skills públicas para agentes tinham pelo menos uma falha de segurança, e 13% tinham uma falha crítica.", "Snyk, 2026", "https://snyk.io/pt-BR/blog/toxicskills-malicious-ai-agent-skills-clawhub"],
+      ["23,8 milhões", "de chaves e senhas vazaram no GitHub público em 2024, 25% a mais que no ano anterior.", "GitGuardian, 2025", "https://blog.gitguardian.com/the-state-of-secrets-sprawl-2025/"]
     ],
 
     "report_h2": "Três relatórios reais",
@@ -199,10 +199,10 @@
     "why_h2": "Why it exists",
     "why_p": "AI writes the code, picks the package versions and sets up the config. It gets things working, but it doesn't tell you what it left open, and whoever ships the project has often never heard of a CVE, RLS or an exposed key. You don't need to become an expert: Stingward reads the project and explains, without jargon, what's wrong and how to fix it.",
     "why_facts": [
-      ["45%", "of coding tests run on more than 100 AI models produced code with a flaw from the OWASP Top 10, the most common web vulnerabilities.", "Veracode, 2025", "https://www.veracode.com/press-release/ai-generated-code-poses-major-security-risks-in-nearly-half-of-all-development-tasks-veracode-research-reveals/", [[45, 100]]],
-      ["170", "of 1,645 AI-built apps in a public showcase left their database open, exposing names, emails, API keys and payment data.", "CVE-2025-48757", "https://mattpalmer.io/posts/statement-on-CVE-2025-48757/", [[170, 1645]]],
-      ["36%", "of 3,984 public agent skills had at least one security flaw, and 13% had a critical one.", "Snyk, 2026", "https://snyk.io/blog/toxicskills-malicious-ai-agent-skills-clawhub/", [[13, 100], [36, 100]]],
-      ["23.8 million", "keys and passwords leaked on public GitHub in 2024, 25% more than the year before.", "GitGuardian, 2025", "https://blog.gitguardian.com/the-state-of-secrets-sprawl-2025/", []]
+      ["45%", "of coding tests run on more than 100 AI models produced code with a flaw from the OWASP Top 10, the most common web vulnerabilities.", "Veracode, 2025", "https://www.veracode.com/press-release/ai-generated-code-poses-major-security-risks-in-nearly-half-of-all-development-tasks-veracode-research-reveals/"],
+      ["170", "of 1,645 AI-built apps in a public showcase left their database open, exposing names, emails, API keys and payment data.", "CVE-2025-48757", "https://mattpalmer.io/posts/statement-on-CVE-2025-48757/"],
+      ["36%", "of 3,984 public agent skills had at least one security flaw, and 13% had a critical one.", "Snyk, 2026", "https://snyk.io/blog/toxicskills-malicious-ai-agent-skills-clawhub/"],
+      ["23.8 million", "keys and passwords leaked on public GitHub in 2024, 25% more than the year before.", "GitGuardian, 2025", "https://blog.gitguardian.com/the-state-of-secrets-sprawl-2025/"]
     ],
 
     "report_h2": "Three real reports",
