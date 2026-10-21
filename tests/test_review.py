@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from stingward import cli, report, report_html, review, vulndb
+from stingward import cli, report, report_html, review, scan, vulndb
 from stingward.model import Context, Finding
 
 # Com cara de chave de verdade, como em test_cli: valores com "Fake" ou "Demo" a ferramenta já trata como exemplo.
@@ -660,6 +660,258 @@ class TextAndMarkdown(Case):
         self.assertIn("Test \\| value &lt;b&gt;x&lt;/b&gt;", out)
         table = out.split("**Discarded", 1)[0]
         self.assertNotIn("Secret in code", table)
+
+
+# =========================================================================== revisão por IA
+
+class AiCase(Case):
+    def ai(self, decisions, kind="ai", reviewer=""):
+        """Como decide(), com o tipo da revisão no arquivo."""
+        path = self.decide(decisions, reviewer=reviewer)
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        doc["review_kind"] = kind
+        return self.save_review(doc)
+
+
+class AiReviewFile(AiCase):
+    def test_kind_defaults_to_person(self):
+        self.assertEqual(review.load(self.decide({})).kind, "person")
+
+    def test_kind_spelling_is_forgiving(self):
+        self.assertEqual(review.load(self.ai({}, kind="AI ")).kind, "ai")
+
+    def test_unknown_kind_is_refused(self):
+        code, _, err = run([self.root, "--offline", "--review", self.ai({}, kind="robot")])
+        self.assertEqual(code, 2)
+        self.assertIn('"review_kind"', err)
+        self.assertIn("robot", err)
+
+    def test_kind_must_be_text(self):
+        for bad in (True, 1, []):
+            if os.path.exists(self.path("r.json")):  # o arquivo da volta anterior é inválido: o template não o reaproveita
+                os.remove(self.path("r.json"))
+            code, _, err = run([self.root, "--offline", "--review", self.ai({}, kind=bad)])
+            self.assertEqual(code, 2, bad)
+            self.assertIn('"review_kind"', err, bad)
+            self.assertNotIn("Traceback", err, bad)
+
+    def test_ai_review_refuses_accepted_risk(self):
+        code, _, err = run([self.root, "--offline", "--review", self.ai({"SEC001": ("accepted_risk", "")})])
+        self.assertEqual(code, 2)
+        self.assertIn("accepted_risk", err)
+        self.assertIn("findings[", err)
+
+    def test_ai_review_refuses_fixed_on_a_finding_still_there(self):
+        path = self.ai({"SEC001": ("fixed", "")})
+        with open(path, encoding="utf-8") as fh:
+            fp = next(i["fingerprint"] for i in json.load(fh)["findings"] if i["status"] == "fixed")
+        code, _, err = run([self.root, "--offline", "--review", path])
+        self.assertEqual(code, 2)
+        self.assertIn('"fixed"', err)
+        self.assertIn(fp, err)
+
+    def test_ai_review_allows_fixed_for_a_gone_finding(self):
+        path = self.ai({"APP003": ("fixed", "Origin list set to the shop domain.")})
+        write(os.path.join(self.root, "api.js"), 'res.setHeader("Access-Control-Allow-Origin", "https://shop.example");\n')
+        code, out, err = run([self.root, "--offline", "--lang", "en", "--format", "html", "--review", path])
+        self.assertIn(code, (0, 1), err)
+        done = out.split('<section id="plan">', 1)[1].split("</section>", 1)[0].split('class="band band-done"', 1)[1]
+        self.assertIn("CORS open to any website", done)
+        self.assertIn(f'<span class="rv rv-fixed">{report.T["en"]["status"]["fixed"]}</span>', done)
+
+    def hidden(self, *, ignore=None, line=None, pad=0):
+        """Revisão por IA que marca como corrigido o CORS aberto do api.js, que continua no código mas some da
+        varredura: por uma linha do .stingwardignore, por um comentário stingward:ignore ou por tamanho."""
+        path = self.ai({"APP003": ("fixed", "Origin list set to the shop domain.")})
+        with open(path, encoding="utf-8") as fh:
+            fp = next(i["fingerprint"] for i in json.load(fh)["findings"] if i["status"] == "fixed")
+        if ignore is not None:
+            write(os.path.join(self.root, ".stingwardignore"), ignore)
+        if line is not None or pad:
+            code = line or APP["api.js"].rstrip("\n")
+            write(os.path.join(self.root, "api.js"), code + "\n" + "// " + "x" * pad + "\n")
+        return path, fp
+
+    def assertRefusedAsHidden(self, path, fp, why):
+        code, _, err = run([self.root, "--offline", "--review", path])
+        self.assertEqual(code, 2, err)
+        self.assertIn(fp, err)
+        self.assertIn(why, err)
+        self.assertNotIn("Traceback", err)
+
+    def test_fixed_hidden_by_stingwardignore_is_refused(self):
+        ignore = os.path.join(self.root, ".stingwardignore")
+        for line in ("APP003 api.js\n", "APP003\n", "api.js\n", "* api.js\n"):
+            for old in (self.path("r.json"), ignore):  # a volta anterior deixou os dois: o template sairia sem o achado
+                if os.path.exists(old):
+                    os.remove(old)
+            path, fp = self.hidden(ignore=line)
+            with self.subTest(line=line):
+                self.assertRefusedAsHidden(path, fp, "stingwardignore")
+
+    def test_fixed_hidden_by_an_inline_ignore_is_refused(self):
+        path, fp = self.hidden(line=APP["api.js"].rstrip("\n") + "  // stingward:ignore")
+        self.assertRefusedAsHidden(path, fp, "stingward:ignore")
+
+    def test_fixed_in_a_file_too_big_to_read_is_refused(self):
+        path, fp = self.hidden(pad=400)
+        with mock.patch.object(scan, "MAX_BYTES", 300):
+            self.assertRefusedAsHidden(path, fp, "too big")
+
+    def test_fixed_when_the_scan_stopped_at_the_file_limit_is_refused(self):
+        # O CORS foi corrigido de verdade, mas a varredura não leu todos os arquivos: não dá para saber se sumiu.
+        path, fp = self.hidden(line='res.setHeader("Access-Control-Allow-Origin", "https://shop.example");')
+        with mock.patch.object(scan, "MAX_FILES", 1):
+            self.assertRefusedAsHidden(path, fp, "file limit")
+
+    def test_ignore_lines_for_other_findings_do_not_block_fixed(self):
+        path, fp = self.hidden(ignore="SEC001 src/config.py\nAPP003 other.js\n",
+                               line='res.setHeader("Access-Control-Allow-Origin", "https://shop.example");')
+        write(os.path.join(self.root, "src/config.py"), f'import os\nGITHUB_TOKEN = "{GH}"  # stingward:ignore\n')
+        code, _, err = run([self.root, "--offline", "--review", path])
+        self.assertIn(code, (0, 1), err)
+
+    def test_person_review_may_mark_a_hidden_finding_fixed(self):
+        path = self.decide({"APP003": ("fixed", "")})
+        write(os.path.join(self.root, ".stingwardignore"), "APP003 api.js\n")
+        code, _, err = run([self.root, "--offline", "--review", path])
+        self.assertIn(code, (0, 1), err)
+
+    def test_template_keeps_the_kind(self):
+        self.ai({})
+        run([self.root, "--offline", "--review-template", self.path("r.json")])
+        with open(self.path("r.json"), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["review_kind"], "ai")
+        self.assertEqual(self.template()["review_kind"], "ai")  # o mesmo arquivo, gravado de novo
+        os.remove(self.path("r.json"))
+        self.assertEqual(self.template()["review_kind"], "person")
+
+    def test_person_review_still_allows_every_status(self):
+        path = self.decide({"SEC001": ("accepted_risk", "Client decision."), "APP003": ("fixed", "")})
+        code, _, err = run([self.root, "--offline", "--review", path])
+        self.assertIn(code, (0, 1), err)
+
+
+class AiReviewHtml(AiCase):
+    def render(self, path, *extra, lang="en", root=None):
+        code, out, err = run([root or self.root, "--offline", "--format", "html", "--lang", lang, "--review", path] + list(extra))
+        self.assertIn(code, (0, 1), err)
+        return out
+
+    def section(self, out, sid):
+        m = re.search(rf'<section[^>]* id="{sid}">.*?</section>', out, re.S)
+        return m.group(0) if m else ""
+
+    def sections(self, out):
+        return "".join(self.section(out, sid) for sid in ("cover", "summary", "scope"))
+
+    def test_cover_scope_and_summary_say_ai(self):
+        notes = self.path("notes.md")
+        write(notes, "Short summary.\n")
+        out = self.render(self.ai({"SEC001": ("false_positive", "Test value.")}), "--notes", notes)
+        self.assertIn("<dt>AI review</dt>", self.section(out, "cover"))
+        scope = self.section(out, "scope")
+        self.assertIn("an AI read the code of each finding", scope)
+        self.assertIn("We checked the code and configuration", scope)
+        summary = self.section(out, "summary")
+        self.assertIn("After the AI review", summary)
+        self.assertIn('<h3 class="analyst-h">Summary</h3>', summary)
+        for human in ("by hand", "checked by a person", "Human review", "Analyst summary"):
+            self.assertNotIn(human, self.sections(out), human)
+
+    def test_portuguese(self):
+        notes = self.path("notes.md")
+        write(notes, "Resumo curto.\n")
+        out = self.render(self.ai({"SEC001": ("false_positive", "Valor de teste.")}), "--notes", notes, lang="pt")
+        for want in ("Revisão por IA", '<h3 class="analyst-h">Resumo</h3>', "uma IA leu o código de cada achado",
+                     "Conferimos o código e a configuração"):
+            self.assertIn(want, out)
+        for human in ("à mão", "conferida por uma pessoa", "Revisão humana", "Parecer do analista"):
+            self.assertNotIn(human, self.sections(out), human)
+
+    def test_clean_project_with_an_ai_review(self):
+        root = tree({"README.md": "# Hello\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        path = self.save_review({"stingward_review": 1, "review_kind": "ai", "findings": []})
+        code, out, err = run([root, "--offline", "--format", "html", "--lang", "en", "--review", path])
+        self.assertEqual(code, 0, err)
+        self.assertIn("<dt>AI review</dt>", self.section(out, "cover"))
+        self.assertNotIn("checked by a person", self.section(out, "scope"))
+
+    def test_privacy_says_what_went_to_the_ai(self):
+        scope = self.section(self.render(self.ai({})), "scope")
+        self.assertIn("For the AI review, the code excerpt of each finding, with secrets masked, was sent to the AI model.", scope)
+        self.assertNotIn("The code did not.", scope)
+        scope = self.section(self.render(self.ai({}), lang="pt"), "scope")
+        self.assertIn("Para a revisão por IA, o trecho de cada achado, com os segredos mascarados, foi enviado ao modelo de IA.", scope)
+        self.assertNotIn("O código não saiu.", scope)
+
+    def test_person_review_keeps_its_words(self):
+        out = self.render(self.decide({"SEC001": ("false_positive", "Test value.")}))
+        self.assertIn("Human review", out)
+        self.assertIn("checked the findings by hand", out)
+        self.assertIn("The code did not.", self.section(out, "scope"))
+
+
+class AiReviewOtherFormats(AiCase):
+    def notes(self, text="First.\n"):
+        path = self.path("notes.md")
+        write(path, text)
+        return path
+
+    def test_text_says_reviewed_by_ai(self):
+        code, out, _ = run([self.root, "--offline", "--no-color", "--review", self.ai({}), "--notes", self.notes()])
+        self.assertIn("Reviewed by AI: ", out)
+        self.assertIn("Summary:\n  First.\n", out)
+        self.assertNotIn("Reviewed by a person", out)
+        self.assertNotIn("Analyst summary", out)
+
+    def test_markdown_says_ai(self):
+        code, out, _ = run([self.root, "--offline", "--format", "markdown", "--review", self.ai({}), "--notes", self.notes()])
+        self.assertIn("**Reviewed by AI:**", out)
+        self.assertIn("**Summary**", out)
+        self.assertNotIn("Analyst summary", out)
+
+    def test_portuguese_text(self):
+        code, out, _ = run([self.root, "--offline", "--no-color", "--lang", "pt", "--review", self.ai({}), "--notes", self.notes()])
+        self.assertIn("Revisado por IA: ", out)
+        self.assertIn("Resumo:\n  First.\n", out)
+        self.assertNotIn("Parecer do analista", out)
+
+    def test_json_kind_and_masked(self):
+        code, out, _ = run([self.root, "--offline", "--format", "json", "--review", self.ai({"SEC001": ("confirmed", "Seen.")})])
+        doc = json.loads(out)
+        self.assertEqual(doc["review"]["kind"], "ai")
+        self.assertIs(doc["review"]["masked"], False)
+
+    def test_json_masked_when_a_comment_or_the_notes_carry_a_secret(self):
+        for comment, notes in ((f"token {GH}", "Fine.\n"), ("Seen.", f"The key {OAI} leaked.\n")):
+            path = self.ai({"SEC001": ("confirmed", comment)})
+            code, out, _ = run([self.root, "--offline", "--format", "json", "--review", path, "--notes", self.notes(notes)])
+            self.assertIs(json.loads(out)["review"]["masked"], True, comment)
+            self.assertNoSecret(out, "json")
+
+    def test_json_masked_whatever_format_masks_it(self):
+        # Chave e valor em linhas diferentes: o JSON guarda o comentário linha a linha, o HTML junta o parágrafo e
+        # mascara. O aviso vale para o arquivo de revisão inteiro, qualquer que seja o formato e a ordem em que saem.
+        path = self.ai({"SEC001": ("confirmed", "password\n= " + "Hunter2" + "Hunter2Xy")})
+        code, out, err = run([self.root, "--offline", "--format", "json", "--html", self.path("out.html"), "--review", path])
+        self.assertIs(json.loads(out)["review"]["masked"], True)
+        self.assertIn("masked something", err)
+
+    def test_json_masked_counts_the_comment_of_a_fixed_finding(self):
+        # O item corrigido não entra no JSON, mas o texto e o Markdown mostram o comentário dele, mascarado.
+        path = self.ai({"APP003": ("fixed", f"Was {GH} before.")})
+        write(os.path.join(self.root, "api.js"), 'res.setHeader("Access-Control-Allow-Origin", "https://shop.example");\n')
+        code, out, err = run([self.root, "--offline", "--format", "json", "--review", path])
+        self.assertIs(json.loads(out)["review"]["masked"], True)
+        self.assertIn("masked something", err)
+        self.assertNoSecret(out + err, "json")
+
+    def test_json_person_kind(self):
+        code, out, _ = run([self.root, "--offline", "--format", "json", "--review", self.decide({})])
+        self.assertEqual(json.loads(out)["review"]["kind"], "person")
 
 
 if __name__ == "__main__":
