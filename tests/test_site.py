@@ -130,8 +130,10 @@ class Site(unittest.TestCase):
         pt, en = self.pages["pt"], self.pages["en"]
         self.assertIn("Não instale ainda: há problemas graves.", pt)
         self.assertIn("Do not install yet: serious problems found.", en)
-        self.assertIn("Nota F.", pt)
-        self.assertIn("Nota A.", pt)
+        self.assertIn("Nota: F", pt)
+        self.assertIn("Nota: A", pt)
+        self.assertIn("Grade: F", en)
+        self.assertIn("Grade: A", en)
         self.assertIn(f"stingward {__version__}", pt)
         self.assertIn(f"{len(RULES)} regras", pt)
         self.assertIn(f"{len(RULES)} rules", en)
@@ -276,31 +278,15 @@ class Site(unittest.TestCase):
         with open(os.path.join(SITE, "text.json"), encoding="utf-8") as fh:
             text = json.load(fh)
         for lang, page in self.pages.items():
-            for number, _, source, link, _ in text[lang]["why_facts"]:
+            for number, said, source, link in text[lang]["why_facts"]:
                 with self.subTest(lang=lang, number=number):
                     self.assertTrue(link.startswith("https://"))
                     self.assertIn(f'href="{link}">{source}</a>', page)
-
-    def test_the_bars_on_why_it_exists_draw_the_numbers_they_stand_for(self):
-        """Each bar is a share drawn to scale. It must be the share the sentence states, not a shape that looks right:
-        45% fills 45 of 100, 170 of 1,645 apps fills 170 of 1,645, and the 13% inside the 36% is in the same sentence."""
-        sep = {"pt": ".", "en": ","}
-        for lang, page in self.pages.items():
-            for number, text, _, _, bars in _text()[lang]["why_facts"]:
-                with self.subTest(lang=lang, number=number):
-                    said = number + " " + text
-                    for part, whole in bars:
-                        self.assertLess(0, part)
-                        self.assertLessEqual(part, whole)
-                        if whole == 100:
-                            self.assertIn(f"{part}%", said)
-                        else:
-                            self.assertIn(str(part), number)
-                            self.assertIn(f"{whole:,}".replace(",", sep[lang]), said)
-                        self.assertIn(f'style="--w:{100 * part / whole:.1f}%"', page)
-                    if bars:  # the widest part is the number in big type
-                        part, whole = max(bars, key=lambda b: b[0] / b[1])
-                        self.assertEqual(number, f"{part}%" if whole == 100 else str(part))
+                    # the figure stands alone in its column; a unit after it ("23.8 million") opens the sentence
+                    figure, _, unit = number.partition(" ")
+                    caption = html.escape(f"{unit} {said}" if unit else said)
+                    self.assertIn(f'<p class="led__num" data-reveal>{html.escape(figure)}</p>'
+                                  f'<p class="led__cap" data-reveal>{caption} <a class="src"', page)
 
     def test_sales_are_announced_and_nothing_takes_payment(self):
         self.assertIn("Em breve", self.pages["pt"])
@@ -425,41 +411,38 @@ class Site(unittest.TestCase):
                 for key, name in rows:
                     self.assertEqual(name, html.escape(finds[key][0]))
 
-    # ---------------------------------------------------------------- the grade label
+    # ---------------------------------------------------------------- the grades
 
-    def scales(self, page):
-        return re.findall(r'<div class="scale (scale--\w+)"[^>]*><ol class="scale__bars" aria-label="[^"]+">(.*?)</ol>'
-                          r'<p class="scale__marker" style="--row:(\d)"[^>]*><span class="sr-only">[^<]+</span>'
-                          r'<b class="scale__g">([A-F])</b> <span class="scale__what">(.*?)</span></p></div>', page)
-
-    def test_the_label_marks_the_grades_the_reports_really_gave(self):
-        """The marker on each A to F label sits on a grade Stingward printed in this build: the demo app's grade on the
-        first screen, the first report's grade beside the reports, and its own skill's grade at the end."""
+    def test_grades_show_only_where_a_real_report_gave_them(self):
+        """Each report's tab shows the grade that report printed in this build, the stage that grades marks only the
+        demo app's grade, and the pull request preview carries that same grade. No other grade is drawn on the page."""
+        projects = ["./pdf-helper", "./my-saas", "skills/stingward"]
         for lang, page in self.pages.items():
             t = _text()[lang]
-            tabs = re.findall(r'<button class="report__name"[^>]* data-grade="([A-F])" data-project="([^"]+)">'
-                              r'<span class="report__title">[^<]+</span><span class="report__note">[^<]+ ([A-F])\.</span>', page)
-            sheets = re.findall(r'<div class="sheet" data-ui role="tabpanel".*?</pre></div>', page, re.S)
+            tabs = re.findall(r'<button class="term__tab" type="button" role="tab" id="report-tab-(\d)" '
+                              r'aria-controls="report-out-\1" aria-selected="(true|false)" tabindex="(-1|0)" data-grade="([A-F])">'
+                              r'<span class="term__name">[^<]+</span><span class="term__grade">([^<]+) ([A-F])</span></button>', page)
+            panels = re.findall(r'<pre class="term__out" role="tabpanel" id="report-out-(\d)" aria-labelledby="report-tab-\1" '
+                                r'tabindex="0"( data-off)?>(.*?)</pre>', page, re.S)
             with self.subTest(lang=lang):
-                self.assertEqual(len(tabs), 3)
-                self.assertEqual(len(sheets), 3)
-                for (grade, project, said), sheet in zip(tabs, sheets):
-                    self.assertEqual(grade, said)
-                    self.assertEqual(re.search(r"(?:Nota|Grade): ([A-F])", sheet).group(1), grade)
-                    self.assertIn(html.escape(project), sheet.split("</code>", 1)[0])
-                found = {cls: (int(row), grade, what) for cls, _, row, grade, what in self.scales(page)}
-                self.assertEqual(set(found), {"scale--hero", "scale--stage", "scale--close"})
-                app = [g for g, p, _ in tabs if p == "./my-saas"][0]
-                own = [g for g, p, _ in tabs if p == "skills/stingward"][0]
-                self.assertEqual(found["scale--hero"], ("ABCDF".index(app), app, "./<wbr>my-saas"))
-                self.assertEqual(found["scale--stage"][:2], ("ABCDF".index(tabs[0][0]), tabs[0][0]))
-                self.assertEqual(found["scale--close"], ("ABCDF".index(own), own, "skills/<wbr>stingward"))
-                self.assertIn(f'<b class="scale__g">{app}</b>', page.split('class="hero__body"', 1)[1].split("</header>", 1)[0])
-                for _, bars, _, _, _ in self.scales(page):
-                    got = re.findall(r'<li class="bar bar--([A-F])" style="--n:(\d)"><b class="bar__g">\1</b>'
-                                     r'<span class="bar__means">([^<]+)</span></li>', bars)
-                    self.assertEqual([(g, int(n), m) for g, n, m in got],
-                                     [(g, i, html.escape(m)) for i, (g, m) in enumerate(t["grades"])])
+                self.assertEqual([int(i) for i, *_ in tabs], [0, 1, 2])
+                self.assertEqual([int(i) for i, *_ in panels], [0, 1, 2])
+                grades = {}
+                for (i, selected, index, grade, word, shown), (_, off, out), project in zip(tabs, panels, projects):
+                    self.assertEqual((word, shown), (t["grade_word"], grade))
+                    self.assertEqual(re.search(r"(?:Nota|Grade): ([A-F])", out).group(1), grade)
+                    self.assertIn(f"stingward {'' if project == './my-saas' else 'skill '}{project}</span>", out)
+                    # the demo app is the report on show; the others wait behind their tabs
+                    on = project == "./my-saas"
+                    self.assertEqual((selected, index, off), ("true", "0", "") if on else ("false", "-1", " data-off"))
+                    grades[project] = grade
+                app = grades["./my-saas"]
+                stage = re.findall(r'<li class="frag__grade( is-on)?"><b>([A-F])</b> <span>([^<]+)</span></li>', page)
+                self.assertEqual(stage, [(" is-on" if g == app else "", g, html.escape(m)) for g, m in t["grades"]])
+                self.assertEqual(re.findall(r'<span class="pr__grade">stingward ([A-F])</span>', page), [app])
+                self.assertEqual(page.count("data-grade="), 3)
+                self.assertEqual(page.count("is-on"), 1)
+                self.assertEqual(page.count("pr__grade"), 1)
 
     # ---------------------------------------------------------------- what the page loads
 
@@ -508,24 +491,30 @@ class Site(unittest.TestCase):
         for call in ("fetch(", "XMLHttpRequest", "WebSocket", "sendBeacon", "import(", "http"):
             self.assertNotIn(call, js)
 
-    def test_the_font_is_published_with_its_license(self):
-        """The one font file is under the SIL Open Font License, and the license goes out with it."""
+    def test_the_fonts_are_published_with_their_licenses(self):
+        """Hanken Grotesk and JetBrains Mono are under the SIL Open Font License; each license goes out beside its font,
+        and the stylesheet loads each font file from the site itself."""
         fonts = os.path.join(SITE, "fonts")
         files = sorted(os.listdir(fonts))
         with open(os.path.join(SITE, "style.css"), encoding="utf-8") as fh:
             css = fh.read()
-        with open(os.path.join(fonts, "OFL.txt"), encoding="utf-8") as fh:
-            license_text = fh.read()
-        self.assertIn("SIL Open Font License, Version 1.1", license_text)
-        self.assertIn("The Archivo Project Authors", license_text)
-        for name in files:
-            if name != "OFL.txt":
-                with self.subTest(font=name):
-                    self.assertIn(f'url("fonts/{name}")', css)
-                    with open(os.path.join(fonts, name), "rb") as fh:
-                        self.assertEqual(fh.read(4), b"wOF2")
+        authors = {"hanken-grotesk": "The Hanken Grotesk Project Authors", "jetbrains-mono": "The JetBrains Mono Project Authors"}
+        woff = [name for name in files if name.endswith(".woff2")]
+        self.assertEqual(sorted(name.split("-latin")[0] for name in woff), sorted(authors))
+        self.assertEqual(sorted(set(files) - set(woff)), sorted(f"{family}-OFL.txt" for family in authors))
+        for family, author in authors.items():
+            with self.subTest(license=family):
+                with open(os.path.join(fonts, f"{family}-OFL.txt"), encoding="utf-8") as fh:
+                    license_text = fh.read()
+                self.assertIn("SIL Open Font License, Version 1.1", license_text)
+                self.assertIn(author, license_text)
+        for name in woff:
+            with self.subTest(font=name):
+                self.assertIn(f'url("fonts/{name}")', css)
+                with open(os.path.join(fonts, name), "rb") as fh:
+                    self.assertEqual(fh.read(4), b"wOF2")
+        self.assertNotIn("Archivo", css)
         self.assertEqual(sorted(os.listdir(os.path.join(self.out, "fonts"))), files)
-
     def test_the_lowest_version_of_a_range_is_shown_as_sent(self):
         for page in self.pages.values():
             osv = page.split('class="frag__code">', 1)[1].split("</pre>", 1)[0]

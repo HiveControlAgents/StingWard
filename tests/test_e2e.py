@@ -436,8 +436,8 @@ class ActionPermissions(unittest.TestCase):
 class SiteFocus(unittest.TestCase):
     def test_nothing_that_takes_keyboard_focus_is_clipped(self):
         """clip-path recorta também o contorno de foco: numa versão anterior do site, a aba "Instalar" focada pelo
-        teclado não mostrava nada. As setas da escala de notas são recortadas; nada que recebe foco pode ser, e todo
-        foco de teclado tem contorno."""
+        teclado não mostrava nada. Os fundos cor de mel, com o canto cortado, são recortados; nada que recebe foco pode
+        ser, e todo foco de teclado tem contorno."""
         css = re.sub(r"/\*.*?\*/", "", _read("site", "style.css"), flags=re.S)
         rules = {}
         for sels, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
