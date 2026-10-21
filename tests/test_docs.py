@@ -154,7 +154,7 @@ class CommandLineAndActionDocs(unittest.TestCase):
         program = re.search(r"""awk -v h="## \[\$\{V#v\}\]" '([^']+)' CHANGELOG\.md""",
                             _read(".github/workflows/release.yml")).group(1)
         notes = subprocess.run(["awk", "-v", f"h=## [{__version__}]", program, os.path.join(ROOT, "CHANGELOG.md")],
-                               capture_output=True, text=True, check=True).stdout
+                               capture_output=True, encoding="utf-8", check=True).stdout
         self.assertIn("### ", notes)
         self.assertNotIn("## [", notes)
 
