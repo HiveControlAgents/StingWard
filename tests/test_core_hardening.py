@@ -50,6 +50,11 @@ class MaskerOnHostileInput(unittest.TestCase):
 
     def test_long_values_are_masked_in_linear_time(self):
         n = 200_000
+        # O limite acompanha a máquina: num runner de CI lento tudo fica lento junto (o mesmo código já levou 3 s lá e
+        # 0,5 s aqui). A referência é o caso mais simples, só letras; quadrático fica centenas de vezes acima dela.
+        t = time.perf_counter()
+        redact.sanitize_text("A" * n)
+        limit = max(2.0, 40 * (time.perf_counter() - t))
         samples = {
             "letters": "A" * n,
             "word": "ab1" * (n // 3),
@@ -69,7 +74,7 @@ class MaskerOnHostileInput(unittest.TestCase):
             with self.subTest(sample=name):
                 t = time.perf_counter()
                 redact.sanitize_text(s)
-                self.assertLess(time.perf_counter() - t, 2.0, name)
+                self.assertLess(time.perf_counter() - t, limit, name)
 
 
 class MaskerFormats(unittest.TestCase):

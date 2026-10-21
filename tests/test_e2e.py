@@ -434,18 +434,32 @@ class ActionPermissions(unittest.TestCase):
 # --------------------------------------------------------------------------- o site
 
 class SiteFocus(unittest.TestCase):
-    def test_a_folder_tab_with_keyboard_focus_shows_it(self):
-        """A aba da pasta é recortada com clip-path, que recorta também o contorno de foco: a aba "Instalar" focada pelo
-        teclado não mostrava nada, e nas outras pastas só sobrava uma linha fina. A aba focada sublinha o nome."""
+    def test_nothing_that_takes_keyboard_focus_is_clipped(self):
+        """clip-path recorta também o contorno de foco: numa versão anterior do site, a aba "Instalar" focada pelo
+        teclado não mostrava nada. Os fundos cor de mel, com o canto cortado, são recortados; nada que recebe foco pode
+        ser, e todo foco de teclado tem contorno."""
         css = re.sub(r"/\*.*?\*/", "", _read("site", "style.css"), flags=re.S)
         rules = {}
         for sels, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
             for sel in sels.split(","):
                 rules[sel.strip()] = rules.get(sel.strip(), "") + body
-        self.assertIn("clip-path", rules[".folder__tab"])
-        for sel in (".folder:focus-visible .folder__tab", "a.folder__tab:focus-visible"):
+        markup = _read("site", "page.html") + _read("site", "build.py")
+        focusable = {"button"}  # offer() e copy_button() recebem a classe como argumento
+        for classes in re.findall(r'<(?:a|button|input|summary|select|textarea)\b[^>]*?class="([^"{}]+)"', markup):
+            focusable |= set(classes.split())
+        clipped = [sel for sel, body in rules.items() if "clip-path" in body]
+        self.assertTrue(clipped)
+        for sel in clipped:
+            target = re.split(r"[\s>+~]+", sel)[-1]  # o elemento que a regra desenha
+            if "::" in target:  # um pseudo-elemento fica dentro do elemento; o contorno do elemento não é recortado
+                continue
             with self.subTest(selector=sel):
-                self.assertIn("text-decoration: underline", rules.get(sel, "no rule"))
+                self.assertFalse(set(re.findall(r"\.([\w-]+)", target)) & focusable)
+        self.assertRegex(rules[":focus-visible"], r"outline:\s*3px solid")
+        for sel, body in rules.items():
+            if ":focus" in sel:
+                with self.subTest(selector=sel):
+                    self.assertNotRegex(body, r"outline:\s*(?:none|0)")
 
 
 # --------------------------------------------------------------------------- os pacotes do PyPI
