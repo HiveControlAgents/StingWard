@@ -1,5 +1,6 @@
-// Stingward site: copy buttons, the report picker, the stage slider, the index preview and the entrances.
-// Everything on the page is readable without this file.
+// Stingward site: copy buttons, the two tab lists (the three real reports and where it runs), the entrances and the
+// demo recordings. Without this file every report and every preview is on the page,
+// one after another.
 
 (() => {
   document.querySelectorAll("[data-copy]").forEach((button) => {
@@ -17,89 +18,72 @@
   });
 })();
 
-// Three real reports: a tab list with arrow keys, one sheet shown at a time.
-(() => {
-  const tabs = [...document.querySelectorAll(".report__name")];
-  if (!tabs.length) return;
-  const select = (index, focus) => {
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
+
+// A tab list with arrow keys, Home and End. The build marks the panels that start closed with data-off, so that
+// without this script they all stay readable; here they become hidden panels.
+const tablist = (list, onSelect) => {
+  if (!list) return null;
+  const tabs = [...list.querySelectorAll('[role="tab"]')];
+  const panel = (tab) => document.getElementById(tab.getAttribute("aria-controls"));
+  tabs.forEach((tab) => { const p = panel(tab); if (p.hasAttribute("data-off")) { p.removeAttribute("data-off"); p.hidden = true; } });
+  let current = tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true");
+  const select = (index, byKey) => {
+    if (index === current) return;
+    current = index;
     tabs.forEach((tab, i) => {
       const on = i === index;
       tab.setAttribute("aria-selected", String(on));
       tab.tabIndex = on ? 0 : -1;
-      const sheet = document.getElementById(tab.getAttribute("aria-controls"));
-      sheet.hidden = !on;
-      if (on) sheet.scrollTop = 0;
+      panel(tab).hidden = !on;
     });
-    if (focus) tabs[index].focus();
+    if (byKey) tabs[index].focus();
+    if (onSelect) onSelect(panel(tabs[index]), byKey);
   };
   tabs.forEach((tab, i) => {
-    tab.addEventListener("click", () => select(i));
+    tab.addEventListener("click", (event) => select(i, event.detail === 0));
     tab.addEventListener("keydown", (event) => {
-      const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
       if (step) { event.preventDefault(); select((i + step + tabs.length) % tabs.length, true); }
       if (event.key === "Home") { event.preventDefault(); select(0, true); }
       if (event.key === "End") { event.preventDefault(); select(tabs.length - 1, true); }
     });
   });
-})();
+  return { current: () => panel(tabs[current]) };
+};
 
-// How it works: one range input drives the clause, the detail and the fragment of the product.
-(() => {
-  const how = document.querySelector(".how");
-  if (!how) return;
-  const range = how.querySelector(".how__range");
-  const clause = how.querySelector(".how__clause");
-  const detail = how.querySelector(".how__detail");
-  const control = how.querySelector(".how__control");
-  const clauses = JSON.parse(how.dataset.clauses);
-  const details = JSON.parse(how.dataset.details);
-  const panes = how.querySelectorAll(".frag");
-  const names = how.querySelectorAll(".how__names li");
-  const calm = matchMedia("(prefers-reduced-motion: reduce)");
-  let current = 0;
-  const set = (i) => {
-    if (i !== current && !calm.matches && clause.animate) {
-      clause.animate([{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }], { duration: 240, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
-    }
-    current = i;
-    clause.textContent = clauses[i];
-    detail.textContent = details[i];
-    panes.forEach((pane) => { pane.hidden = Number(pane.dataset.stage) !== i; });
-    names.forEach((name) => name.classList.toggle("is-on", Number(name.dataset.stage) === i));
-    control.style.setProperty("--p", String(i / Number(range.max)));
-    range.setAttribute("aria-valuetext", clauses[i]);
-  };
-  range.addEventListener("input", () => set(Number(range.value)));
-  names.forEach((name) => name.addEventListener("click", () => { range.value = name.dataset.stage; set(Number(range.value)); }));
-  set(0);
-})();
+// The three real reports. A pointer sees the chosen report print line by line; a key press shows it at once.
+tablist(document.querySelector(".term__tabs"), (out, byKey) => {
+  out.scrollTop = 0;
+  out.classList.remove("is-in");
+  if (byKey || calm.matches) return;
+  [...out.children].forEach((line, i) => line.style.setProperty("--i", String(Math.min(i, 28))));
+  void out.offsetWidth;
+  out.classList.add("is-in");
+});
 
-// Where it runs: pointing at a row shows its preview in the one frame; a click keeps it there.
+// Where it runs: the recordings play while they are on screen and chosen. With reduced motion they stay on their
+// poster, the final frame.
 (() => {
-  const root = document.querySelector(".index");
-  if (!root) return;
-  const rows = root.querySelectorAll(".index__row");
-  const panes = root.querySelectorAll(".index__pane");
-  let kept = 0;
-  const show = (i) => {
-    panes.forEach((pane) => pane.classList.toggle("is-shown", Number(pane.dataset.pane) === i));
-    rows.forEach((row) => row.classList.toggle("is-current", Number(row.dataset.pane) === i));
+  const view = document.querySelector(".dock__view");
+  if (!view) return;
+  const videos = [...view.querySelectorAll("video.demo")];
+  let seen = false;
+  const play = () => {
+    videos.forEach((video) => {
+      const shown = seen && !video.closest('[role="tabpanel"]').hidden && !calm.matches;
+      if (shown) { video.preload = "auto"; video.play().catch(() => {}); } else video.pause();
+    });
   };
-  rows.forEach((row) => {
-    const i = Number(row.dataset.pane);
-    row.addEventListener("pointerenter", () => show(i));
-    row.addEventListener("focus", () => show(i));
-    row.addEventListener("click", () => { kept = i; show(i); });
-  });
-  root.querySelector(".index__list").addEventListener("pointerleave", () => show(kept));
-  root.addEventListener("focusout", (event) => { if (!root.contains(event.relatedTarget)) show(kept); });
-  show(0);
+  tablist(document.querySelector(".dock__tabs"), play);
+  if (!("IntersectionObserver" in window)) return;
+  new IntersectionObserver((entries) => { seen = entries[entries.length - 1].isIntersecting; play(); }, { threshold: 0.3 }).observe(view);
 })();
 
 // Entrances: the parts of each section rise in turn, once. Content is never left hidden.
 (() => {
-  document.querySelectorAll("main > section").forEach((section) => {
-    section.querySelectorAll("[data-reveal]").forEach((el, i) => el.style.setProperty("--i", String(Math.min(i, 8))));
+  document.querySelectorAll("main > section, main > div").forEach((section) => {
+    section.querySelectorAll("[data-reveal]").forEach((el, i) => el.style.setProperty("--d", `${Math.min(i, 5) * 70}ms`));
   });
   const targets = document.querySelectorAll("[data-reveal]");
   if (!("IntersectionObserver" in window)) { targets.forEach((el) => el.classList.add("is-in")); return; }
@@ -120,16 +104,4 @@
   addEventListener("load", () => setTimeout(() => {
     targets.forEach((el) => { const r = el.getBoundingClientRect(); if (r.top < innerHeight && r.bottom > 0) el.classList.add("is-in"); });
   }, 2500));
-})();
-
-// The demo recordings play while they are on screen. With reduced motion they stay on their poster, the final frame.
-(() => {
-  const videos = document.querySelectorAll("video.demo");
-  if (!videos.length || matchMedia("(prefers-reduced-motion: reduce)").matches || !("IntersectionObserver" in window)) return;
-  const io = new IntersectionObserver((entries) => {
-    for (const { target, isIntersecting } of entries) {
-      if (isIntersecting) { target.preload = "auto"; target.play().catch(() => {}); } else target.pause();
-    }
-  }, { threshold: 0.35 });
-  videos.forEach((video) => io.observe(video));
 })();

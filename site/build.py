@@ -1,8 +1,10 @@
-"""Builds the Stingward website into a folder, in Portuguese (the root) and English (en/).
+"""Builds the Stingward website into a folder, in English (the root) and Portuguese (pt/).
 
 Every report and number on the page comes from this checkout: the script runs Stingward on the README
 demos and on its own skill, reads the rules and counts the tests, so the site cannot drift from the code.
-The sample report (exemplo/ and en/example/) is the real HTML report of the demo app, with a note on top.
+The sample report (example/ and pt/exemplo/) is the real HTML report of the demo app, with a note on top.
+The addresses the site had before English moved to the root (en/, en/example/ and exemplo/) are small pages
+that send the visitor on to the new ones.
 
     python site/build.py _site            # offline reports, as the tests build it
     python site/build.py _site --online   # with dependency results from OSV.dev, as the Pages workflow builds it
@@ -10,7 +12,9 @@ The sample report (exemplo/ and en/example/) is the real HTML report of the demo
 The buy and waitlist buttons take their addresses from "links" in site/text.json. While one is empty its
 button reads "Em breve" / "Coming soon" and is not a link; a filled one must be an https:// address.
 """
+import base64
 import functools
+import hashlib
 import html
 import json
 import os
@@ -31,8 +35,12 @@ ASSETS = ["logo.svg", "social-preview.png"] + [f"demo-{d}-{lang}.{ext}" for d in
 CACHE = os.path.join(tempfile.gettempdir(), "stingward-site-cache")
 SEVERITY = {"🔴": "crit", "🟠": "high", "🟡": "med", "🔵": "low", "⚪": "info", "🟢": "ok"}
 ROW = r"^   [^ :]+(?: [^ :]+){0,2}: "  # "   where: ...", "   how to fix: ..." under a finding
-SAMPLE = {"pt": "exemplo", "en": "en/example"}  # where each language's sample report is published
-PAGE_DIR = {"pt": ".", "en": "en"}
+PAGE_DIR = {"en": ".", "pt": "pt"}  # English is the main site; Portuguese has its own folder
+SAMPLE = {"en": "example", "pt": "pt/exemplo"}  # where each language's sample report is published
+HREFLANG = {"en": "en", "pt": "pt-BR"}
+# The addresses the site had before English moved to the root, already shared, as old folder: (language, new folder).
+# Pages cannot redirect, so each old folder gets a page that sends the visitor on (see moved()).
+MOVED = {"en": ("en", "."), "en/example": ("en", "example"), "exemplo": ("pt", "pt/exemplo")}
 LINKS = ("audit_checkout", "team_waitlist")
 HTTPS = re.compile(r"https://[^\s\"'<>\\]+")
 
@@ -72,33 +80,53 @@ def unmd(text):
     return html.unescape(re.sub(r"\\(.)", r"\1", text)).replace("\u200b", "")
 
 
+def dot(sev):
+    return f'<b class="dot dot--{sev}" aria-hidden="true"></b>'
+
+
 def terminal(text):
-    """The CLI's text report as HTML lines, with the severity marks turned into classes."""
+    """The CLI's text report as HTML, one block per line, with the severity marks drawn as coloured dots."""
     out = []
     for line in text.rstrip("\n").split("\n"):
         mark = line[:1]
         if mark in SEVERITY and line[1:2] == " ":
-            rest = line[2:]
+            sev, rest = SEVERITY[mark], line[2:]
             label, _, title = rest.partition(" ")  # "CRITICAL" fills the padded column, so only one space may follow it
             if title and label.isupper() and len(label) > 1:
-                out.append(f'<span class="t-find"><b class="sev sev--{SEVERITY[mark]}">{e(label.strip())}</b> {e(title.strip())}</span>')
+                out.append(f'<span class="t-find t-find--{sev}">{dot(sev)}<b class="t-lab">{e(label)}</b> {e(title.strip())}</span>')
             else:
-                out.append(f'<strong class="t-verdict t-verdict--{SEVERITY[mark]}">{e(rest)}</strong>')
+                out.append(f'<span class="t-verdict t-verdict--{sev}">{dot(sev)}{e(rest)}</span>')
         elif re.match(r"^ \d+\. \S ", line) and line[4:5] in SEVERITY:  # "Fix these first" item
             num, _, rest = line.strip().partition(" ")
-            out.append(f'<span class="t-row"><b class="sev sev--{SEVERITY[line[4]]}">{e(num)}</b> {e(rest[2:])}</span>')
+            title, sep, where = rest[2:].rpartition(" · ")
+            if not sep:
+                title, where = where, ""
+            out.append(f'<span class="t-item"><i class="t-n">{e(num)}</i>{dot(SEVERITY[line[4]])}{e(title)}'
+                       f'<span class="t-dim">{e(sep)}{e(where)}</span></span>')
         elif re.match(r"^(?:Corrija primeiro|Fix these first):$", line):
-            out.append(f'<span class="t-find">{e(line)}</span>')
+            out.append(f'<span class="t-head">{e(line)}</span>')
         elif re.match(ROW, line):
             key, _, val = line.strip().partition(": ")
-            out.append(f'<span class="t-row"><i>{e(key)}:</i> {e(val)}</span>')
+            tag = re.search(r"\s+(\[[^\]]+\])$", val)
+            if tag:
+                val, tag = val[:tag.start()], f' <span class="t-dim">{e(tag.group(1))}</span>'
+            out.append(f'<span class="t-row"><i>{e(key)}:</i> {e(val)}{tag or ""}</span>')
         elif line.startswith("   http"):
             out.append(f'<span class="t-row t-dim">{e(line.strip())}</span>')
         elif re.match(r"^(?:Resumo|Summary):", line):
-            out.append(f'<strong class="t-sum">{e(line)}</strong>')
+            out.append(f'<span class="t-sum">{e(line)}</span>')
+        elif re.match(r"^stingward \S+ · |^(?:Sources|Bases consultadas|README badge|Selo para o README):", line):
+            out.append(f'<span class="t-dim">{e(line)}</span>')
         else:
-            out.append(f'<span class="t-dim">{e(line)}</span>' if line else "")
-    return "\n".join(out)
+            out.append(f'<span class="t-line">{e(line)}</span>' if line else '<span class="t-gap"></span>')
+    return "".join(out)
+
+
+def split_fact(num, text):
+    """"23.8 million" and "keys and passwords..." become "23.8" and "million keys and passwords...": the same words in
+    the same order, with the figure alone in the column of figures."""
+    head, _, unit = num.partition(" ")
+    return (head, f"{unit} {text}") if unit else (num, text)
 
 
 def fill(s, extra=None):
@@ -112,19 +140,20 @@ def count_tests():
     return unittest.defaultTestLoader.discover(os.path.join(ROOT, "tests"), top_level_dir=ROOT).countTestCases()
 
 
-# The logo without its gradient: a flat honey shield with the two stripes, for the price figure.
-SHIELD = ('<svg class="figure__shield" viewBox="0 0 64 64" aria-hidden="true" focusable="false">'
-          '<clipPath id="shield-clip"><path d="M32 1.5 L52 13 V30 C52 40.5 45.8 47.2 37 51.2 C35 52.4 33.9 54.8 33.3 57.8 L32 63.5 '
-          'L30.7 57.8 C30.1 54.8 29 52.4 27 51.2 C18.2 47.2 12 40.5 12 30 V13 Z"/></clipPath>'
-          '<path d="M32 1.5 L52 13 V30 C52 40.5 45.8 47.2 37 51.2 C35 52.4 33.9 54.8 33.3 57.8 L32 63.5 L30.7 57.8 C30.1 54.8 29 52.4 27 '
-          '51.2 C18.2 47.2 12 40.5 12 30 V13 Z" fill="#F5B83D"/><g clip-path="url(#shield-clip)" fill="#1B1F27">'
-          '<path d="M0 19.5 Q32 25 64 19.5 V26.5 Q32 32 0 26.5 Z"/><path d="M0 33 Q32 38.5 64 33 V40 Q32 45.5 0 40 Z"/></g></svg>')
+def size(path):
+    """Width and height of a PNG, from its header."""
+    with open(path, "rb") as fh:
+        head = fh.read(24)
+    if head[:8] != b"\x89PNG\r\n\x1a\n":
+        raise SystemExit(f"site: {path} is not a PNG")
+    return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
 
 
-def video(root, name, label, height):
+def video(root, name, label):
     """A demo recording as a muted loop; its poster is the final frame, which is all a still page needs."""
-    return (f'<video class="demo" src="{root}assets/{name}.mp4" poster="{root}assets/{name}.png" width="974" height="{height}" '
-            f'muted loop playsinline preload="none" aria-label="{e(label)}"></video>')
+    width, height = size(os.path.join(ROOT, "docs", "assets", name + ".png"))
+    return (f'<video class="demo" src="{root}assets/{name}.mp4" poster="{root}assets/{name}.png" width="{width}" '
+            f'height="{height}" muted loop playsinline preload="none" aria-label="{e(label)}"></video>')
 
 
 def copy_button(t, command, cls="button"):
@@ -155,6 +184,17 @@ def link_to(target, here):
     return "./" if path == "." else path + "/"
 
 
+def address(folder):
+    """The published address of a folder given from the site root."""
+    return URL if folder == "." else URL + folder + "/"
+
+
+def alternates(folders):
+    """The head links of a page published in both languages: its address in each one, and English for everyone else."""
+    links = [(HREFLANG[lang], address(folders[lang])) for lang in ("en", "pt")] + [("x-default", address(folders["en"]))]
+    return "\n".join(f'<link rel="alternate" hreflang="{code}" href="{href}">' for code, href in links)
+
+
 def pairs(key, page, text):
     """zip for a text.json list and what the page builds for it. A different length means the texts drifted from the
     page, and zip would silently drop the extra entries."""
@@ -173,78 +213,135 @@ def from_demo(demo, path, snippet):
 
 # The note on top of the sample report. The report's policy (CSP) allows only inline CSS and blocks script, images,
 # fonts and outside files, so the note uses nothing else; in print it disappears and the PDF is the plain report.
-SAMPLE_CSS = (".sample{background:var(--ink);color:#fff}"
-              ".sample-in{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:10px 28px;"
-              "max-width:912px;margin:0 auto;padding:16px;font-size:14px;line-height:1.5}"
-              ".sample p{max-width:64ch}.sample strong{color:var(--honey)}"
-              ".sample-links{display:flex;flex-wrap:wrap;gap:6px 22px}"
-              ".sample a{color:#fff;font-weight:600;text-decoration-color:var(--honey);text-underline-offset:3px}"
+# Its text lines up with the report's own text column (880px sheet, 64px inside), so the two read as one page.
+SAMPLE_CSS = (".sample{background:#0e1013;color:#f1f2f4}"
+              ".sample-in{display:grid;gap:10px;max-width:880px;margin:0 auto;padding:20px 64px;font-size:14px;line-height:1.55}"
+              ".sample p{max-width:66ch}.sample strong{color:#f5b83d;font-weight:600}"
+              ".sample-links{display:flex;flex-wrap:wrap;gap:6px 24px}"
+              ".sample a{color:#f1f2f4;font-weight:600;text-decoration-color:#f5b83d;text-decoration-thickness:2px;text-underline-offset:4px}"
+              ".sample a:hover{color:#f5b83d}"
+              ".sample a:focus-visible{outline:3px solid #f5b83d;outline-offset:3px}"
+              "@media (max-width:700px){.sample-in{padding:16px}}"
               "@media print{.sample{display:none}}")
+
+# The page's own policy. Everything comes from the site itself: the stylesheet, the script, the font, the logo and the
+# demo recordings. The one inline script (it marks the page as having JavaScript) is allowed by its hash.
+CSP = ("default-src 'none'; script-src 'self' 'sha256-{hash}'; style-src 'self' 'unsafe-inline'; img-src 'self'; "
+       "media-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'")
+INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.S)
+CSP_SLOT = "@@csp@@"  # where the policy goes once the page is filled in and its inline script can be hashed
+
+
+def with_policy(page):
+    """The page with its policy filled in, allowing its one inline script by hash."""
+    scripts = INLINE_SCRIPT.findall(page)
+    if len(scripts) != 1:
+        raise SystemExit("site: the page must have exactly one inline script, the one its policy allows by hash")
+    digest = base64.b64encode(hashlib.sha256(scripts[0].encode("utf-8")).digest()).decode("ascii")
+    return page.replace(CSP_SLOT, CSP.replace("{hash}", digest), 1)
+
+
+# A page left at an old address. The refresh sends the visitor on and works without script; the script, allowed by
+# the same policy as the home pages, goes first and keeps the #section and query of the old link, which a refresh
+# drops. The plain link is for a browser that follows neither, and canonical tells search engines the new address.
+# The icon is the site's own, so the browser does not ask the server's root for one.
+MOVED_PAGE = """<!doctype html>
+<html lang="{lang}">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="{csp}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0; url={href}">
+<link rel="canonical" href="{url}">
+<link rel="icon" href="{root}assets/logo.svg" type="image/svg+xml">
+<title>{title}</title>
+<style>body{{margin:0;padding:32px 16px;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:#0e1013;color:#f1f2f4;overflow-wrap:anywhere}}a{{color:inherit;font-weight:600;text-decoration-color:#f5b83d;text-underline-offset:4px}}</style>
+</head>
+<body>
+<p>{text}:</p>
+<p><a id="to" href="{href}">{url}</a></p>
+<script>location.replace(document.getElementById("to").href + location.search + location.hash)</script>
+</body>
+</html>
+"""
+
+
+def moved(t, lang, old, new):
+    """The page at the old folder `old`, which now lives at the folder `new`."""
+    return with_policy(MOVED_PAGE.format(lang=HREFLANG[lang], csp=CSP_SLOT, href=link_to(new, old), url=address(new),
+                                         root=link_to(".", old), title=e(t["moved"]) + " · Stingward", text=e(t["moved"])))
+
+
+GRADE = re.compile(r"(?:Nota|Grade): ([A-F])")
 
 
 class Page:
+    # The report open when the page loads: the demo app, the one most visitors will recognise as their own.
+    FIRST_REPORT = 1
+
     def __init__(self, lang, t, demo, online, tests, urls=None):
         self.lang, self.t, self.demo, self.online, self.tests = lang, t, demo, online, tests
         self.urls = urls or dict.fromkeys(LINKS, "")
-        self.root = "" if lang == "pt" else "../"
+        self.root = "" if PAGE_DIR[lang] == "." else link_to(".", PAGE_DIR[lang])
         self.sample_href = link_to(SAMPLE[lang], PAGE_DIR[lang])
 
-    # ---------------------------------------------------------------- hero
+    def app_grade(self):
+        return json.loads(cli(["./my-saas"], self.demo, self.lang, "json", self.online))["grade"]
 
-    def tabs(self):
+    # ---------------------------------------------------------------- top of the page
+
+    def nav(self):
         targets = ["#why", "#report", "#finds", "#price"]
-        back = "\n".join(f'<a class="folder folder--{i + 1}" href="{href}"><span class="folder__tab">{e(name)}</span></a>'
-                         for i, (href, name) in enumerate(zip(targets, self.t["tabs"])))
-        return back
+        return "".join(f'<a class="nav__link" href="{href}">{e(name)}</a>' for href, name in zip(targets, self.t["tabs"]))
 
     def languages(self):
-        hrefs = {"pt": "./", "en": "en/"} if self.lang == "pt" else {"pt": "../", "en": "./"}
         links = []
-        for key, code, name, short in (("pt", "pt-BR", "Português", "PT"), ("en", "en", "English", "EN")):
-            label = f'<span class="lang__long">{name}</span><span class="lang__short">{short}</span>'
+        for key, name, short in (("en", "English", "EN"), ("pt", "Português", "PT")):
+            code = HREFLANG[key]
+            label = f'<span class="lang__long">{name}</span><span class="lang__short" aria-hidden="true">{short}</span>'
             if key == self.lang:  # the page you are on is marked, not linked
                 links.append(f'<span lang="{code}" aria-current="page">{label}</span>')
             else:
-                links.append(f'<a href="{hrefs[key]}" hreflang="{code}" lang="{code}">{label}</a>')
+                links.append(f'<a href="{link_to(PAGE_DIR[key], PAGE_DIR[self.lang])}" hreflang="{code}" lang="{code}">{label}</a>')
         return "".join(links)
 
-    # ---------------------------------------------------------------- why
-
-    def why(self):
-        return "\n".join(f'<li class="why__fact" data-reveal><p class="why__num">{e(num)}</p><p class="why__text">{e(text)} '
-                         f'<a class="why__src link-plain" href="{e(link)}">{e(source)}</a></p></li>'
-                         for num, text, source, link in self.t["why_facts"])
-
-    # ---------------------------------------------------------------- report
+    # ---------------------------------------------------------------- the three real reports, in the terminal
 
     def reports(self):
+        """A tab for each report, with the grade it really got, and the report itself as the terminal prints it."""
         t, lang = self.t, self.lang
         runs = [(["skill", "./pdf-helper"], self.demo, "stingward skill ./pdf-helper"),
                 (["./my-saas"], self.demo, "stingward ./my-saas"),
                 (["skill", "skills/stingward"], ROOT, "stingward skill skills/stingward")]
-        names, sheets, peek = [], [], ""
+        tabs, panels = [], []
         for i, ((args, cwd, shown), item) in enumerate(pairs("reports", runs, t["reports"])):
             text = cli(args, cwd, lang, online=self.online)
-            if i == 0:  # the hero shows the verdict and the first finding of this report
-                blocks = text.split("\n\n")
-                first = next(b for b in blocks[2:] if re.match(ROW, (b.split("\n") + [""])[1]))
-                opening = "\n\n".join([blocks[1], first])
-                peek = (f'<p class="sheet__cmd"><code><span aria-hidden="true">$ </span>{e(shown)}</code></p>'
-                        f'<pre class="sheet__out">{terminal(opening)}</pre>')
-            grade = re.search(r"(?:Nota|Grade): ([A-F])", text).group(1)
-            on = i == 0
-            names.append(
-                f'<button class="report__name" type="button" role="tab" id="report-tab-{i}" aria-controls="report-sheet-{i}" '
-                f'aria-selected="{str(on).lower()}" tabindex="{0 if on else -1}"><span class="report__title">{e(item["name"])}</span>'
-                f'<span class="report__note">{e(item["note"])}. {e(t["grade_word"])} {grade}.</span></button>')
-            sheets.append(
-                f'<div class="sheet" data-ui role="tabpanel" id="report-sheet-{i}" aria-labelledby="report-tab-{i}" tabindex="0"{"" if on else " hidden"}>'
-                f'<p class="sheet__cmd"><code><span aria-hidden="true">$ </span>{e(shown)}</code></p><pre class="sheet__out">{terminal(text)}</pre></div>')
-        return "\n".join(names), "\n".join(sheets), peek
+            grade = GRADE.search(text).group(1)
+            on = i == self.FIRST_REPORT
+            tabs.append(
+                f'<button class="term__tab" type="button" role="tab" id="report-tab-{i}" aria-controls="report-out-{i}" '
+                f'aria-selected="{str(on).lower()}" tabindex="{0 if on else -1}" data-grade="{grade}">'
+                f'<span class="term__name">{e(item["name"])}</span><span class="term__grade">{e(t["grade_word"])} {grade}</span></button>')
+            panels.append(
+                f'<pre class="term__out" role="tabpanel" id="report-out-{i}" aria-labelledby="report-tab-{i}" tabindex="0"'
+                f'{"" if on else " data-off"}><span class="t-note"><b aria-hidden="true"># </b>{e(item["note"])}</span>'
+                f'<span class="t-cmd"><b aria-hidden="true">$ </b>{e(shown)}</span>{terminal(text)}</pre>')
+        return "\n".join(tabs), "\n".join(panels)
+
+    # ---------------------------------------------------------------- why
+
+    def why(self):
+        rows = []
+        for num, text, source, link in self.t["why_facts"]:
+            figure, caption = split_fact(num, text)
+            rows.append(f'<li class="led"><p class="led__num" data-reveal>{e(figure)}</p>'
+                        f'<p class="led__cap" data-reveal>{e(caption)} <a class="src" href="{e(link)}">{e(source)}</a></p></li>')
+        return "\n".join(rows)
 
     # ---------------------------------------------------------------- how it works
 
     def stages(self):
+        """The four stages of an audit of the demo app, each with the piece of it that stage really produces."""
         t = self.t
         app = os.path.join(self.demo, "my-saas")
         files = sorted(os.path.relpath(os.path.join(d, f), app).replace(os.sep, "/")
@@ -254,32 +351,33 @@ class Page:
         # What the dependency check sends: each pinned version, and the lowest version of each range without a lockfile.
         pinned, _, ranges = deps.collect(Context(root=app, files=files))
         pkgs = sorted({(eco, name, ver) for eco, name, ver, _, _ in pinned} | {(r.eco, r.name, r.floor) for r in ranges})
-        body = json.dumps({"queries": [{"package": {"ecosystem": eco, "name": n}, "version": v} for eco, n, v in pkgs]}, indent=1)
+        queries = ",\n".join(" " + json.dumps({"package": {"ecosystem": eco, "name": n}, "version": v}) for eco, n, v in pkgs)
+        body = '{"queries": [\n' + queries + "\n]}"
         frag_osv = f'<p class="frag__title">{e(t["sent_to"])}</p><pre class="frag__code">{e(body)}</pre>'
         groups = {}
         for rule in RULES:
             groups.setdefault(rule[:3], []).append(rule)
         frag_checks = '<ul class="frag__groups">' + "".join(
-            f'<li><span class="frag__group">{e(t["groups"][g])} <b>{len(ids)}</b></span>'
+            f'<li><span class="frag__group">{e(t["groups"][g])}</span><b class="frag__count">{len(ids)}</b>'
             f'<code class="frag__ids">{" ".join(e(i) for i in ids)}</code></li>'
             for g, ids in sorted(groups.items(), key=lambda kv: -len(kv[1]))) + "</ul>"
-        grade = json.loads(cli(["./my-saas"], self.demo, self.lang, "json", self.online))["grade"]
-        frag_grade = (f'<p class="frag__title">./my-saas</p><ol class="frag__grades">'
-                      + "".join(f'<li{" class=is-on" if g == grade else ""}><b>{g}</b> {e(m)}</li>' for g, m in t["grades"]) + "</ol>")
-        frags = [frag_files, frag_osv, frag_checks, frag_grade]
-        panes, names = [], []
-        for i, (frag, stage) in enumerate(pairs("stages", frags, t["stages"])):
-            hidden = "" if i == 0 else " hidden"
-            panes.append(f'<div class="frag" data-ui data-stage="{i}"{hidden}>{frag}</div>')
-            names.append(f'<li data-stage="{i}"{" class=is-on" if i == 0 else ""}>{e(stage["name"])}</li>')
-        clauses = json.dumps([fill(s["clause"]) for s in t["stages"]], ensure_ascii=False)
-        details = json.dumps([fill(s["detail"]) for s in t["stages"]], ensure_ascii=False)
-        first = t["stages"][0]
-        return {"stage_clause": e(fill(first["clause"])), "stage_detail": e(fill(first["detail"])),
-                "stage_names": "\n".join(names), "stage_panes": "\n".join(panes),
-                "stage_clauses": e(clauses), "stage_details": e(details), "stage_max": str(len(frags) - 1)}
+        grade = self.app_grade()  # the only grade marked here is the one the demo app really got
+        frag_grade = (f'<p class="frag__title">./my-saas</p><ol class="frag__grades" aria-label="{e(t["grades_label"])}">'
+                      + "".join(f'<li class="frag__grade{" is-on" if g == grade else ""}"><b>{g}</b> <span>{e(m)}</span></li>'
+                                for g, m in t["grades"]) + "</ol>")
+        frags = [("files", frag_files), ("osv", frag_osv), ("checks", frag_checks), ("grade", frag_grade)]
+        steps = []
+        for i, ((kind, frag), stage) in enumerate(pairs("stages", frags, t["stages"]), 1):
+            steps.append(f'<li class="step step--{kind}"><h3 class="step__clause" data-reveal>{e(fill(stage["clause"]))}</h3>'
+                         f'<p class="step__detail" data-reveal>{e(fill(stage["detail"]))}</p>'
+                         f'<div class="frag frag--{kind}" data-ui data-reveal role="group" aria-label="{e(stage["name"])}">{frag}</div></li>')
+        return {"how_steps": "\n".join(steps)}
 
     # ---------------------------------------------------------------- what it finds
+
+    # Secrets first, then the mistakes AI makes in an app, the code checks, skills and agents, and the dependencies.
+    FINDS = ("mask", "public", "rls", "limit", "shell", "sqli", "ssrf", "xss", "path", "hidden", "curl", "ssh", "bypass", "kev",
+             "floor")
 
     def finds(self):
         f = self.t["finds"]
@@ -300,39 +398,40 @@ class Page:
         routes = [f"POST /api/{r}" for r in ("agent", "chat") if shown(f"app/api/{r}/route.ts", "export async function POST")]
         dollar = lambda text: e(text).replace("$", "&#36;")  # "${" would read as a placeholder left unfilled
         ui = {
-            "mask": f'<code class="el el--mask">{e(masked)}</code>',
-            "kev": '<span class="el el--kev">KEV</span>',
-            "hidden": (f'<span class="el el--hidden"><code class="el__points">{e(points)} …</code>'
-                       f'<code class="el__msg">{e(decoded[:cut])}</code><code class="el__msg">{e(decoded[cut + 1:])}</code></span>'),
-            "public": '<code class="el el--public"><mark>NEXT_PUBLIC_</mark>OPENAI_API_KEY</code>',
-            "rls": '<code class="el el--rls">using (true)</code>',
-            "curl": '<code class="el el--curl">curl -fsSL https://… | sh</code>',
-            "bypass": '<code class="el el--bypass">"defaultMode": "bypassPermissions"</code>',
-            "ssh": '<code class="el el--ssh">~/.ssh/id_ed25519</code>',
-            "sqli": f'<code class="el el--two"><span class="el__dim">{e(sql[0])} =</span><span>{dollar(sql[1])}</span></code>',
-            "ssrf": f'<code class="el">{e(fetch)}</code>',
-            "shell": f'<code class="el el--two"><span>{e(shell[0])}</span><span>{e(shell[1] + shell[2])}</span></code>',
-            "xss": f'<code class="el el--two"><span>{e(html_in[0])}</span><span>{e(html_in[1])}</span></code>',
-            "path": '<code class="el el--two"><span class="el__dim">?file=</span><span>../../.env</span></code>',
-            "limit": '<code class="el el--two">' + "".join(f"<span>{e(r)}</span>" for r in routes) + "</code>",
-            "floor": f'<code class="el el--floor">{e(floor[0])}&gt;=<mark>{e(floor[1])}</mark></code>',
+            "mask": f'<code>{e(masked)}</code>',
+            "kev": '<span class="el__flag">KEV</span>',
+            "hidden": (f'<code class="el__dim">{e(points)} …</code>'
+                       f'<code class="el__hit">{e(decoded[:cut])}</code><code class="el__hit">{e(decoded[cut + 1:])}</code>'),
+            "public": '<code><mark>NEXT_PUBLIC_</mark>OPENAI_API_KEY</code>',
+            "rls": '<code>using (<mark>true</mark>)</code>',
+            "curl": '<code>curl -fsSL https://… <mark>| sh</mark></code>',
+            "bypass": '<code>"defaultMode": <mark>"bypassPermissions"</mark></code>',
+            "ssh": '<code><mark>~/.ssh/id_ed25519</mark></code>',
+            "sqli": f'<code><span class="el__dim">{e(sql[0])} =</span> <mark>{dollar(sql[1])}</mark></code>',
+            "ssrf": f'<code><mark>{e(fetch)}</mark></code>',
+            "shell": f'<code><mark>{e(shell[0])}</mark>{e(shell[1] + shell[2])}</code>',
+            "xss": f'<code>{e(html_in[0])} <mark>{e(html_in[1])}</mark></code>',
+            "path": '<code><span class="el__dim">?file=</span><mark>../../.env</mark></code>',
+            "limit": "".join(f"<code>{e(r)}</code>" for r in routes),
+            "floor": f'<code>{e(floor[0])}&gt;=<mark>{e(floor[1])}</mark></code>',
         }
+        if set(ui) != set(self.FINDS) or set(f) != set(self.FINDS):
+            raise SystemExit("site: the finds on the page and in text.json differ")
 
-        def tile(key):
+        def row(key):
             name, line = f[key]
-            return (f'<div class="tile tile--{key}" data-reveal><div class="tile__ui" data-ui aria-hidden="true">{ui[key]}</div>'
-                    f'<p class="tile__cap"><strong>{e(name)}</strong><span>{e(line)}</span></p></div>')
-        return {k: tile(k) for k in ui}
+            return (f'<li class="find find--{key}"><h3 class="find__name">{e(name)}</h3>'
+                    f'<div class="find__ui" data-ui>{ui[key]}</div><p class="find__line">{e(line)}</p></li>')
+        return "\n".join(row(k) for k in self.FINDS)
 
     # ---------------------------------------------------------------- where it runs
 
     def where(self):
+        """Four places Stingward runs, as tabs beside one view: the two terminal recordings, the Claude Code commands and
+        the first rows of the real pull request comment."""
         t, lang, root = self.t, self.lang, self.root
         rows = t["where"]
         app_text = json.loads(cli(["./my-saas"], self.demo, lang, "json", self.online))
-        counts = {}
-        for fnd in app_text["findings"]:
-            counts[fnd["severity"]] = counts.get(fnd["severity"], 0) + 1
         # The first rows of the real PR comment: one row per problem, with every place it was found, in its order.
         comment = cli(["./my-saas"], self.demo, lang, "markdown", self.online)
         sev_cls = {ICON["critical"]: "crit", ICON["high"]: "high", ICON["medium"]: "med", ICON["low"]: "low"}
@@ -340,38 +439,40 @@ class Page:
             f'<li><b class="sev sev--{sev_cls[icon]}">{e(label)}</b> {e(unmd(title))}<code>{e(unmd(where))}</code></li>'
             for icon, label, title, where in MD_ROW.findall(comment)[:5])
         previews = [
-            video(root, f"demo-app-{lang}", rows[0]["alt"], 758),
-            video(root, f"demo-skill-{lang}", rows[1]["alt"], 858),
-            ('<div class="cc" data-ui><p><code>/plugin marketplace add HiveControlAgents/StingWard</code></p>'
-             '<p><code>/plugin install stingward@stingward</code></p>'
-             f'<p class="cc__ask"><code>&gt; {e(rows[2]["ask1"])}</code></p><p class="cc__ask"><code>&gt; {e(rows[2]["ask2"])}</code></p></div>'),
-            (f'<div class="pr" data-ui><p class="pr__head"><span class="pr__grade">stingward {e(app_text["grade"])}</span> '
-             f'{e(rows[3]["comment_title"])}</p><ul class="pr__rows">{comment_rows}</ul></div>'),
+            ("video", video(root, f"demo-app-{lang}", rows[0]["alt"])),
+            ("video", video(root, f"demo-skill-{lang}", rows[1]["alt"])),
+            ("cc", '<div class="cc" data-ui><p><code>/plugin marketplace add HiveControlAgents/StingWard</code></p>'
+                   '<p><code>/plugin install stingward@stingward</code></p>'
+                   f'<p class="cc__ask"><code>&gt; {e(rows[2]["ask1"])}</code></p><p class="cc__ask"><code>&gt; {e(rows[2]["ask2"])}</code></p></div>'),
+            ("pr", f'<div class="pr" data-ui><p class="pr__head"><span class="pr__grade">stingward {e(app_text["grade"])}</span> '
+                   f'{e(rows[3]["comment_title"])}</p><ul class="pr__rows">{comment_rows}</ul></div>'),
         ]
-        out = []
-        for i, (prev, row) in enumerate(pairs("where", previews, rows)):
-            out.append(f'<li class="index__item" data-reveal><button class="index__row" type="button" data-pane="{i}">'
-                       f'<span class="index__name">{e(row["name"])}</span><code class="index__cmd">{e(row["cmd"])}</code></button>'
-                       f'<div class="index__thumb">{prev}</div></li>')
-        frame = "".join(f'<div class="index__pane" data-pane="{i}">{p}</div>' for i, p in enumerate(previews))
-        return "\n".join(out), frame
+        tabs, panes = [], []
+        for i, ((kind, prev), row) in enumerate(pairs("where", previews, rows)):
+            on = i == 0
+            tabs.append(f'<button class="dock__tab" type="button" role="tab" id="where-tab-{i}" aria-controls="where-pane-{i}" '
+                        f'aria-selected="{str(on).lower()}" tabindex="{0 if on else -1}"><span class="dock__name">{e(row["name"])}</span>'
+                        f'<code class="dock__cmd">{e(row["cmd"])}</code></button>')
+            panes.append(f'<div class="dock__pane dock__pane--{kind}" role="tabpanel" id="where-pane-{i}" aria-labelledby="where-tab-{i}" '
+                         f'tabindex="0"{"" if on else " data-off"}>{prev}</div>')
+        return "\n".join(tabs), "\n".join(panes)
 
     # ---------------------------------------------------------------- the rest
 
     def proof(self):
         return "\n".join(
-            f'<a class="proof__tile" href="{e(fill(link))}" data-reveal><strong>{e(fill(name, {"tests": str(self.tests)}))}</strong>'
-            f'<span>{e(line)}</span></a>' for name, line, link in self.t["proof"])
+            f'<li><a class="tile" href="{e(fill(link))}"><strong class="tile__name">{e(fill(name, {"tests": str(self.tests)}))}</strong>'
+            f'<span class="tile__line">{e(line)}</span></a></li>' for name, line, link in self.t["proof"])
 
     def faq(self):
         return "\n".join(
-            f'<details class="faq__item" name="faq" data-reveal><summary><span>{e(q)}</span><i aria-hidden="true"></i></summary>'
-            f'<p>{e(a)}</p></details>' for q, a in self.t["faq"])
+            f'<details class="faq__item" name="faq"><summary><span class="faq__q">{e(q)}</span><i class="faq__sign" aria-hidden="true"></i></summary>'
+            f'<p class="faq__a">{e(a)}</p></details>' for q, a in self.t["faq"])
 
     def footer_cols(self):
         return "\n".join(
             f'<div class="footer__col"><h3>{e(title)}</h3><ul>'
-            + "".join(f'<li><a class="link" href="{e(fill(href, {"sample": self.sample_href}))}">{e(fill(name))}</a></li>'
+            + "".join(f'<li><a href="{e(fill(href, {"sample": self.sample_href}))}">{e(fill(name))}</a></li>'
                       for name, href in links)
             + "</ul></div>" for title, links in self.t["footer_cols"])
 
@@ -379,7 +480,7 @@ class Page:
 
     def offers(self):
         t, urls = self.t, self.urls
-        return {"audit_button": offer(urls["audit_checkout"], t["audit_buy"], t["soon"], "button button--ink"),
+        return {"audit_button": offer(urls["audit_checkout"], t["audit_buy"], t["soon"]),
                 "soon_button": offer(urls["team_waitlist"], t["soon_button"], t["soon"]),
                 "audit_gets": "\n".join(f"<li>{e(x)}</li>" for x in t["audit_gets"]),
                 "audit_not": "\n".join(f"<li>{e(x)}</li>" for x in t["audit_not"])}
@@ -393,40 +494,40 @@ class Page:
                 f'<p><strong>{e(t["sample_title"])}</strong> {e(fill(t["sample_text"]))}</p><p class="sample-links">'
                 f'<a href="{link_to(PAGE_DIR[lang], here)}">{e(t["sample_home"])}</a>'
                 f'<a href="{link_to(PAGE_DIR[lang], here)}#audit">{e(t["sample_audit"])}</a>'
-                f'<a href="{link_to(SAMPLE[other], here)}" hreflang="{"en" if other == "en" else "pt-BR"}" '
-                f'lang="{"en" if other == "en" else "pt-BR"}">{e(t["sample_other"])}</a></p></div></aside>')
+                f'<a href="{link_to(SAMPLE[other], here)}" hreflang="{HREFLANG[other]}" '
+                f'lang="{HREFLANG[other]}">{e(t["sample_other"])}</a></p></div></aside>')
         head, sep, body = report.partition("</head>")
-        if not sep or head.count("</style>") != 1 or not body.startswith("\n<body>\n"):
+        if not sep or head.count("</style>") != 1 or not head.endswith("</style>\n") or not body.startswith("\n<body>\n"):
             raise SystemExit("site: the HTML report changed shape; update Page.sample")
-        return head.replace("</style>", SAMPLE_CSS + "</style>") + sep + body.replace("<body>\n", "<body>\n" + note + "\n", 1)
+        # its address and its other language; these links load nothing, so the report's policy stays as it is
+        links = f'<link rel="canonical" href="{address(here)}">\n{alternates(SAMPLE)}\n'
+        return (head.replace("</style>", SAMPLE_CSS + "</style>") + links + sep
+                + body.replace("<body>\n", "<body>\n" + note + "\n", 1))
 
     def render(self):
         t = self.t
-        names, sheets, peek = self.reports()
-        where_rows, where_frame = self.where()
+        report_tabs, report_panels = self.reports()
+        where_tabs, where_panes = self.where()
         values = {k: e(fill(v)) for k, v in t.items() if isinstance(v, str)}
         values.update({
             "root": self.root, "url": URL, "repo": REPO, "version": __version__,
-            "canonical": URL + ("" if self.lang == "pt" else "en/"),
-            "languages": self.languages(), "why_facts": self.why(),
-            "hero_h1": "".join(f'<span class="display__line">{e(line)}</span>' for line in t["hero_h1"]),
-            "tabs": self.tabs(), "front_tab": e(t["tabs"][4]),
-            "hero_copy": copy_button(t, "pipx install stingward"),
+            "canonical": address(PAGE_DIR[self.lang]), "alternates": alternates(PAGE_DIR),
+            "languages": self.languages(), "nav_links": self.nav(), "front_tab": e(t["tabs"][4]),
+            "why_facts": self.why(),
+            "hero_h1": "".join(f'<span class="line"><span>{e(line)}</span></span>' for line in t["hero_h1"]),
+            "hero_copy": copy_button(t, "pipx install stingward", "button install__copy"),
             "report_p": e(fill(t["report_p"])),
-            "report_names": names, "report_sheets": sheets, "hero_peek": peek,
-            "where_rows": where_rows, "where_frame": where_frame,
-            "proof_tiles": self.proof(), "faq_items": self.faq(),
+            "report_tabs": report_tabs, "report_panels": report_panels,
+            "where_tabs": where_tabs, "where_panes": where_panes,
+            "proof_items": self.proof(), "faq_items": self.faq(), "find_rows": self.finds(),
             "price_lines": "\n".join(f"<li>{e(fill(x))}</li>" for x in t["price_lines"]),
-            "cta_copy": copy_button(t, t["cta_cmd"], "cta__button"),
-            "footer_cols": self.footer_cols(), "shield": SHIELD, "sample_href": self.sample_href,
-            "wordmark": "".join(f'<span class="mark__block mark__block--{i % 3}" style="--h:{h}%">{c}</span>'
-                                for i, (c, h) in enumerate(zip("Stingward", (100, 72, 86, 64, 94, 78, 60, 88, 70)))),
+            "cta_copy": copy_button(t, t["cta_cmd"], "button cta__copy"),
+            "footer_cols": self.footer_cols(), "sample_href": self.sample_href, "csp": CSP_SLOT,
         })
         values.update(self.stages())
         values.update(self.offers())
-        values.update({"find_" + k: v for k, v in self.finds().items()})
         with open(os.path.join(SITE, "page.html"), encoding="utf-8") as fh:
-            return string.Template(fh.read()).substitute(values)
+            return with_policy(string.Template(fh.read()).substitute(values))
 
 
 def build(out, online=False):
@@ -437,10 +538,15 @@ def build(out, online=False):
     files = {}
     with tempfile.TemporaryDirectory() as demo:
         subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "demo", "fixtures.py"), demo], check=True, capture_output=True)
-        for lang in ("pt", "en"):
+        for lang in ("en", "pt"):
             page = Page(lang, text[lang], demo, online, tests, urls)
-            files[posixpath.join(PAGE_DIR[lang], "index.html")] = page.render()
+            files[posixpath.normpath(posixpath.join(PAGE_DIR[lang], "index.html"))] = page.render()
             files[posixpath.join(SAMPLE[lang], "index.html")] = page.sample()
+    for old, (lang, new) in MOVED.items():
+        rel_path = posixpath.join(old, "index.html")
+        if rel_path in files:
+            raise SystemExit(f"site: {old}/ is both a page and an old address")
+        files[rel_path] = moved(text[lang], lang, old, new)
     if os.path.isdir(out):
         shutil.rmtree(out)
     for rel_path, content in files.items():

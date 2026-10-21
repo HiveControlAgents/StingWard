@@ -3,201 +3,180 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
 <title>${title}</title>
 <meta name="description" content="${description}">
 <link rel="canonical" href="${canonical}">
-<link rel="alternate" hreflang="pt-BR" href="${url}">
-<link rel="alternate" hreflang="en" href="${url}en/">
+${alternates}
 <meta property="og:type" content="website">
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${description}">
 <meta property="og:url" content="${canonical}">
 <meta property="og:image" content="${url}assets/social-preview.png">
 <meta property="og:locale" content="${og_locale}">
+<meta property="og:locale:alternate" content="${og_locale_alt}">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#F5B83D">
+<meta name="theme-color" content="#0e1013">
+<meta name="color-scheme" content="dark">
 <link rel="icon" href="${root}assets/logo.svg" type="image/svg+xml">
-<link rel="preload" href="${root}fonts/schibsted-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="${root}fonts/hanken-grotesk-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="${root}fonts/jetbrains-mono-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="${root}style.css">
 <script>document.documentElement.classList.add('js')</script>
 </head>
 <body>
 <a class="skip" href="#main">${skip}</a>
 
-<header class="hero" id="top">
-  <div class="topbar">
-    <a class="topbar__link link" href="${repo}">${nav_github}</a>
-    <a class="wordmark" href="${root}./" aria-label="Stingward"><img src="${root}assets/logo.svg" alt="" width="30" height="30"><span>Stingward</span></a>
-    <nav class="lang" aria-label="${lang_label}">${languages}</nav>
-  </div>
-  <div class="hero__title">
-    <h1 class="display" data-rise style="--i:0">${hero_h1}</h1>
-    <p class="hero__lead" data-rise style="--i:1">${hero_lead}</p>
-  </div>
-  <nav class="stack" aria-label="Stingward">
-    ${tabs}
-    <div class="folder folder--front">
-      <a class="folder__tab" href="#where">${front_tab}</a>
-      <div class="folder__body">
-        <div class="install">
-          <div class="install__cmd"><code>pipx install stingward</code>${hero_copy}</div>
-          <p class="install__more">${hero_more} <a class="link-plain" href="${repo}">${hero_source}</a></p>
-        </div>
-        <div class="peek sheet" data-ui aria-hidden="true">${hero_peek}</div>
-      </div>
-    </div>
-  </nav>
+<header class="top" id="top">
+  <a class="brand" href="./" aria-label="Stingward"><img src="${root}assets/logo.svg" alt="" width="26" height="26"><span>Stingward</span></a>
+  <nav class="nav" aria-label="${nav_label}">${nav_links}<a class="nav__link" href="${repo}">${nav_github}</a></nav>
+  <nav class="lang" aria-label="${lang_label}">${languages}</nav>
+  <a class="button button--small top__act" href="#where">${front_tab}</a>
 </header>
 
 <main id="main">
 
+<div class="hero">
+  <h1 class="hero__title">${hero_h1}</h1>
+  <div class="hero__words">
+    <p class="hero__lead">${hero_lead}</p>
+    <div class="install"><code class="install__cmd">pipx install stingward</code>${hero_copy}</div>
+    <p class="hero__more">${hero_more} <a href="${repo}">${hero_source}</a></p>
+  </div>
+  <section class="report" id="report" aria-labelledby="report-h">
+    <div class="report__words">
+      <h2 class="head" id="report-h" data-reveal>${report_h2}</h2>
+      <p data-reveal>${report_p}</p>
+      <p class="report__more" data-reveal>${report_more}</p>
+      <a class="button" href="${sample_href}">${report_sample}</a>
+    </div>
+    <div class="stage">
+      <div class="stage__ground" aria-hidden="true"></div>
+      <div class="term" data-ui>
+        <div class="term__tabs" role="tablist" aria-labelledby="report-h">
+${report_tabs}
+        </div>
+${report_panels}
+      </div>
+    </div>
+  </section>
+</div>
+
 <section class="why" id="why" aria-labelledby="why-h">
-  <h2 class="head why__head" id="why-h" data-reveal>${why_h2}</h2>
-  <p class="why__lead" data-reveal>${why_p}</p>
-  <ol class="why__facts">
+  <div class="why__words">
+    <h2 class="head" id="why-h" data-reveal>${why_h2}</h2>
+    <p class="why__lead" data-reveal>${why_p}</p>
+  </div>
+  <ol class="ledger">
 ${why_facts}
   </ol>
 </section>
 
-<section class="report" id="report" aria-labelledby="report-h">
-  <div class="report__index">
-    <h2 class="head" id="report-h" data-reveal>${report_h2}</h2>
-    <p class="report__intro" data-reveal>${report_p}</p>
-    <div class="report__names" role="tablist" aria-labelledby="report-h" data-reveal>
-${report_names}
-    </div>
-    <div class="report__more" data-reveal>
-      <p>${report_more}</p>
-      <a class="button" href="${sample_href}">${report_sample}</a>
-    </div>
-  </div>
-  <div class="report__stage">
-${report_sheets}
-  </div>
-</section>
-
-<section class="how" id="how" aria-label="${how_label}" data-clauses="${stage_clauses}" data-details="${stage_details}">
-  <div class="how__words">
-    <h2 class="how__clause" aria-live="polite">${stage_clause}</h2>
-    <p class="how__detail">${stage_detail}</p>
-    <div class="how__control">
-      <input class="how__range" type="range" min="0" max="${stage_max}" step="1" value="0" aria-label="${how_label}">
-      <ol class="how__names">
-${stage_names}
-      </ol>
-    </div>
-  </div>
-  <div class="how__stage">
-${stage_panes}
-  </div>
+<section class="how" id="how" aria-labelledby="how-h">
+  <h2 class="head" id="how-h" data-reveal>${how_label}</h2>
+  <ol class="how__steps">
+${how_steps}
+  </ol>
 </section>
 
 <section class="finds" id="finds" aria-labelledby="finds-h">
-  <div class="board">
-    <div class="tile tile--head" data-reveal><h2 class="head" id="finds-h">${finds_h2}</h2><p class="tile__lead">${finds_p}</p></div>
-    ${find_mask}
-    ${find_kev}
-    ${find_hidden}
-    ${find_public}
-    ${find_rls}
-    ${find_curl}
-    ${find_bypass}
-    ${find_ssh}
-    ${find_sqli}
-    ${find_ssrf}
-    ${find_shell}
-    ${find_xss}
-    ${find_path}
-    ${find_limit}
-    ${find_floor}
+  <div class="finds__head">
+    <h2 class="head" id="finds-h" data-reveal>${finds_h2}</h2>
+    <p data-reveal>${finds_p}</p>
   </div>
+  <ul class="finds__list">
+${find_rows}
+  </ul>
 </section>
 
 <section class="where" id="where" aria-labelledby="where-h">
   <h2 class="head" id="where-h" data-reveal>${where_h2}</h2>
-  <div class="index">
-    <ul class="index__list">
-${where_rows}
-    </ul>
-    <div class="index__frame">${where_frame}</div>
+  <div class="dock">
+    <div class="dock__view">
+${where_panes}
+    </div>
+    <div class="dock__tabs" role="tablist" aria-labelledby="where-h">
+${where_tabs}
+    </div>
   </div>
 </section>
 
-<section class="proof" aria-labelledby="proof-h">
-  <div class="proof__board">
-    <div class="proof__head" data-reveal><h2 class="head" id="proof-h">${proof_h2}</h2><p>${proof_p}</p></div>
-${proof_tiles}
+<section class="proof" id="proof" aria-labelledby="proof-h">
+  <div class="proof__head">
+    <h2 class="head" id="proof-h">${proof_h2}</h2>
+    <p>${proof_p}</p>
   </div>
+  <ul class="proof__tiles">
+${proof_items}
+  </ul>
 </section>
 
 <section class="price" id="price" aria-labelledby="price-h">
-  <div class="price__words" data-reveal>
-    <h2 class="head" id="price-h">${price_h2}</h2>
-    <p>${price_p}</p>
-  </div>
-  <div class="price__figure">
-    <p class="figure" data-reveal><span class="figure__cur">${currency}</span><span class="figure__num">0</span><span class="figure__per">${price_period}</span>
-      ${shield}</p>
-    <ul class="price__lines" data-reveal>
+  <p class="figure price__figure" data-reveal><span class="figure__cur">${currency}</span><span class="figure__num">0</span><span class="figure__per">${price_period}</span></p>
+  <div class="price__words">
+    <h2 class="head" id="price-h" data-reveal>${price_h2}</h2>
+    <p data-reveal>${price_p}</p>
+    <ul class="price__lines">
 ${price_lines}
     </ul>
-    <a class="button" href="#where" data-reveal>${price_button}</a>
+    <a class="button" href="#where">${price_button}</a>
   </div>
 </section>
 
 <section class="audit" id="audit" aria-labelledby="audit-h">
-  <div class="audit__words" data-reveal>
-    <h2 class="head audit__head" id="audit-h">${audit_h2}</h2>
-    <p class="audit__lead">${audit_p}</p>
+  <div class="audit__ground" aria-hidden="true"></div>
+  <div class="audit__words">
+    <h2 class="head" id="audit-h" data-reveal>${audit_h2}</h2>
+    <p class="audit__lead" data-reveal>${audit_p}</p>
   </div>
-  <p class="figure audit__figure" data-reveal><span class="figure__cur">${audit_currency}</span><span class="figure__num">${audit_price}</span><span class="figure__per">${audit_per}</span></p>
-  <div class="audit__act" data-reveal>${audit_button}<a class="link-plain" href="${sample_href}">${report_sample}</a></div>
-  <div class="audit__list" data-reveal>
+  <div class="audit__offer">
+    <p class="figure audit__figure" data-reveal><span class="figure__cur">${audit_currency}</span><span class="figure__num">${audit_price}</span><span class="figure__per">${audit_per}</span></p>
+    <div class="audit__act">${audit_button}<a href="${sample_href}">${report_sample}</a></div>
+  </div>
+  <div class="audit__list audit__list--gets">
     <h3>${audit_gets_h}</h3>
-    <ul class="audit__gets">
+    <ul>
 ${audit_gets}
     </ul>
   </div>
-  <div class="audit__list" data-reveal>
+  <div class="audit__list audit__list--not">
     <h3>${audit_not_h}</h3>
-    <ul class="audit__not">
+    <ul>
 ${audit_not}
     </ul>
   </div>
-  <div class="soon" data-reveal>
-    <span class="soon__tab">${soon_tab}</span>
+  <div class="soon" role="group" aria-label="${soon_tab}">
     <h3 class="soon__title">${soon_h3}</h3>
     <p>${soon_p}</p>
-    <div class="soon__act">${soon_button}<a class="soon__link link-plain" href="${repo}/releases">${soon_link}</a></div>
+    <div class="soon__act">${soon_button}<a href="${repo}/releases">${soon_link}</a></div>
   </div>
 </section>
 
-<section class="faq" aria-labelledby="faq-h">
-  <h2 class="head faq__head" id="faq-h">${faq_h2}</h2>
+<section class="faq" id="faq" aria-labelledby="faq-h">
+  <h2 class="head faq__head" id="faq-h" data-reveal>${faq_h2}</h2>
   <div class="faq__list">
 ${faq_items}
   </div>
 </section>
 
-<section class="cta" aria-labelledby="cta-line">
-  <p class="cta__line" id="cta-line">${cta_before} <code class="cta__cmd">${cta_cmd}</code>${cta_copy}</p>
-  <p class="cta__note">${cta_note}</p>
+<section class="cta" id="run" aria-labelledby="cta-h">
+  <h2 class="cta__line" id="cta-h" data-reveal>${cta_before}<span class="sr-only"> ${cta_cmd}</span></h2>
+  <p class="cta__cmd" data-reveal><code>${cta_cmd}</code>${cta_copy}</p>
+  <p class="cta__note" data-reveal>${cta_note}</p>
 </section>
 
 </main>
 
 <footer class="footer">
-  <p class="mark" aria-label="Stingward">${wordmark}</p>
-  <div class="footer__grid">
-${footer_cols}
-    <div class="footer__contact">
-      <p>${footer_contact_1} <a class="link-plain" href="${repo}/security/advisories/new">${footer_contact_link}</a></p>
-      <p>${footer_contact_2}</p>
-    </div>
+  <div class="footer__lead">
+    <p class="footer__brand"><img src="${root}assets/logo.svg" alt="" width="32" height="32"><span>Stingward</span></p>
+    <p>${footer_contact_2}</p>
+    <p>${footer_contact_1} <a href="${repo}/security/advisories/new">${footer_contact_link}</a></p>
   </div>
+${footer_cols}
   <div class="footer__last">
     <p>${footer_copy} Stingward ${version}.</p>
-    <a class="button button--small" href="#top">${footer_top}</a>
+    <a href="#top">${footer_top}</a>
   </div>
 </footer>
 
