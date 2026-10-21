@@ -1,8 +1,10 @@
-"""Builds the Stingward website into a folder, in Portuguese (the root) and English (en/).
+"""Builds the Stingward website into a folder, in English (the root) and Portuguese (pt/).
 
 Every report and number on the page comes from this checkout: the script runs Stingward on the README
 demos and on its own skill, reads the rules and counts the tests, so the site cannot drift from the code.
-The sample report (exemplo/ and en/example/) is the real HTML report of the demo app, with a note on top.
+The sample report (example/ and pt/exemplo/) is the real HTML report of the demo app, with a note on top.
+The addresses the site had before English moved to the root (en/, en/example/ and exemplo/) are small pages
+that send the visitor on to the new ones.
 
     python site/build.py _site            # offline reports, as the tests build it
     python site/build.py _site --online   # with dependency results from OSV.dev, as the Pages workflow builds it
@@ -33,8 +35,12 @@ ASSETS = ["logo.svg", "social-preview.png"] + [f"demo-{d}-{lang}.{ext}" for d in
 CACHE = os.path.join(tempfile.gettempdir(), "stingward-site-cache")
 SEVERITY = {"🔴": "crit", "🟠": "high", "🟡": "med", "🔵": "low", "⚪": "info", "🟢": "ok"}
 ROW = r"^   [^ :]+(?: [^ :]+){0,2}: "  # "   where: ...", "   how to fix: ..." under a finding
-SAMPLE = {"pt": "exemplo", "en": "en/example"}  # where each language's sample report is published
-PAGE_DIR = {"pt": ".", "en": "en"}
+PAGE_DIR = {"en": ".", "pt": "pt"}  # English is the main site; Portuguese has its own folder
+SAMPLE = {"en": "example", "pt": "pt/exemplo"}  # where each language's sample report is published
+HREFLANG = {"en": "en", "pt": "pt-BR"}
+# The addresses the site had before English moved to the root, already shared, as old folder: (language, new folder).
+# Pages cannot redirect, so each old folder gets a page that sends the visitor on (see moved()).
+MOVED = {"en": ("en", "."), "en/example": ("en", "example"), "exemplo": ("pt", "pt/exemplo")}
 LINKS = ("audit_checkout", "team_waitlist")
 HTTPS = re.compile(r"https://[^\s\"'<>\\]+")
 
@@ -148,6 +154,17 @@ def link_to(target, here):
     return "./" if path == "." else path + "/"
 
 
+def address(folder):
+    """The published address of a folder given from the site root."""
+    return URL if folder == "." else URL + folder + "/"
+
+
+def alternates(folders):
+    """The head links of a page published in both languages: its address in each one, and English for everyone else."""
+    links = [(HREFLANG[lang], address(folders[lang])) for lang in ("en", "pt")] + [("x-default", address(folders["en"]))]
+    return "\n".join(f'<link rel="alternate" hreflang="{code}" href="{href}">' for code, href in links)
+
+
 def pairs(key, page, text):
     """zip for a text.json list and what the page builds for it. A different length means the texts drifted from the
     page, and zip would silently drop the extra entries."""
@@ -183,6 +200,47 @@ CSP = ("default-src 'none'; script-src 'self' 'sha256-{hash}'; style-src 'self' 
 INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.S)
 CSP_SLOT = "@@csp@@"  # where the policy goes once the page is filled in and its inline script can be hashed
 
+
+def with_policy(page):
+    """The page with its policy filled in, allowing its one inline script by hash."""
+    scripts = INLINE_SCRIPT.findall(page)
+    if len(scripts) != 1:
+        raise SystemExit("site: the page must have exactly one inline script, the one its policy allows by hash")
+    digest = base64.b64encode(hashlib.sha256(scripts[0].encode("utf-8")).digest()).decode("ascii")
+    return page.replace(CSP_SLOT, CSP.replace("{hash}", digest), 1)
+
+
+# A page left at an old address. The refresh sends the visitor on and works without script; the script, allowed by
+# the same policy as the home pages, goes first and keeps the #section and query of the old link, which a refresh
+# drops. The plain link is for a browser that follows neither, and canonical tells search engines the new address.
+# The icon is the site's own, so the browser does not ask the server's root for one.
+MOVED_PAGE = """<!doctype html>
+<html lang="{lang}">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="{csp}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0; url={href}">
+<link rel="canonical" href="{url}">
+<link rel="icon" href="{root}assets/logo.svg" type="image/svg+xml">
+<title>{title}</title>
+<style>body{{margin:0;padding:32px 16px;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1b1f27;overflow-wrap:anywhere}}a{{color:inherit;font-weight:600;text-underline-offset:4px}}</style>
+</head>
+<body>
+<p>{text}:</p>
+<p><a id="to" href="{href}">{url}</a></p>
+<script>location.replace(document.getElementById("to").href + location.search + location.hash)</script>
+</body>
+</html>
+"""
+
+
+def moved(t, lang, old, new):
+    """The page at the old folder `old`, which now lives at the folder `new`."""
+    return with_policy(MOVED_PAGE.format(lang=HREFLANG[lang], csp=CSP_SLOT, href=link_to(new, old), url=address(new),
+                                         root=link_to(".", old), title=e(t["moved"]) + " · Stingward", text=e(t["moved"])))
+
+
 GRADES = "ABCDF"
 
 
@@ -190,7 +248,7 @@ class Page:
     def __init__(self, lang, t, demo, online, tests, urls=None):
         self.lang, self.t, self.demo, self.online, self.tests = lang, t, demo, online, tests
         self.urls = urls or dict.fromkeys(LINKS, "")
-        self.root = "" if lang == "pt" else "../"
+        self.root = "" if PAGE_DIR[lang] == "." else link_to(".", PAGE_DIR[lang])
         self.sample_href = link_to(SAMPLE[lang], PAGE_DIR[lang])
 
     def app_grade(self):
@@ -219,14 +277,14 @@ class Page:
         return "".join(f'<a class="nav__link link" href="{href}">{e(name)}</a>' for href, name in zip(targets, self.t["tabs"]))
 
     def languages(self):
-        hrefs = {"pt": "./", "en": "en/"} if self.lang == "pt" else {"pt": "../", "en": "./"}
         links = []
-        for key, code, name, short in (("pt", "pt-BR", "Português", "PT"), ("en", "en", "English", "EN")):
+        for key, name, short in (("en", "English", "EN"), ("pt", "Português", "PT")):
+            code = HREFLANG[key]
             label = f'<span class="lang__long">{name}</span><span class="lang__short">{short}</span>'
             if key == self.lang:  # the page you are on is marked, not linked
                 links.append(f'<span lang="{code}" aria-current="page">{label}</span>')
             else:
-                links.append(f'<a href="{hrefs[key]}" hreflang="{code}" lang="{code}">{label}</a>')
+                links.append(f'<a href="{link_to(PAGE_DIR[key], PAGE_DIR[self.lang])}" hreflang="{code}" lang="{code}">{label}</a>')
         return "".join(links)
 
     # ---------------------------------------------------------------- why
@@ -421,12 +479,15 @@ class Page:
                 f'<p><strong>{e(t["sample_title"])}</strong> {e(fill(t["sample_text"]))}</p><p class="sample-links">'
                 f'<a href="{link_to(PAGE_DIR[lang], here)}">{e(t["sample_home"])}</a>'
                 f'<a href="{link_to(PAGE_DIR[lang], here)}#audit">{e(t["sample_audit"])}</a>'
-                f'<a href="{link_to(SAMPLE[other], here)}" hreflang="{"en" if other == "en" else "pt-BR"}" '
-                f'lang="{"en" if other == "en" else "pt-BR"}">{e(t["sample_other"])}</a></p></div></aside>')
+                f'<a href="{link_to(SAMPLE[other], here)}" hreflang="{HREFLANG[other]}" '
+                f'lang="{HREFLANG[other]}">{e(t["sample_other"])}</a></p></div></aside>')
         head, sep, body = report.partition("</head>")
-        if not sep or head.count("</style>") != 1 or not body.startswith("\n<body>\n"):
+        if not sep or head.count("</style>") != 1 or not head.endswith("</style>\n") or not body.startswith("\n<body>\n"):
             raise SystemExit("site: the HTML report changed shape; update Page.sample")
-        return head.replace("</style>", SAMPLE_CSS + "</style>") + sep + body.replace("<body>\n", "<body>\n" + note + "\n", 1)
+        # its address and its other language; these links load nothing, so the report's policy stays as it is
+        links = f'<link rel="canonical" href="{address(here)}">\n{alternates(SAMPLE)}\n'
+        return (head.replace("</style>", SAMPLE_CSS + "</style>") + links + sep
+                + body.replace("<body>\n", "<body>\n" + note + "\n", 1))
 
     def render(self):
         t = self.t
@@ -436,7 +497,7 @@ class Page:
         values = {k: e(fill(v)) for k, v in t.items() if isinstance(v, str)}
         values.update({
             "root": self.root, "url": URL, "repo": REPO, "version": __version__,
-            "canonical": URL + ("" if self.lang == "pt" else "en/"),
+            "canonical": address(PAGE_DIR[self.lang]), "alternates": alternates(PAGE_DIR),
             "languages": self.languages(), "nav_links": self.nav(), "front_tab": e(t["tabs"][4]),
             "why_facts": self.why(),
             "hero_h1": "".join(f'<span class="line"><span data-line style="--i:{i}">{e(line)}</span></span>'
@@ -455,12 +516,7 @@ class Page:
         values.update(self.stages())
         values.update(self.offers())
         with open(os.path.join(SITE, "page.html"), encoding="utf-8") as fh:
-            page = string.Template(fh.read()).substitute(values)
-        scripts = INLINE_SCRIPT.findall(page)
-        if len(scripts) != 1:
-            raise SystemExit("site: the page must have exactly one inline script, the one its policy allows by hash")
-        digest = base64.b64encode(hashlib.sha256(scripts[0].encode("utf-8")).digest()).decode("ascii")
-        return page.replace(CSP_SLOT, CSP.replace("{hash}", digest), 1)
+            return with_policy(string.Template(fh.read()).substitute(values))
 
 
 def build(out, online=False):
@@ -471,10 +527,15 @@ def build(out, online=False):
     files = {}
     with tempfile.TemporaryDirectory() as demo:
         subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "demo", "fixtures.py"), demo], check=True, capture_output=True)
-        for lang in ("pt", "en"):
+        for lang in ("en", "pt"):
             page = Page(lang, text[lang], demo, online, tests, urls)
-            files[posixpath.join(PAGE_DIR[lang], "index.html")] = page.render()
+            files[posixpath.normpath(posixpath.join(PAGE_DIR[lang], "index.html"))] = page.render()
             files[posixpath.join(SAMPLE[lang], "index.html")] = page.sample()
+    for old, (lang, new) in MOVED.items():
+        rel_path = posixpath.join(old, "index.html")
+        if rel_path in files:
+            raise SystemExit(f"site: {old}/ is both a page and an old address")
+        files[rel_path] = moved(text[lang], lang, old, new)
     if os.path.isdir(out):
         shutil.rmtree(out)
     for rel_path, content in files.items():

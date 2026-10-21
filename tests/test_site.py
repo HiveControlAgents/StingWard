@@ -5,6 +5,7 @@ import html
 import importlib.util
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -17,8 +18,14 @@ from stingward.rules import RULES
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, "site")
 FAKE_KEY_PART = "Demo7Fake9Key0Not4Real"
-PAGES = {"pt": "index.html", "en": os.path.join("en", "index.html")}
-SAMPLES = {"pt": os.path.join("exemplo", "index.html"), "en": os.path.join("en", "example", "index.html")}
+URL = "https://hivecontrolagents.github.io/StingWard/"
+# English is the main site, at the root; Portuguese lives under pt/. Paths are given from the site's root.
+PAGES = {"en": "index.html", "pt": "pt/index.html"}
+SAMPLES = {"en": "example/index.html", "pt": "pt/exemplo/index.html"}
+# The addresses the site had before English moved to the root. They were shared, so each one must still lead somewhere:
+# the old folder, the language of the page left there and the folder the page moved to.
+MOVED = {"en/": ("en", ""), "en/example/": ("en", "example/"), "exemplo/": ("pt", "pt/exemplo/")}
+HREFLANG = {"en": "en", "pt": "pt-BR"}
 
 
 def _text():
@@ -50,8 +57,20 @@ class Site(unittest.TestCase):
         cls.pages, cls.samples = {}, {}
         for pages, paths in ((cls.pages, PAGES), (cls.samples, SAMPLES)):
             for lang, rel in paths.items():
-                with open(os.path.join(cls.out, rel), encoding="utf-8") as fh:
-                    pages[lang] = fh.read()
+                pages[lang] = cls.file(rel)
+        cls.moved = {old: cls.file(old + "index.html") for old in MOVED}
+
+    @classmethod
+    def file(cls, rel):
+        with open(os.path.join(cls.out, *rel.split("/")), encoding="utf-8") as fh:
+            return fh.read()
+
+    def built(self):
+        """Every HTML file the build wrote, as a path from the site's root."""
+        for folder, _, names in os.walk(self.out):
+            for name in names:
+                if name.endswith(".html"):
+                    yield os.path.relpath(os.path.join(folder, name), self.out).replace(os.sep, "/")
 
     def every_page(self):
         for lang in PAGES:
@@ -123,15 +142,32 @@ class Site(unittest.TestCase):
                 self.assertNotIn(FAKE_KEY_PART, page)
                 self.assertNotIn("sk-proj-", page)
 
-    def test_local_links_and_files_exist(self):
-        for lang, rel, page in self.every_page():
-            base = os.path.dirname(os.path.join(self.out, rel))
-            for target in re.findall(r'(?:href|src|poster)="([^"]+)"', page):
-                if re.match(r"^[a-z]+:|^#", target):
-                    continue
+    def test_every_link_on_every_built_page_reaches_a_built_file(self):
+        """Relative links, the redirect of a moved page and the site's own absolute addresses (canonical, hreflang,
+        og:url, og:image) must all land on a file the build wrote; a folder counts only with its index.html. A link
+        that starts with "/" would leave the /StingWard/ folder Pages serves the site from, so there are none."""
+        pages = sorted(self.built())
+        self.assertEqual(len(pages), len(PAGES) + len(SAMPLES) + len(MOVED))
+        for rel in pages:
+            page = self.file(rel)
+            here = posixpath.dirname(rel)
+            targets = re.findall(r'\s(?:href|src|poster)="([^"]+)"', page)
+            targets += re.findall(r'<meta http-equiv="refresh" content="0; url=([^"]+)">', page)
+            targets += re.findall(r'<meta property="og:(?:url|image)" content="([^"]+)">', page)
+            for target in targets:
                 with self.subTest(page=rel, link=target):
-                    path = os.path.normpath(os.path.join(base, target.split("#", 1)[0]))
-                    self.assertTrue(os.path.exists(path), path)
+                    self.assertFalse(target.startswith("/"), target)
+                    if target.startswith(URL):
+                        path = target[len(URL):]
+                    elif re.match(r"^[a-z]+:|^#", target):
+                        continue
+                    else:
+                        path = posixpath.join(here, target)
+                    path = posixpath.normpath(path.split("#", 1)[0].split("?", 1)[0] or ".")
+                    self.assertFalse(path.startswith(".."), target)
+                    if os.path.isdir(os.path.join(self.out, *path.split("/"))):
+                        path = posixpath.join(path, "index.html")
+                    self.assertTrue(os.path.isfile(os.path.join(self.out, *path.split("/"))), path)
 
     def test_in_page_links_point_at_sections_that_exist(self):
         for lang, rel, page in self.every_page():
@@ -149,10 +185,92 @@ class Site(unittest.TestCase):
             return fh.read()
 
     def test_language_switch_marks_the_current_page(self):
-        self.assertIn('<span lang="pt-BR" aria-current="page">', self.pages["pt"])
-        self.assertIn('<a href="en/" hreflang="en" lang="en">', self.pages["pt"])
         self.assertIn('<span lang="en" aria-current="page">', self.pages["en"])
-        self.assertIn('<a href="../" hreflang="pt-BR" lang="pt-BR">', self.pages["en"])
+        self.assertIn('<a href="pt/" hreflang="pt-BR" lang="pt-BR">', self.pages["en"])
+        self.assertIn('<span lang="pt-BR" aria-current="page">', self.pages["pt"])
+        self.assertIn('<a href="../" hreflang="en" lang="en">', self.pages["pt"])
+        for lang, page in self.pages.items():  # English, the main language, comes first
+            with self.subTest(lang=lang):
+                switch = page.split('<nav class="lang"', 1)[1].split("</nav>", 1)[0]
+                self.assertLess(switch.index("English"), switch.index("Português"))
+
+    # ---------------------------------------------------------------- addresses
+
+    def test_english_is_the_root_and_portuguese_is_under_pt(self):
+        for lang, rel, page in self.every_page():
+            with self.subTest(page=rel):
+                self.assertIn(f'<html lang="{HREFLANG[lang]}">', page)
+                self.assertEqual(rel.startswith("pt/"), lang == "pt")
+        self.assertEqual(self.build.PAGE_DIR, {"en": ".", "pt": "pt"})
+        self.assertEqual(self.build.SAMPLE, {"en": "example", "pt": "pt/exemplo"})
+
+    def test_each_page_names_its_address_and_the_other_language(self):
+        """canonical is the page's own address, hreflang lists both languages and points x-default at English, and
+        the social card says the same address and both locales."""
+        locale = {"en": "en_US", "pt": "pt_BR"}
+        for paths in (PAGES, SAMPLES):
+            address = {lang: URL + posixpath.dirname(rel) + ("/" if posixpath.dirname(rel) else "")
+                       for lang, rel in paths.items()}
+            want = {"en": address["en"], "pt-BR": address["pt"], "x-default": address["en"]}
+            for lang, rel in paths.items():
+                page = self.file(rel)
+                with self.subTest(page=rel):
+                    self.assertEqual(re.findall(r'<link rel="canonical" href="([^"]+)">', page), [address[lang]])
+                    alternates = re.findall(r'<link rel="alternate" hreflang="([^"]+)" href="([^"]+)">', page)
+                    self.assertEqual(dict(alternates), want)
+                    self.assertEqual(len(alternates), 3)
+                    if paths is PAGES:
+                        self.assertEqual(re.findall(r'<meta property="og:url" content="([^"]+)">', page), [address[lang]])
+                        self.assertIn(f'<meta property="og:locale" content="{locale[lang]}">', page)
+                        other = locale["pt" if lang == "en" else "en"]
+                        self.assertIn(f'<meta property="og:locale:alternate" content="{other}">', page)
+                        self.assertIn(f'<meta property="og:image" content="{URL}assets/social-preview.png">', page)
+
+    def test_the_old_addresses_lead_to_the_new_ones(self):
+        """/en/, /en/example/ and /exemplo/ were shared before English moved to the root. Pages cannot redirect, so
+        each is a page that sends the visitor on at once, names the new address as canonical and links it for anyone
+        whose browser does not follow the refresh. Nothing picks the language from the browser."""
+        for old, (lang, new) in MOVED.items():
+            page = self.moved[old]
+            with self.subTest(old=old):
+                refresh = re.findall(r'<meta http-equiv="refresh" content="0; url=([^"]+)">', page)
+                self.assertEqual(len(refresh), 1)
+                target = posixpath.normpath(posixpath.join(old, refresh[0]))
+                self.assertEqual(target, posixpath.normpath(new or "."))
+                self.assertEqual(re.findall(r'<link rel="canonical" href="([^"]+)">', page), [URL + new])
+                self.assertIn(f'<a id="to" href="{refresh[0]}">{URL + new}</a>', page)
+                self.assertIn(f'<html lang="{HREFLANG[lang]}">', page)
+                self.assertIn(html.escape(_text()[lang]["moved"]), page)
+                arrived = self.file(new + "index.html")  # the new address is the real page, not one more hop
+                self.assertNotIn('http-equiv="refresh"', arrived)
+                self.assertIn(f'<html lang="{HREFLANG[lang]}">', arrived)
+                self.assertNotIn("navigator.language", page)
+                self.assertNotIn("hreflang", page)
+
+    def test_the_moved_pages_keep_the_site_policy_and_load_nothing_from_outside(self):
+        """The moved pages carry the same policy as the home pages. Their one inline script, allowed by its hash,
+        keeps the #section and the query of the old link; the refresh and the plain link work without it."""
+        for old, page in self.moved.items():
+            with self.subTest(old=old):
+                policies = re.findall(r'<meta http-equiv="Content-Security-Policy" content="([^"]+)">', page)
+                self.assertEqual(len(policies), 1)
+                inline = re.findall(r"<script>(.*?)</script>", page, re.S)
+                self.assertEqual(len(inline), 1)
+                self.assertIn("location.hash", inline[0])
+                digest = base64.b64encode(hashlib.sha256(inline[0].encode("utf-8")).digest()).decode("ascii")
+                self.assertEqual(policies[0], self.build.CSP.replace("{hash}", digest))
+                head = page.split("</head>", 1)[0]
+                self.assertLess(head.index("Content-Security-Policy"), head.index('http-equiv="refresh"'))
+                self.assertLess(head.index("Content-Security-Policy"), head.index("<style>"))
+                self.assertEqual(re.findall(r"<script\b[^>]*>", page), ["<script>"])
+                icon = posixpath.relpath("assets/logo.svg", old)  # the site's own icon, as the home pages have
+                self.assertEqual(re.findall(r"<link\b[^>]*>", page), [f'<link rel="canonical" href="{URL + MOVED[old][1]}">',
+                                                                      f'<link rel="icon" href="{icon}" type="image/svg+xml">'])
+                for tag in ("<img", "<video", "<iframe", "<object", "<embed", "<form", "@import", "url("):
+                    self.assertNotIn(tag, page)
+                self.assertIsNone(re.search(r"\s(?:src|srcset|poster|action)=", page))
+                for href in re.findall(r'<a [^>]*href="([^"]+)"', page):
+                    self.assertFalse(re.match(r"^(?:[a-z]+:|//|/)", href), href)
 
     def test_every_number_on_why_it_exists_links_its_source(self):
         with open(os.path.join(SITE, "text.json"), encoding="utf-8") as fh:
@@ -233,19 +351,21 @@ class Site(unittest.TestCase):
             t = text[lang]
             audit = page.split('id="audit"', 1)[1].split("</section>", 1)[0]
             with self.subTest(lang=lang):
-                self.assertIn(t["audit_h2"], audit)
-                self.assertIn(f'<span class="figure__cur">US$</span><span class="figure__num">149</span>', audit)
+                self.assertIn(html.escape(t["audit_h2"]), audit)
+                # US dollars in both: "US$" as Brazil writes it, "$" as English does
+                self.assertEqual(t["audit_currency"], {"pt": "US$", "en": "$"}[lang])
+                self.assertIn(f'<span class="figure__cur">{t["audit_currency"]}</span><span class="figure__num">149</span>', audit)
                 self.assertIn("48 h", t["audit_per"])
                 for line in t["audit_gets"] + t["audit_not"]:
-                    self.assertIn(f"<li>{line}</li>", audit)
-                self.assertIn(t["soon_h3"], audit)
+                    self.assertIn(f"<li>{html.escape(line)}</li>", audit)
+                self.assertIn(html.escape(t["soon_h3"]), audit)
                 # the sample report's note repeats the price: it must be the same one
-                self.assertIn(f'{t["audit_currency"]} {t["audit_price"]}', t["sample_audit"])
+                self.assertIn({"pt": "US$ 149", "en": "$149"}[lang], t["sample_audit"])
 
     # ---------------------------------------------------------------- the sample report
 
     def test_sample_report_is_linked_from_the_home_page(self):
-        for lang, href in (("pt", "exemplo/"), ("en", "example/")):
+        for lang, href in (("en", "example/"), ("pt", "exemplo/")):
             with self.subTest(lang=lang):
                 self.assertIn(f'<a class="button" href="{href}">{_text()[lang]["report_sample"]}</a>', self.pages[lang])
 
@@ -263,14 +383,17 @@ class Site(unittest.TestCase):
 
     def test_sample_report_keeps_its_policy_and_loads_nothing_from_outside(self):
         """The report's CSP allows inline CSS only. The note on top must not need anything else, or Pages would show it
-        broken: no script, no stylesheet, font or image file, and the policy comes before the first style."""
+        broken: no script, no stylesheet, font or image file, and the policy comes before the first style. Its only
+        links in the head are its address and its other language, which load nothing."""
         for lang, page in self.samples.items():
             with self.subTest(lang=lang):
                 meta = f'<meta http-equiv="Content-Security-Policy" content="{report_html.CSP}">'
                 self.assertEqual(page.count(meta), 1)
                 self.assertLess(page.index(meta), page.index("<style>"))
                 self.assertEqual(page.count("<style>"), 1)
-                for tag in ("<script", "<link", "<img", "<iframe", "<object", "<embed", "<form"):
+                for tag in re.findall(r"<link\b[^>]*>", page):
+                    self.assertRegex(tag, r'^<link rel="(?:canonical|alternate)" (?:hreflang="[^"]+" )?href="' + re.escape(URL))
+                for tag in ("<script", "<img", "<iframe", "<object", "<embed", "<form"):
                     self.assertNotIn(tag, page)
                 style = page.split("<style>", 1)[1].split("</style>", 1)[0]
                 self.assertNotIn("url(", style)
