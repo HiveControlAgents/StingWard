@@ -4,6 +4,8 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-21
+
 ### Added
 - GitHub Action input `category` (default `stingward`), passed to the SARIF upload, so a workflow that audits several folders keeps one code scanning result per folder.
 - Human review for audits you hand over. `--review-template FILE` writes a JSON file with one entry per finding (and keeps what was already reviewed when it runs again); the reviewer sets each `status` to `confirmed`, `false_positive`, `accepted_risk` or `fixed` and writes a `comment`. `--review FILE` applies it to every report: the HTML shows the status and comment on each finding, moves false positives to an appendix and says in the scope section that a person reviewed the report and how many findings were confirmed or discarded. False positives and findings fixed during the audit leave the grade, the fix-first list and `--fail-on`; accepted risks still count toward the grade but leave the fix-first list, and the plan lists them, with what was fixed, under "no action planned". The text and Markdown reports follow the same rules, and the JSON gets each finding's review, a review summary and the grade after the review.
@@ -218,7 +220,8 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 First public release: CLI (`pipx`, `uvx`, `npx`), Claude Code plugin and skill, and GitHub Action. Checks dependencies (OSV.dev, CISA KEV, EPSS, NVD), secrets, AI-built app mistakes, agent and MCP setups, and skills, with reports in text, Markdown, JSON and SARIF in English and Portuguese.
 
-[Unreleased]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.2...v0.1.3

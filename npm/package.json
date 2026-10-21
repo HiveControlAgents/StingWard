@@ -1,6 +1,6 @@
 {
   "name": "stingward",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Security check for AI-built projects, Claude Code skills and MCP servers: CVEs (OSV, NVD, CISA KEV, EPSS), leaked secrets, Supabase/Firebase/CORS mistakes and risky agent configs.",
   "bin": {"stingward": "bin/stingward.js"},
   "files": [
