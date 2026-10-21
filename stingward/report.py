@@ -50,6 +50,7 @@ T = {
         "first": "Corrija primeiro", "and_more": "e mais {n}",
         "client": "Preparado para", "notes": "Parecer do analista", "review": "revisão",
         "reviewed_by": "Revisado por {name}", "reviewed": "Revisado por uma pessoa",
+        "reviewed_ai": "Revisado por IA", "notes_ai": "Resumo",
         "status": {"confirmed": "Confirmado", "false_positive": "Alarme falso", "accepted_risk": "Risco aceito",
                    "fixed": "Corrigido", "": "Não revisado"},
         "n_status": {"confirmed": ("{n} confirmado", "{n} confirmados"),
@@ -90,6 +91,7 @@ T = {
         "first": "Fix these first", "and_more": "and {n} more",
         "client": "Prepared for", "notes": "Analyst summary", "review": "review",
         "reviewed_by": "Reviewed by {name}", "reviewed": "Reviewed by a person",
+        "reviewed_ai": "Reviewed by AI", "notes_ai": "Summary",
         "status": {"confirmed": "Confirmed", "false_positive": "False positive", "accepted_risk": "Accepted risk",
                    "fixed": "Fixed", "": "Not reviewed"},
         "n_status": {"confirmed": ("{n} confirmed", "{n} confirmed"),
@@ -531,9 +533,15 @@ def _review_head(audit, findings, lang):
     if audit.client:
         out.append((t["client"], audit.client))
     if audit.review is not None:
-        who = t["reviewed_by"].format(name=audit.reviewer) if audit.reviewer else t["reviewed"]
+        who = (t["reviewed_by"].format(name=audit.reviewer) if audit.reviewer
+               else t["reviewed_ai"] if audit.review.kind == "ai" else t["reviewed"])
         out.append((who, review_counts(findings, audit.review, lang) or "0"))
     return out
+
+
+def _notes_label(audit, t):
+    """O título do parecer: "Resumo" quando quem revisou foi uma IA."""
+    return t["notes_ai"] if audit.review is not None and audit.review.kind == "ai" else t["notes"]
 
 
 def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False, max_low=15, audit=None):
@@ -548,7 +556,7 @@ def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False,
     out += [f"{_clean(k)}: {_clean(v)}" for k, v in _review_head(audit, findings, lang)]
     out.append("")
     if audit and audit.notes:
-        out.append(f"{t['notes']}:")
+        out.append(f"{_notes_label(audit, t)}:")
         from .review import plain
         out += [f"  {_clean(line)}" if line else "" for line in plain(audit.notes, gap=True)]
         out.append("")
@@ -667,7 +675,7 @@ def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=No
     if head:
         out += [" · ".join(f"**{_esc(k)}:** {_esc(v)}" for k, v in head), ""]
     if audit and audit.notes:
-        out += [f"**{_esc(t['notes'])}**", ""] + _md_blocks(audit.notes)
+        out += [f"**{_esc(_notes_label(audit, t))}**", ""] + _md_blocks(audit.notes)
     if show_verdict and not empty:
         out += [_esc(verdict(valid, lang, ctx)), ""]
     unread = [f"⚠️ {_esc(x)}" for x in not_read_lines(ctx, lang)]  # perto da linha das bases, em todo caso
@@ -747,7 +755,10 @@ def as_json(ctx, findings, lang="pt", audit=None):
     # Sempre presente, mesmo vazio: quem lê o JSON não precisa testar se a chave existe.
     doc.update(sources=ctx.sources, not_read={"too_big": list(ctx.too_big), "truncated": bool(ctx.truncated)}, findings=items)
     if rv is not None:
-        doc["review"] = {"reviewer": audit.reviewer or None, "counts": {k or "unreviewed": v for k, v in counts(findings, rv).items()}}
+        # masked: algo nos comentários, no parecer ou nos nomes parecia segredo e saiu mascarado (os comentários já
+        # passaram pelo mascarador no laço acima). Quem gera o relatório sem uma pessoa olhar usa isso para não entregar.
+        doc["review"] = {"reviewer": audit.reviewer or None, "kind": rv.kind, "masked": audit.mask.changed,
+                         "counts": {k or "unreviewed": v for k, v in counts(findings, rv).items()}}
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
 
 

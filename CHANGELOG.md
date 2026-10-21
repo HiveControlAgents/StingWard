@@ -4,6 +4,9 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+- AI review in the review file: `"review_kind": "ai"` (the default is `"person"`). The HTML, text and Markdown reports then say AI review instead of human review, and the scope section says what was checked, in which files and on what date. An AI review refuses `accepted_risk`, because only the client can accept a risk, and accepts `fixed` only for a finding that is gone from a scan that could see it: not hidden by `.stingwardignore`, a `stingward:ignore` comment or the size and file limits. The HTML report also says that the code excerpt of each finding, with secrets masked, went to the AI model. The JSON review block gains `kind` and `masked`, which is true when something in a comment, the notes or a name looked like a secret and was masked, in any of the formats.
+
 ## [0.1.6] - 2026-10-21
 
 ### Added

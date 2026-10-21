@@ -30,12 +30,16 @@ import json
 import os
 import re
 from collections import defaultdict
+from types import SimpleNamespace
 
 from . import _redact as redact
 from . import report_html
 from .model import decode_text
 
 STATUSES = ("confirmed", "false_positive", "accepted_risk", "fixed")
+# Quem revisou: uma pessoa (o padrão) ou uma IA. Na revisão por IA, "accepted_risk" não vale (só o cliente aceita um
+# risco) e "fixed" só vale para achado que sumiu da varredura: quem diz que foi corrigido é a nova varredura.
+KINDS = ("person", "ai")
 MAX_FILE = 5_000_000      # arquivo de revisão
 MAX_NOTES = 200_000       # parecer
 MAX_NAME = 200            # cliente e quem revisou
@@ -285,17 +289,36 @@ def plain(blocks, gap=False):
 class Review:
     """O que quem revisou decidiu: fingerprint -> (status, comentário). Status vazio é "ainda não revisado"."""
 
-    def __init__(self, entries=None, reviewer="", raw=None, path=""):
+    def __init__(self, entries=None, reviewer="", raw=None, path="", kind="person"):
         self.entries = entries or {}
         self.reviewer = reviewer
         self.raw = raw or []
         self.path = path
+        self.kind = kind
 
     def get(self, f):
         return self.entries.get(f.fingerprint, ("", ""))
 
     def status(self, f):
         return self.get(f)[0]
+
+    def check(self, findings, ctx):
+        """Regras da revisão por IA que dependem da varredura: "fixed" só vale para achado que sumiu dela de verdade.
+        Continuar nela, ou sumir porque a varredura não olhou (limite de arquivos, arquivo grande demais, linha do
+        .stingwardignore, comentário stingward:ignore), é recusado."""
+        if self.kind != "ai":
+            return
+        for f in findings:
+            if self.status(f) == "fixed":
+                raise ReviewError(f'{self.path}: {f.fingerprint}: "fixed" numa revisão por IA só vale para achado que '
+                                  f'sumiu da varredura / in an AI review "fixed" only applies to a finding that is gone '
+                                  f'from the scan')
+        for fp, rule, _, where, _, _ in self.gone_fixed(findings):
+            why = _hidden(ctx, rule, where)
+            if why:
+                raise ReviewError(f'{self.path}: {fp}: "fixed" numa revisão por IA precisa que a varredura mostre que o '
+                                  f'achado sumiu, e {why[0]} / in an AI review "fixed" needs the scan to show the finding '
+                                  f'is gone, and {why[1]}')
 
     def stale(self, findings):
         """Itens do arquivo que não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu) e pedem
@@ -321,6 +344,29 @@ class Review:
             out.append((fp, rule if rule in RULES else "", severity if severity in SEVERITIES else "info",
                         one_line(block.get("where")), one_line(block.get("title")) or fp, self.entries[fp][1]))
         return out
+
+
+_WHERE = re.compile(r"(.+):\d+")
+
+
+def _hidden(ctx, rule, where):
+    """Por que esta varredura pode não ter visto o achado de `where` (o "arquivo:linha" do bloco "finding", escrito
+    à mão), em pt e en, ou None. O arquivo só é lido se está na lista desta varredura, e o caminho não vai para a
+    mensagem: o fingerprint já diz qual item é."""
+    from . import scan  # aqui e não no topo: scan importa este módulo
+    if ctx.truncated:
+        return ("a varredura parou no limite de arquivos", "the scan stopped at the file limit")
+    m = _WHERE.fullmatch(where)
+    rel = m.group(1) if m else where
+    if rel in ctx.too_big:
+        return ("o arquivo ficou fora dela por ser grande demais", "the file was too big to read")
+    if ctx.mode != "project":
+        return None
+    if scan._ignored(SimpleNamespace(rule=rule, file=rel), scan.load_ignore(ctx.root)):
+        return ("uma linha do .stingwardignore esconde o arquivo", "a .stingwardignore line hides the file")
+    if rel in ctx.files and "stingward:ignore" in ctx.read(rel):
+        return ("o arquivo tem um comentário stingward:ignore", "the file has a stingward:ignore comment")
+    return None
 
 
 def _status(value, where):
@@ -360,6 +406,12 @@ def load(path):
     reviewer = doc.get("reviewer") or ""
     if not isinstance(reviewer, str):
         raise ReviewError(f'{path}: "reviewer" tem que ser texto / must be a string')
+    kind = doc.get("review_kind", "person")
+    if not isinstance(kind, str):
+        raise ReviewError(f'{path}: "review_kind" tem que ser texto / must be a string')
+    if kind.strip().lower() not in KINDS:
+        raise ReviewError(f'{path}: "review_kind" {kind!r} não existe / does not exist (use {", ".join(KINDS)})')
+    kind = kind.strip().lower()
     entries, raw = {}, []
     for i, item in enumerate(doc["findings"], 1):
         where = f"{path}: findings[{i}]"
@@ -373,9 +425,13 @@ def load(path):
         comment = item.get("comment") or ""
         if not isinstance(comment, str):
             raise ReviewError(f'{where}: "comment" tem que ser texto / must be a string')
-        entries[fp] = (_status(item.get("status"), where), comment.strip())
+        status = _status(item.get("status"), where)
+        if kind == "ai" and status == "accepted_risk":
+            raise ReviewError(f"{where}: accepted_risk não vale numa revisão por IA: só o cliente aceita um risco / "
+                              f"is not allowed in an AI review: only the client can accept a risk")
+        entries[fp] = (status, comment.strip())
         raw.append(item)
-    return Review(entries, one_line(reviewer), raw, path)
+    return Review(entries, one_line(reviewer), raw, path, kind)
 
 
 def load_notes(path):
@@ -388,12 +444,14 @@ HELP = {
            "com **negrito** e `código`. Não cole segredos: eles saem mascarados. O bloco finding ajuda você a se "
            "localizar; o Stingward lê fingerprint, status e comment (e o bloco finding de um item fixed que sumiu, para "
            "listá-lo como corrigido). \"stale\": true marca um item que não bate mais "
-           "com nenhum achado: ele fica no fim, com o seu comentário, e a marca sai se o achado voltar."),
+           "com nenhum achado: ele fica no fim, com o seu comentário, e a marca sai se o achado voltar. review_kind: person "
+           "(uma pessoa revisou) ou ai (uma IA revisou; aí accepted_risk não vale, e fixed só vale para achado que sumiu)."),
     "en": ("status: confirmed, false_positive, accepted_risk or fixed (fixed during the audit); empty = not reviewed "
            "yet. comment: free text that goes into the report, with **bold** and `code`. Do not paste secrets: they "
            "come out masked. The finding block helps you find your way; Stingward reads fingerprint, status and "
            "comment (and the finding block of a fixed item that is gone, to list it as fixed). \"stale\": true marks an item that no longer matches any finding: it stays at the end, with your "
-           "comment, and the mark goes away if the finding comes back."),
+           "comment, and the mark goes away if the finding comes back. review_kind: person (a person reviewed) or ai (an AI "
+           "reviewed; then accepted_risk is not allowed, and fixed only applies to a finding that is gone)."),
 }
 
 
@@ -414,7 +472,7 @@ def template(findings, lang, old=None, target=""):
     kept = sum(1 for f in findings if any(old.entries.get(f.fingerprint, ("", ""))))
     stale = [dict(item, stale=True) for item in old.raw if str(item.get("fingerprint", "")).strip().lower() not in seen]
     doc = {"stingward_review": 1, "help": HELP[lang], "target": str(target or ""), "reviewer": old.reviewer,
-           "findings": items + stale}
+           "review_kind": old.kind, "findings": items + stale}
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n", kept, len(stale)
 
 
@@ -460,6 +518,11 @@ class Audit:
         # O bloco "finding" de um item do arquivo vai para o cliente como o comentário: mascarado do mesmo jeito.
         self.gone = [Gone(rule, sev, self.mask(where), self.mask(title), comment)
                      for _, rule, sev, where, title, comment in (review.gone_fixed(findings) if review is not None else [])]
+        # Cada comentário que algum formato mostra passa já aqui pelos dois mascaradores (blocos e linha a linha):
+        # masked no JSON e o aviso no fim valem para todos, qualquer que seja o formato e a ordem em que saem.
+        for text in [review.get(f)[1] for f in findings] + [g.comment for g in self.gone] if review is not None else []:
+            self.comment(text)
+            self.mask.lines(text)
 
     def comment(self, text):
         """O comentário de um item em blocos, já mascarado."""
