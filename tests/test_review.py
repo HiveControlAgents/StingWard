@@ -735,5 +735,57 @@ class AiReviewFile(AiCase):
         self.assertIn(code, (0, 1), err)
 
 
+class AiReviewHtml(AiCase):
+    def render(self, path, *extra, lang="en", root=None):
+        code, out, err = run([root or self.root, "--offline", "--format", "html", "--lang", lang, "--review", path] + list(extra))
+        self.assertIn(code, (0, 1), err)
+        return out
+
+    def section(self, out, sid):
+        m = re.search(rf'<section[^>]* id="{sid}">.*?</section>', out, re.S)
+        return m.group(0) if m else ""
+
+    def sections(self, out):
+        return "".join(self.section(out, sid) for sid in ("cover", "summary", "scope"))
+
+    def test_cover_scope_and_summary_say_ai(self):
+        notes = self.path("notes.md")
+        write(notes, "Short summary.\n")
+        out = self.render(self.ai({"SEC001": ("false_positive", "Test value.")}), "--notes", notes)
+        self.assertIn("<dt>AI review</dt>", self.section(out, "cover"))
+        scope = self.section(out, "scope")
+        self.assertIn("an AI read the code of each finding", scope)
+        self.assertIn("We checked the code and configuration", scope)
+        summary = self.section(out, "summary")
+        self.assertIn("After the AI review", summary)
+        self.assertIn('<h3 class="analyst-h">Summary</h3>', summary)
+        for human in ("by hand", "checked by a person", "Human review", "Analyst summary"):
+            self.assertNotIn(human, self.sections(out), human)
+
+    def test_portuguese(self):
+        notes = self.path("notes.md")
+        write(notes, "Resumo curto.\n")
+        out = self.render(self.ai({"SEC001": ("false_positive", "Valor de teste.")}), "--notes", notes, lang="pt")
+        for want in ("Revisão por IA", '<h3 class="analyst-h">Resumo</h3>', "uma IA leu o código de cada achado",
+                     "Conferimos o código e a configuração"):
+            self.assertIn(want, out)
+        for human in ("à mão", "conferida por uma pessoa", "Revisão humana", "Parecer do analista"):
+            self.assertNotIn(human, self.sections(out), human)
+
+    def test_clean_project_with_an_ai_review(self):
+        root = tree({"README.md": "# Hello\n"})
+        self.addCleanup(shutil.rmtree, root, True)
+        path = self.save_review({"stingward_review": 1, "review_kind": "ai", "findings": []})
+        code, out, err = run([root, "--offline", "--format", "html", "--lang", "en", "--review", path])
+        self.assertEqual(code, 0, err)
+        self.assertIn("<dt>AI review</dt>", self.section(out, "cover"))
+        self.assertNotIn("checked by a person", self.section(out, "scope"))
+
+    def test_person_review_keeps_its_words(self):
+        out = self.render(self.decide({"SEC001": ("false_positive", "Test value.")}))
+        self.assertIn("Human review", out)
+        self.assertIn("checked the findings by hand", out)
+
+
 if __name__ == "__main__":
     unittest.main()
