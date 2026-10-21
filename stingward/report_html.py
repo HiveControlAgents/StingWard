@@ -274,6 +274,53 @@ H = {
                           "The human review cuts down false alarms but does not rule out mistakes: it is one person's judgment with what was available on this date. If something does not match what you know about the app, ask the reviewer."],
     },
 }
+# Revisão por IA ("review_kind": "ai" no arquivo de revisão): só as frases que mudam. A IA confirma ou descarta; risco
+# aceito não existe nela, e o que foi corrigido vem da nova varredura.
+H_AI = {
+    "pt": {
+        "review_meta": "Revisão por IA", "reviewer_none": "uma IA", "notes_h": "Resumo",
+        "grade_rule": "Depois da revisão por IA, os alarmes falsos e o que foi corrigido não contam.",
+        "review_line": "Revisão por IA: {counts}.",
+        "appendix_intro": "A revisão por IA leu o código destes achados e concluiu que não são problema neste projeto, com o motivo junto de cada um. Eles não contam para a nota, para o plano nem para o que corrigir primeiro. Ficam aqui para você ver o que foi descartado e por quê.",
+        "human_h": "Revisão por IA",
+        "human_intro": "Depois da varredura automática, {who} leu o código de cada achado e marcou cada um como confirmado ou alarme falso. Na dúvida, o achado ficou confirmado. O comentário da revisão aparece junto de cada achado.",
+        "human_rules": ["Contam para a nota os achados confirmados e os que ainda não foram revisados.",
+                        "Alarmes falsos não contam: saem da nota, do plano e da lista do que corrigir primeiro e ficam no apêndice, com o motivo.",
+                        "O que foi corrigido e sumiu de uma nova varredura não conta para a nota, mas continua no relatório, marcado como corrigido."],
+        "method_review": "Uma IA leu o código de cada achado e marcou o resultado: confirmado ou alarme falso.",
+        "limits_review": ["Conferimos o código e a configuração dos arquivos listados acima, nesta data, com as regras do Stingward, e uma IA revisou cada achado. Não é um teste de invasão: ninguém tentou entrar no app rodando.",
+                          "Ficam de fora o app em funcionamento, as regras de negócio, as configurações do servidor e da nuvem e tudo o que não está nestes arquivos.",
+                          "Um relatório limpo quer dizer que nenhum dos problemas comuns que o Stingward conhece apareceu nestes arquivos nesta data.",
+                          "Falhas novas são publicadas todo dia: uma dependência boa hoje pode ter falha amanhã. Verifique de novo depois de mudar o app.",
+                          "A revisão por IA tira a maior parte dos alarmes falsos, mas pode errar. Na dúvida, o achado ficou confirmado. Se algo não bater com o que você sabe do app, confira no código antes de mexer."],
+    },
+    "en": {
+        "review_meta": "AI review", "reviewer_none": "an AI", "notes_h": "Summary",
+        "grade_rule": "After the AI review, false positives and what was fixed do not count.",
+        "review_line": "AI review: {counts}.",
+        "appendix_intro": "The AI review read the code of these findings and concluded they are not a problem in this project, with the reason next to each one. They do not count toward the grade, the plan or what to fix first. They are listed so you can see what was discarded and why.",
+        "human_h": "AI review",
+        "human_intro": "After the automated scan, {who} read the code of each finding and marked each one as confirmed or false positive. When in doubt, the finding stayed confirmed. The review's comment appears next to each finding.",
+        "human_rules": ["Confirmed findings and findings not reviewed yet count toward the grade.",
+                        "False positives do not count: they leave the grade, the plan and the fix-first list, and move to the appendix with the reason.",
+                        "What was fixed and is gone from a new scan does not count toward the grade, but stays in the report, marked as fixed."],
+        "method_review": "An AI read the code of each finding and marked the outcome: confirmed or false positive.",
+        "limits_review": ["We checked the code and configuration of the files listed above, on this date, with Stingward's rules, and an AI reviewed every finding. This is not a penetration test: nobody tried to break into the running app.",
+                          "Out of scope: the running app, business logic, server and cloud settings, and anything that is not in these files.",
+                          "A clean report means none of the common problems Stingward knows showed up in these files on this date.",
+                          "New vulnerabilities are published every day: a dependency that is fine today can have a flaw tomorrow. Check again after you change the app.",
+                          "The AI review removes most false alarms, but it can be wrong. When in doubt, the finding stayed confirmed. If something does not match what you know about the app, check the code before you change it."],
+    },
+}
+
+
+def texts_for(lang, audit):
+    """As frases do relatório: as da revisão por IA no lugar das da revisão humana quando o arquivo diz "ai"."""
+    if audit is not None and audit.review is not None and audit.review.kind == "ai":
+        return dict(H[lang], **H_AI[lang])
+    return H[lang]
+
+
 MONTHS = {"pt": ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"],
           "en": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]}
 
@@ -932,7 +979,7 @@ def render(ctx, findings, lang="pt", target=None, checks=None, today=None, audit
     """O relatório inteiro. checks: verificações que rodaram (padrão: todas). today: data do relatório (padrão: hoje).
     audit: a revisão humana (review.Audit), com cliente, parecer e o status e comentário de cada achado."""
     lang = lang if lang in H else "en"
-    t = H[lang]
+    t = texts_for(lang, audit)
     checks = [c for c in CHECK_ORDER if checks is None or c in checks]
     today = today or datetime.date.today()
     rv = audit.review if audit is not None else None
