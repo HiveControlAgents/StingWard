@@ -787,5 +787,48 @@ class AiReviewHtml(AiCase):
         self.assertIn("checked the findings by hand", out)
 
 
+class AiReviewOtherFormats(AiCase):
+    def notes(self, text="First.\n"):
+        path = self.path("notes.md")
+        write(path, text)
+        return path
+
+    def test_text_says_reviewed_by_ai(self):
+        code, out, _ = run([self.root, "--offline", "--no-color", "--review", self.ai({}), "--notes", self.notes()])
+        self.assertIn("Reviewed by AI: ", out)
+        self.assertIn("Summary:\n  First.\n", out)
+        self.assertNotIn("Reviewed by a person", out)
+        self.assertNotIn("Analyst summary", out)
+
+    def test_markdown_says_ai(self):
+        code, out, _ = run([self.root, "--offline", "--format", "markdown", "--review", self.ai({}), "--notes", self.notes()])
+        self.assertIn("**Reviewed by AI:**", out)
+        self.assertIn("**Summary**", out)
+        self.assertNotIn("Analyst summary", out)
+
+    def test_portuguese_text(self):
+        code, out, _ = run([self.root, "--offline", "--no-color", "--lang", "pt", "--review", self.ai({}), "--notes", self.notes()])
+        self.assertIn("Revisado por IA: ", out)
+        self.assertIn("Resumo:\n  First.\n", out)
+        self.assertNotIn("Parecer do analista", out)
+
+    def test_json_kind_and_masked(self):
+        code, out, _ = run([self.root, "--offline", "--format", "json", "--review", self.ai({"SEC001": ("confirmed", "Seen.")})])
+        doc = json.loads(out)
+        self.assertEqual(doc["review"]["kind"], "ai")
+        self.assertIs(doc["review"]["masked"], False)
+
+    def test_json_masked_when_a_comment_or_the_notes_carry_a_secret(self):
+        for comment, notes in ((f"token {GH}", "Fine.\n"), ("Seen.", f"The key {OAI} leaked.\n")):
+            path = self.ai({"SEC001": ("confirmed", comment)})
+            code, out, _ = run([self.root, "--offline", "--format", "json", "--review", path, "--notes", self.notes(notes)])
+            self.assertIs(json.loads(out)["review"]["masked"], True, comment)
+            self.assertNoSecret(out, "json")
+
+    def test_json_person_kind(self):
+        code, out, _ = run([self.root, "--offline", "--format", "json", "--review", self.decide({})])
+        self.assertEqual(json.loads(out)["review"]["kind"], "person")
+
+
 if __name__ == "__main__":
     unittest.main()
