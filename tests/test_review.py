@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from stingward import cli, report, report_html, review, vulndb
+from stingward import cli, report, report_html, review, scan, vulndb
 from stingward.model import Context, Finding
 
 # Com cara de chave de verdade, como em test_cli: valores com "Fake" ou "Demo" a ferramenta já trata como exemplo.
@@ -720,6 +720,64 @@ class AiReviewFile(AiCase):
         self.assertIn("CORS open to any website", done)
         self.assertIn(f'<span class="rv rv-fixed">{report.T["en"]["status"]["fixed"]}</span>', done)
 
+    def hidden(self, *, ignore=None, line=None, pad=0):
+        """Revisão por IA que marca como corrigido o CORS aberto do api.js, que continua no código mas some da
+        varredura: por uma linha do .stingwardignore, por um comentário stingward:ignore ou por tamanho."""
+        path = self.ai({"APP003": ("fixed", "Origin list set to the shop domain.")})
+        with open(path, encoding="utf-8") as fh:
+            fp = next(i["fingerprint"] for i in json.load(fh)["findings"] if i["status"] == "fixed")
+        if ignore is not None:
+            write(os.path.join(self.root, ".stingwardignore"), ignore)
+        if line is not None or pad:
+            code = line or APP["api.js"].rstrip("\n")
+            write(os.path.join(self.root, "api.js"), code + "\n" + "// " + "x" * pad + "\n")
+        return path, fp
+
+    def assertRefusedAsHidden(self, path, fp, why):
+        code, _, err = run([self.root, "--offline", "--review", path])
+        self.assertEqual(code, 2, err)
+        self.assertIn(fp, err)
+        self.assertIn(why, err)
+        self.assertNotIn("Traceback", err)
+
+    def test_fixed_hidden_by_stingwardignore_is_refused(self):
+        ignore = os.path.join(self.root, ".stingwardignore")
+        for line in ("APP003 api.js\n", "APP003\n", "api.js\n", "* api.js\n"):
+            for old in (self.path("r.json"), ignore):  # a volta anterior deixou os dois: o template sairia sem o achado
+                if os.path.exists(old):
+                    os.remove(old)
+            path, fp = self.hidden(ignore=line)
+            with self.subTest(line=line):
+                self.assertRefusedAsHidden(path, fp, "stingwardignore")
+
+    def test_fixed_hidden_by_an_inline_ignore_is_refused(self):
+        path, fp = self.hidden(line=APP["api.js"].rstrip("\n") + "  // stingward:ignore")
+        self.assertRefusedAsHidden(path, fp, "stingward:ignore")
+
+    def test_fixed_in_a_file_too_big_to_read_is_refused(self):
+        path, fp = self.hidden(pad=400)
+        with mock.patch.object(scan, "MAX_BYTES", 300):
+            self.assertRefusedAsHidden(path, fp, "too big")
+
+    def test_fixed_when_the_scan_stopped_at_the_file_limit_is_refused(self):
+        # O CORS foi corrigido de verdade, mas a varredura não leu todos os arquivos: não dá para saber se sumiu.
+        path, fp = self.hidden(line='res.setHeader("Access-Control-Allow-Origin", "https://shop.example");')
+        with mock.patch.object(scan, "MAX_FILES", 1):
+            self.assertRefusedAsHidden(path, fp, "file limit")
+
+    def test_ignore_lines_for_other_findings_do_not_block_fixed(self):
+        path, fp = self.hidden(ignore="SEC001 src/config.py\nAPP003 other.js\n",
+                               line='res.setHeader("Access-Control-Allow-Origin", "https://shop.example");')
+        write(os.path.join(self.root, "src/config.py"), f'import os\nGITHUB_TOKEN = "{GH}"  # stingward:ignore\n')
+        code, _, err = run([self.root, "--offline", "--review", path])
+        self.assertIn(code, (0, 1), err)
+
+    def test_person_review_may_mark_a_hidden_finding_fixed(self):
+        path = self.decide({"APP003": ("fixed", "")})
+        write(os.path.join(self.root, ".stingwardignore"), "APP003 api.js\n")
+        code, _, err = run([self.root, "--offline", "--review", path])
+        self.assertIn(code, (0, 1), err)
+
     def test_template_keeps_the_kind(self):
         self.ai({})
         run([self.root, "--offline", "--review-template", self.path("r.json")])
@@ -781,10 +839,19 @@ class AiReviewHtml(AiCase):
         self.assertIn("<dt>AI review</dt>", self.section(out, "cover"))
         self.assertNotIn("checked by a person", self.section(out, "scope"))
 
+    def test_privacy_says_what_went_to_the_ai(self):
+        scope = self.section(self.render(self.ai({})), "scope")
+        self.assertIn("For the AI review, the code excerpt of each finding, with secrets masked, was sent to the AI model.", scope)
+        self.assertNotIn("The code did not.", scope)
+        scope = self.section(self.render(self.ai({}), lang="pt"), "scope")
+        self.assertIn("Para a revisão por IA, o trecho de cada achado, com os segredos mascarados, foi enviado ao modelo de IA.", scope)
+        self.assertNotIn("O código não saiu.", scope)
+
     def test_person_review_keeps_its_words(self):
         out = self.render(self.decide({"SEC001": ("false_positive", "Test value.")}))
         self.assertIn("Human review", out)
         self.assertIn("checked the findings by hand", out)
+        self.assertIn("The code did not.", self.section(out, "scope"))
 
 
 class AiReviewOtherFormats(AiCase):
@@ -824,6 +891,23 @@ class AiReviewOtherFormats(AiCase):
             code, out, _ = run([self.root, "--offline", "--format", "json", "--review", path, "--notes", self.notes(notes)])
             self.assertIs(json.loads(out)["review"]["masked"], True, comment)
             self.assertNoSecret(out, "json")
+
+    def test_json_masked_whatever_format_masks_it(self):
+        # Chave e valor em linhas diferentes: o JSON guarda o comentário linha a linha, o HTML junta o parágrafo e
+        # mascara. O aviso vale para o arquivo de revisão inteiro, qualquer que seja o formato e a ordem em que saem.
+        path = self.ai({"SEC001": ("confirmed", "password\n= " + "Hunter2" + "Hunter2Xy")})
+        code, out, err = run([self.root, "--offline", "--format", "json", "--html", self.path("out.html"), "--review", path])
+        self.assertIs(json.loads(out)["review"]["masked"], True)
+        self.assertIn("masked something", err)
+
+    def test_json_masked_counts_the_comment_of_a_fixed_finding(self):
+        # O item corrigido não entra no JSON, mas o texto e o Markdown mostram o comentário dele, mascarado.
+        path = self.ai({"APP003": ("fixed", f"Was {GH} before.")})
+        write(os.path.join(self.root, "api.js"), 'res.setHeader("Access-Control-Allow-Origin", "https://shop.example");\n')
+        code, out, err = run([self.root, "--offline", "--format", "json", "--review", path])
+        self.assertIs(json.loads(out)["review"]["masked"], True)
+        self.assertIn("masked something", err)
+        self.assertNoSecret(out + err, "json")
 
     def test_json_person_kind(self):
         code, out, _ = run([self.root, "--offline", "--format", "json", "--review", self.decide({})])

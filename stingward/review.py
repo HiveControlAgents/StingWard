@@ -30,6 +30,7 @@ import json
 import os
 import re
 from collections import defaultdict
+from types import SimpleNamespace
 
 from . import _redact as redact
 from . import report_html
@@ -301,8 +302,10 @@ class Review:
     def status(self, f):
         return self.get(f)[0]
 
-    def check(self, findings):
-        """Regras da revisão por IA que dependem da varredura: "fixed" num achado que continua nela é recusado."""
+    def check(self, findings, ctx):
+        """Regras da revisão por IA que dependem da varredura: "fixed" só vale para achado que sumiu dela de verdade.
+        Continuar nela, ou sumir porque a varredura não olhou (limite de arquivos, arquivo grande demais, linha do
+        .stingwardignore, comentário stingward:ignore), é recusado."""
         if self.kind != "ai":
             return
         for f in findings:
@@ -310,6 +313,12 @@ class Review:
                 raise ReviewError(f'{self.path}: {f.fingerprint}: "fixed" numa revisão por IA só vale para achado que '
                                   f'sumiu da varredura / in an AI review "fixed" only applies to a finding that is gone '
                                   f'from the scan')
+        for fp, rule, _, where, _, _ in self.gone_fixed(findings):
+            why = _hidden(ctx, rule, where)
+            if why:
+                raise ReviewError(f'{self.path}: {fp}: "fixed" numa revisão por IA precisa que a varredura mostre que o '
+                                  f'achado sumiu, e {why[0]} / in an AI review "fixed" needs the scan to show the finding '
+                                  f'is gone, and {why[1]}')
 
     def stale(self, findings):
         """Itens do arquivo que não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu) e pedem
@@ -335,6 +344,29 @@ class Review:
             out.append((fp, rule if rule in RULES else "", severity if severity in SEVERITIES else "info",
                         one_line(block.get("where")), one_line(block.get("title")) or fp, self.entries[fp][1]))
         return out
+
+
+_WHERE = re.compile(r"(.+):\d+")
+
+
+def _hidden(ctx, rule, where):
+    """Por que esta varredura pode não ter visto o achado de `where` (o "arquivo:linha" do bloco "finding", escrito
+    à mão), em pt e en, ou None. O arquivo só é lido se está na lista desta varredura, e o caminho não vai para a
+    mensagem: o fingerprint já diz qual item é."""
+    from . import scan  # aqui e não no topo: scan importa este módulo
+    if ctx.truncated:
+        return ("a varredura parou no limite de arquivos", "the scan stopped at the file limit")
+    m = _WHERE.fullmatch(where)
+    rel = m.group(1) if m else where
+    if rel in ctx.too_big:
+        return ("o arquivo ficou fora dela por ser grande demais", "the file was too big to read")
+    if ctx.mode != "project":
+        return None
+    if scan._ignored(SimpleNamespace(rule=rule, file=rel), scan.load_ignore(ctx.root)):
+        return ("uma linha do .stingwardignore esconde o arquivo", "a .stingwardignore line hides the file")
+    if rel in ctx.files and "stingward:ignore" in ctx.read(rel):
+        return ("o arquivo tem um comentário stingward:ignore", "the file has a stingward:ignore comment")
+    return None
 
 
 def _status(value, where):
@@ -486,6 +518,11 @@ class Audit:
         # O bloco "finding" de um item do arquivo vai para o cliente como o comentário: mascarado do mesmo jeito.
         self.gone = [Gone(rule, sev, self.mask(where), self.mask(title), comment)
                      for _, rule, sev, where, title, comment in (review.gone_fixed(findings) if review is not None else [])]
+        # Cada comentário que algum formato mostra passa já aqui pelos dois mascaradores (blocos e linha a linha):
+        # masked no JSON e o aviso no fim valem para todos, qualquer que seja o formato e a ordem em que saem.
+        for text in [review.get(f)[1] for f in findings] + [g.comment for g in self.gone] if review is not None else []:
+            self.comment(text)
+            self.mask.lines(text)
 
     def comment(self, text):
         """O comentário de um item em blocos, já mascarado."""
