@@ -36,6 +36,9 @@ from . import report_html
 from .model import decode_text
 
 STATUSES = ("confirmed", "false_positive", "accepted_risk", "fixed")
+# Quem revisou: uma pessoa (o padrão) ou uma IA. Na revisão por IA, "accepted_risk" não vale (só o cliente aceita um
+# risco) e "fixed" só vale para achado que sumiu da varredura: quem diz que foi corrigido é a nova varredura.
+KINDS = ("person", "ai")
 MAX_FILE = 5_000_000      # arquivo de revisão
 MAX_NOTES = 200_000       # parecer
 MAX_NAME = 200            # cliente e quem revisou
@@ -285,17 +288,28 @@ def plain(blocks, gap=False):
 class Review:
     """O que quem revisou decidiu: fingerprint -> (status, comentário). Status vazio é "ainda não revisado"."""
 
-    def __init__(self, entries=None, reviewer="", raw=None, path=""):
+    def __init__(self, entries=None, reviewer="", raw=None, path="", kind="person"):
         self.entries = entries or {}
         self.reviewer = reviewer
         self.raw = raw or []
         self.path = path
+        self.kind = kind
 
     def get(self, f):
         return self.entries.get(f.fingerprint, ("", ""))
 
     def status(self, f):
         return self.get(f)[0]
+
+    def check(self, findings):
+        """Regras da revisão por IA que dependem da varredura: "fixed" num achado que continua nela é recusado."""
+        if self.kind != "ai":
+            return
+        for f in findings:
+            if self.status(f) == "fixed":
+                raise ReviewError(f'{self.path}: {f.fingerprint}: "fixed" numa revisão por IA só vale para achado que '
+                                  f'sumiu da varredura / in an AI review "fixed" only applies to a finding that is gone '
+                                  f'from the scan')
 
     def stale(self, findings):
         """Itens do arquivo que não batem com nenhum achado desta varredura (o código mudou ou o achado sumiu) e pedem
@@ -360,6 +374,12 @@ def load(path):
     reviewer = doc.get("reviewer") or ""
     if not isinstance(reviewer, str):
         raise ReviewError(f'{path}: "reviewer" tem que ser texto / must be a string')
+    kind = doc.get("review_kind", "person")
+    if not isinstance(kind, str):
+        raise ReviewError(f'{path}: "review_kind" tem que ser texto / must be a string')
+    if kind.strip().lower() not in KINDS:
+        raise ReviewError(f'{path}: "review_kind" {kind!r} não existe / does not exist (use {", ".join(KINDS)})')
+    kind = kind.strip().lower()
     entries, raw = {}, []
     for i, item in enumerate(doc["findings"], 1):
         where = f"{path}: findings[{i}]"
@@ -373,9 +393,13 @@ def load(path):
         comment = item.get("comment") or ""
         if not isinstance(comment, str):
             raise ReviewError(f'{where}: "comment" tem que ser texto / must be a string')
-        entries[fp] = (_status(item.get("status"), where), comment.strip())
+        status = _status(item.get("status"), where)
+        if kind == "ai" and status == "accepted_risk":
+            raise ReviewError(f"{where}: accepted_risk não vale numa revisão por IA: só o cliente aceita um risco / "
+                              f"is not allowed in an AI review: only the client can accept a risk")
+        entries[fp] = (status, comment.strip())
         raw.append(item)
-    return Review(entries, one_line(reviewer), raw, path)
+    return Review(entries, one_line(reviewer), raw, path, kind)
 
 
 def load_notes(path):
@@ -388,12 +412,14 @@ HELP = {
            "com **negrito** e `código`. Não cole segredos: eles saem mascarados. O bloco finding ajuda você a se "
            "localizar; o Stingward lê fingerprint, status e comment (e o bloco finding de um item fixed que sumiu, para "
            "listá-lo como corrigido). \"stale\": true marca um item que não bate mais "
-           "com nenhum achado: ele fica no fim, com o seu comentário, e a marca sai se o achado voltar."),
+           "com nenhum achado: ele fica no fim, com o seu comentário, e a marca sai se o achado voltar. review_kind: person "
+           "(uma pessoa revisou) ou ai (uma IA revisou; aí accepted_risk não vale, e fixed só vale para achado que sumiu)."),
     "en": ("status: confirmed, false_positive, accepted_risk or fixed (fixed during the audit); empty = not reviewed "
            "yet. comment: free text that goes into the report, with **bold** and `code`. Do not paste secrets: they "
            "come out masked. The finding block helps you find your way; Stingward reads fingerprint, status and "
            "comment (and the finding block of a fixed item that is gone, to list it as fixed). \"stale\": true marks an item that no longer matches any finding: it stays at the end, with your "
-           "comment, and the mark goes away if the finding comes back."),
+           "comment, and the mark goes away if the finding comes back. review_kind: person (a person reviewed) or ai (an AI "
+           "reviewed; then accepted_risk is not allowed, and fixed only applies to a finding that is gone)."),
 }
 
 
@@ -414,7 +440,7 @@ def template(findings, lang, old=None, target=""):
     kept = sum(1 for f in findings if any(old.entries.get(f.fingerprint, ("", ""))))
     stale = [dict(item, stale=True) for item in old.raw if str(item.get("fingerprint", "")).strip().lower() not in seen]
     doc = {"stingward_review": 1, "help": HELP[lang], "target": str(target or ""), "reviewer": old.reviewer,
-           "findings": items + stale}
+           "review_kind": old.kind, "findings": items + stale}
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n", kept, len(stale)
 
 

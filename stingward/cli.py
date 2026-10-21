@@ -367,6 +367,12 @@ def main(argv=None):
                 return 2
             ctx, findings = scan.run(args.target, mode="project", offline=args.offline, only=only)
             label = args.target
+        if rv is not None:
+            try:
+                rv.check(findings)  # regras que dependem da varredura, como "fixed" num achado que continua nela
+            except review.ReviewError as e:
+                print(f"stingward: {e}", file=sys.stderr)
+                return 2
         audit = None
         if rv is not None or notes or args.client:
             audit = review.Audit(ctx, findings, rv, client=args.client or "", notes=notes)

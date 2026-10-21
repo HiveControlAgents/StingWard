@@ -662,5 +662,78 @@ class TextAndMarkdown(Case):
         self.assertNotIn("Secret in code", table)
 
 
+# =========================================================================== revisão por IA
+
+class AiCase(Case):
+    def ai(self, decisions, kind="ai", reviewer=""):
+        """Como decide(), com o tipo da revisão no arquivo."""
+        path = self.decide(decisions, reviewer=reviewer)
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        doc["review_kind"] = kind
+        return self.save_review(doc)
+
+
+class AiReviewFile(AiCase):
+    def test_kind_defaults_to_person(self):
+        self.assertEqual(review.load(self.decide({})).kind, "person")
+
+    def test_kind_spelling_is_forgiving(self):
+        self.assertEqual(review.load(self.ai({}, kind="AI ")).kind, "ai")
+
+    def test_unknown_kind_is_refused(self):
+        code, _, err = run([self.root, "--offline", "--review", self.ai({}, kind="robot")])
+        self.assertEqual(code, 2)
+        self.assertIn('"review_kind"', err)
+        self.assertIn("robot", err)
+
+    def test_kind_must_be_text(self):
+        for bad in (True, 1, []):
+            if os.path.exists(self.path("r.json")):  # o arquivo da volta anterior é inválido: o template não o reaproveita
+                os.remove(self.path("r.json"))
+            code, _, err = run([self.root, "--offline", "--review", self.ai({}, kind=bad)])
+            self.assertEqual(code, 2, bad)
+            self.assertIn('"review_kind"', err, bad)
+            self.assertNotIn("Traceback", err, bad)
+
+    def test_ai_review_refuses_accepted_risk(self):
+        code, _, err = run([self.root, "--offline", "--review", self.ai({"SEC001": ("accepted_risk", "")})])
+        self.assertEqual(code, 2)
+        self.assertIn("accepted_risk", err)
+        self.assertIn("findings[", err)
+
+    def test_ai_review_refuses_fixed_on_a_finding_still_there(self):
+        path = self.ai({"SEC001": ("fixed", "")})
+        with open(path, encoding="utf-8") as fh:
+            fp = next(i["fingerprint"] for i in json.load(fh)["findings"] if i["status"] == "fixed")
+        code, _, err = run([self.root, "--offline", "--review", path])
+        self.assertEqual(code, 2)
+        self.assertIn('"fixed"', err)
+        self.assertIn(fp, err)
+
+    def test_ai_review_allows_fixed_for_a_gone_finding(self):
+        path = self.ai({"APP003": ("fixed", "Origin list set to the shop domain.")})
+        write(os.path.join(self.root, "api.js"), 'res.setHeader("Access-Control-Allow-Origin", "https://shop.example");\n')
+        code, out, err = run([self.root, "--offline", "--lang", "en", "--format", "html", "--review", path])
+        self.assertIn(code, (0, 1), err)
+        done = out.split('<section id="plan">', 1)[1].split("</section>", 1)[0].split('class="band band-done"', 1)[1]
+        self.assertIn("CORS open to any website", done)
+        self.assertIn(f'<span class="rv rv-fixed">{report.T["en"]["status"]["fixed"]}</span>', done)
+
+    def test_template_keeps_the_kind(self):
+        self.ai({})
+        run([self.root, "--offline", "--review-template", self.path("r.json")])
+        with open(self.path("r.json"), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["review_kind"], "ai")
+        self.assertEqual(self.template()["review_kind"], "ai")  # o mesmo arquivo, gravado de novo
+        os.remove(self.path("r.json"))
+        self.assertEqual(self.template()["review_kind"], "person")
+
+    def test_person_review_still_allows_every_status(self):
+        path = self.decide({"SEC001": ("accepted_risk", "Client decision."), "APP003": ("fixed", "")})
+        code, _, err = run([self.root, "--offline", "--review", path])
+        self.assertIn(code, (0, 1), err)
+
+
 if __name__ == "__main__":
     unittest.main()
