@@ -369,7 +369,7 @@ def main(argv=None):
             label = args.target
         if rv is not None:
             try:
-                rv.check(findings)  # regras que dependem da varredura, como "fixed" num achado que continua nela
+                rv.check(findings, ctx)  # regras que dependem da varredura, como "fixed" num achado que continua nela
             except review.ReviewError as e:
                 print(f"stingward: {e}", file=sys.stderr)
                 return 2
