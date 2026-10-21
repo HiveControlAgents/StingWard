@@ -7,14 +7,14 @@
 <title>${title}</title>
 <meta name="description" content="${description}">
 <link rel="canonical" href="${canonical}">
-<link rel="alternate" hreflang="pt-BR" href="${url}">
-<link rel="alternate" hreflang="en" href="${url}en/">
+${alternates}
 <meta property="og:type" content="website">
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${description}">
 <meta property="og:url" content="${canonical}">
 <meta property="og:image" content="${url}assets/social-preview.png">
 <meta property="og:locale" content="${og_locale}">
+<meta property="og:locale:alternate" content="${og_locale_alt}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#ffffff">
 <meta name="color-scheme" content="light">
@@ -28,7 +28,7 @@
 
 <header class="hero" id="top">
   <div class="top">
-    <a class="brand" href="${root}./" aria-label="Stingward"><img src="${root}assets/logo.svg" alt="" width="28" height="28"><span>Stingward</span></a>
+    <a class="brand" href="./" aria-label="Stingward"><img src="${root}assets/logo.svg" alt="" width="28" height="28"><span>Stingward</span></a>
     <nav class="nav" aria-label="${nav_label}">${nav_links}</nav>
     <div class="top__end">
       <a class="top__link link" href="${repo}">${nav_github}</a>
