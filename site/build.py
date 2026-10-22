@@ -29,7 +29,7 @@ import unittest
 
 SITE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SITE)
-URL = "https://hivecontrolagents.github.io/StingWard/"
+URL = "https://stingward.com/"
 REPO = "https://github.com/HiveControlAgents/StingWard"
 ASSETS = ["logo.svg", "social-preview.png"] + [f"demo-{d}-{lang}.{ext}" for d in ("app", "skill") for lang in ("pt", "en") for ext in ("mp4", "png")]
 CACHE = os.path.join(tempfile.gettempdir(), "stingward-site-cache")

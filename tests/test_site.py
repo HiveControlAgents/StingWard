@@ -18,7 +18,7 @@ from stingward.rules import RULES
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, "site")
 FAKE_KEY_PART = "Demo7Fake9Key0Not4Real"
-URL = "https://hivecontrolagents.github.io/StingWard/"
+URL = "https://stingward.com/"
 # English is the main site, at the root; Portuguese lives under pt/. Paths are given from the site's root.
 PAGES = {"en": "index.html", "pt": "pt/index.html"}
 SAMPLES = {"en": "example/index.html", "pt": "pt/exemplo/index.html"}
