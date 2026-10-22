@@ -12,6 +12,37 @@
     "lang_label": "Idioma",
     "nav_label": "Seções",
     "hero_h1": ["Você cria.", "Quem confere?"],
+    "hero_hooks": [
+      ["Você cria.", "Quem confere?"],
+      ["Funciona.", "Está trancado?"],
+      ["A IA escreveu.", "Quem leu?"],
+      ["Seu app está", "vazando?"],
+      ["Sua chave pode", "estar à vista"],
+      ["Quem mais vê", "seus dados?"],
+      ["Confira", "antes de lançar"],
+      ["Ache a brecha", "antes de alguém"],
+      ["Chave vazada,", "conta alta"],
+      ["O que a IA", "deixou aberto?"],
+      ["Fez com IA?", "Mande conferir"],
+      ["Vai lançar?", "Confira antes."],
+      ["Onde está seu", "ponto fraco?"],
+      ["Antes que seus", "clientes achem"],
+      ["Segurança,", "sem complicação"],
+      ["Sua chave está", "no navegador?"],
+      ["Pacote velho,", "falha conhecida"],
+      ["Skill nova?", "Confira antes."],
+      ["Uma skill pode", "rodar de tudo"],
+      ["As falhas que", "a IA não conta"],
+      ["Corrija antes", "de vazar"],
+      ["Lance e durma", "tranquilo"],
+      ["Não deixe a IA", "vazar chaves"],
+      ["Vibe coding?", "Confira antes."],
+      ["Por onde alguém", "pode entrar?"],
+      ["Sem jargão.", "Só a correção."],
+      ["Tem alguém", "usando sua IA?"],
+      ["Seu banco de", "dados é público?"],
+      ["Confira grátis.", "Corrija hoje."]
+    ],
     "hero_lead": "Com IA, qualquer um publica um app, uma skill ou um servidor MCP sem saber o que é vulnerabilidade. O\u00a0Stingward acha as brechas e diz como fechar.",
     "tabs": ["Relatório", "Por que existe", "O que pega", "Código aberto", "Instalar"],
     "menu": "Menu",
@@ -22,7 +53,7 @@
     "hero_source": "Ver o código",
     "hero_alt": "Não usa terminal? O relatório de R$ 99 explica tudo em palavras simples.",
 
-    "why_h2": "Por que ele existe",
+    "why_h2": "Funcionar não é estar seguro",
     "why_p": "A IA escreve o código, escolhe as versões dos pacotes e monta a configuração. Ela faz funcionar, mas não avisa o que deixou aberto, e quem publica muitas vezes nunca ouviu falar em CVE, RLS ou chave exposta. Você não precisa virar especialista: o Stingward lê o projeto e explica, sem jargão, o que está errado e como resolver.",
     "why_facts": [
       ["45%", "dos testes de código feitos com mais de 100 modelos de IA saíram com uma falha da lista OWASP Top 10, as mais comuns da web.", "Veracode, 2025", "https://www.veracode.com/press-release/ai-generated-code-poses-major-security-risks-in-nearly-half-of-all-development-tasks-veracode-research-reveals/"],
@@ -31,7 +62,7 @@
       ["23,8 milhões", "de chaves e senhas vazaram no GitHub público em 2024, 25% a mais que no ano anterior.", "GitGuardian, 2025", "https://blog.gitguardian.com/the-state-of-secrets-sprawl-2025/"]
     ],
 
-    "report_h2": "Três relatórios reais",
+    "report_h2": "Dois destes três tiraram F",
     "report_p": "Saída do Stingward {version} para os dois exemplos que vêm no repositório e para a skill do próprio Stingward. Escolha um.",
     "reports": [
       {"name": "Uma skill de PDF", "note": "Parece um ajudante de PDF"},
@@ -62,7 +93,7 @@
       ["F", "Algum crítico"]
     ],
 
-    "finds_h2": "O que ele pega",
+    "finds_h2": "As portas que a IA deixa abertas",
     "finds_p": "Segredos, pacotes com falha, brechas no código e os erros que a IA comete quando monta um app, uma skill ou um agente.",
     "finds": {
       "mask": ["Valor escondido", "A chave nunca aparece no relatório."],
@@ -101,7 +132,7 @@
       ["{tests} testes", "Linux, macOS e Windows", "{repo}/actions/workflows/ci.yml"]
     ],
 
-    "price_h2": "Aberto e gratuito",
+    "price_h2": "Confira grátis antes de mandar o link",
     "price_p": "A linha de comando, o plugin do Claude Code e a GitHub Action são software livre, com licença Apache 2.0. Sem cadastro e sem telemetria.",
     "currency": "R$",
     "price_period": "sem cadastro",
@@ -114,7 +145,7 @@
     ],
     "price_button": "Instalar",
 
-    "audit_h2": "Relatório de segurança do seu app feito com IA",
+    "audit_h2": "Ache os vazamentos antes dos clientes",
     "audit_p": "Mande um zip ou um repositório do GitHub. O Stingward verifica o código, uma revisão automática confere cada achado, e em minutos você recebe um PDF em palavras simples.",
     "audit_currency": "R$",
     "audit_price": "99",
@@ -199,6 +230,37 @@
     "lang_label": "Language",
     "nav_label": "Sections",
     "hero_h1": ["You build it.", "Who checks it?"],
+    "hero_hooks": [
+      ["You build it.", "Who checks it?"],
+      ["It works.", "Is it locked?"],
+      ["AI wrote it.", "Who read it?"],
+      ["Is your app", "leaking?"],
+      ["Your keys may", "be public"],
+      ["Who else sees", "your data?"],
+      ["Check it", "before launch"],
+      ["Find the gaps", "before others"],
+      ["One leaked key,", "one huge bill"],
+      ["What did AI", "leave open?"],
+      ["Built with AI?", "Get it checked"],
+      ["Launching soon?", "Check first."],
+      ["Where is your", "weak spot?"],
+      ["Before your", "users find it"],
+      ["Security,", "in plain words"],
+      ["Is your API key", "in the browser?"],
+      ["Old packages,", "known flaws"],
+      ["New skill?", "Check it first."],
+      ["A skill can", "run anything"],
+      ["The flaws AI", "won't mention"],
+      ["Fix it before", "it leaks"],
+      ["Launch, then", "sleep well"],
+      ["Don't let AI", "ship your keys"],
+      ["Vibe coding?", "Check it first."],
+      ["Where could", "someone get in?"],
+      ["No jargon.", "Just the fix."],
+      ["Is someone", "using your AI?"],
+      ["Your database,", "open to all?"],
+      ["Check it free.", "Fix it today."]
+    ],
     "hero_lead": "With AI, anyone can ship an app, a skill or an MCP server without knowing what a vulnerability is. Stingward finds the holes and shows how to close them.",
     "tabs": ["Report", "Why it exists", "What it finds", "Open source", "Install"],
     "menu": "Menu",
@@ -209,7 +271,7 @@
     "hero_source": "See the code",
     "hero_alt": "Don't use a terminal? The $29 report explains it all in plain words.",
 
-    "why_h2": "Why it exists",
+    "why_h2": "Working isn't the same as safe",
     "why_p": "AI writes the code, picks the package versions and sets up the config. It gets things working, but it doesn't tell you what it left open, and whoever ships the project has often never heard of a CVE, RLS or an exposed key. You don't need to become an expert: Stingward reads the project and explains, without jargon, what's wrong and how to fix it.",
     "why_facts": [
       ["45%", "of coding tests run on more than 100 AI models produced code with a flaw from the OWASP Top 10, the most common web vulnerabilities.", "Veracode, 2025", "https://www.veracode.com/press-release/ai-generated-code-poses-major-security-risks-in-nearly-half-of-all-development-tasks-veracode-research-reveals/"],
@@ -218,7 +280,7 @@
       ["23.8 million", "keys and passwords leaked on public GitHub in 2024, 25% more than the year before.", "GitGuardian, 2025", "https://blog.gitguardian.com/the-state-of-secrets-sprawl-2025/"]
     ],
 
-    "report_h2": "Three real reports",
+    "report_h2": "Two of these three got an F",
     "report_p": "Stingward {version} output for the two examples that ship with the repository, and for Stingward's own skill. Pick one.",
     "reports": [
       {"name": "A PDF skill", "note": "Looks like a PDF helper"},
@@ -249,7 +311,7 @@
       ["F", "Any critical"]
     ],
 
-    "finds_h2": "What it finds",
+    "finds_h2": "The doors AI leaves unlocked",
     "finds_p": "Secrets, vulnerable packages, holes in the code and the mistakes AI makes when it builds an app, a skill or an agent.",
     "finds": {
       "mask": ["Secret masked", "The key itself never appears in the report."],
@@ -288,7 +350,7 @@
       ["{tests} tests", "Linux, macOS and Windows", "{repo}/actions/workflows/ci.yml"]
     ],
 
-    "price_h2": "Free and open source",
+    "price_h2": "Free check before you share the link",
     "price_p": "The command-line tool, the Claude Code plugin and the GitHub Action are open source under the Apache 2.0 license. No sign-up, no telemetry.",
     "currency": "$",
     "price_period": "no sign-up",
@@ -301,7 +363,7 @@
     ],
     "price_button": "Install",
 
-    "audit_h2": "A security report for your AI-built app",
+    "audit_h2": "Find the leaks before your users do",
     "audit_p": "Send a zip or one GitHub repository. Stingward checks the code, an automatic review goes over every finding, and in minutes you get a PDF in plain language.",
     "audit_currency": "$",
     "audit_price": "29",
