@@ -118,9 +118,13 @@ mark { background: none; color: inherit; }
 .nav__link, .lang a, .lang span { text-decoration: none; transition: color 160ms ease; }
 .lang { display: flex; gap: 14px; }
 .lang a { color: var(--muted); }
+.lang > a, .lang > span { display: inline-flex; align-items: center; gap: 7px; }
+.lang__flag { width: 16px; height: 12px; border-radius: 2px; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14); }
+.lang a .lang__flag { opacity: 0.7; transition: opacity 160ms ease; }
 .lang [aria-current] { color: var(--ink); font-weight: 500; }
 @media (hover: hover) and (pointer: fine) {
   .nav__link:hover, .lang a:hover { color: var(--accent); }
+  .lang a:hover .lang__flag { opacity: 1; }
 }
 
 /* ---------------------------------------------------------------- first screen: the claim, and the reports on the stage */

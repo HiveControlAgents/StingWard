@@ -32,7 +32,7 @@ SITE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SITE)
 URL = "https://stingward.com/"
 REPO = "https://github.com/HiveControlAgents/StingWard"
-ASSETS = ["logo.svg", "social-preview.png"] + [f"demo-{d}-{lang}.{ext}" for d in ("app", "skill") for lang in ("pt", "en") for ext in ("mp4", "png")]
+ASSETS = ["logo.svg", "social-preview.png", "flag-br.svg", "flag-us.svg"] + [f"demo-{d}-{lang}.{ext}" for d in ("app", "skill") for lang in ("pt", "en") for ext in ("mp4", "png")]
 CACHE = os.path.join(tempfile.gettempdir(), "stingward-site-cache")
 SEVERITY = {"🔴": "crit", "🟠": "high", "🟡": "med", "🔵": "low", "⚪": "info", "🟢": "ok"}
 ROW = r"^   [^ :]+(?: [^ :]+){0,2}: "  # "   where: ...", "   how to fix: ..." under a finding
@@ -198,11 +198,13 @@ def legal_folders(key):
 
 
 def languages(lang, folders):
-    """The language switch of a page published in both languages; the page you are on is marked, not linked."""
-    links = []
-    for key, name, short in (("en", "English", "EN"), ("pt", "Português", "PT")):
+    """The language switch of a page published in both languages; the page you are on is marked, not linked.
+    Portuguese comes first: the site is English by default, so the switch leads with the other language."""
+    links, root = [], "" if folders[lang] == "." else link_to(".", folders[lang])
+    for key, name, short, flag in (("pt", "Português", "PT", "br"), ("en", "English", "EN", "us")):
         code = HREFLANG[key]
-        label = f'<span class="lang__long">{name}</span><span class="lang__short" aria-hidden="true">{short}</span>'
+        label = (f'<img class="lang__flag" src="{root}assets/flag-{flag}.svg" alt="" width="16" height="12">'
+                 f'<span class="lang__long">{name}</span><span class="lang__short" aria-hidden="true">{short}</span>')
         if key == lang:
             links.append(f'<span lang="{code}" aria-current="page">{label}</span>')
         else:
