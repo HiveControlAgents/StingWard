@@ -18,9 +18,9 @@
             ]
           ],
           [
-            "Who sells the report",
+            "How you pay",
             [
-              "Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders. Paddle takes the payment, issues the invoice, charges sales tax or VAT where it applies and sends refunds. [Paddle's buyer terms](https://www.paddle.com/legal/invoiced-consumer-terms) also apply to your purchase."
+              "You buy the report from us. The payment goes through Hotmart, the platform we sell on: Hotmart takes the payment, sends you the receipt and sends refunds. [Hotmart's purchase terms](https://hotmart.com/en/legal/purchase-terms) also apply to your purchase."
             ]
           ],
           [
@@ -32,7 +32,7 @@
                 "You get a PDF report in the language you chose, with a grade from A to F, a summary in plain words, where each problem is, why it matters, how to fix it and what to fix first.",
                 "After you fix things, you can send the new version of the same project once, free, within 30 days of the first report."
               ],
-              "Sales tax or VAT may be added depending on where you live. Paddle shows the total before you pay."
+              "Sales tax or VAT may be added depending on where you live. Hotmart shows the total before you pay."
             ]
           ],
           [
@@ -106,20 +106,20 @@
           [
             "Who is responsible",
             [
-              "Isaque Moutta, in Brazil, runs Stingward and is responsible for your data (the controller, under Brazil's LGPD and the EU and UK GDPR). Write to support@stingward.com. Paddle, which sells the report, is responsible for the payment data it collects, as its [privacy notice](https://www.paddle.com/legal/privacy) says."
+              "Isaque Moutta, in Brazil, runs Stingward and is responsible for your data (the controller, under Brazil's LGPD and the EU and UK GDPR). Write to support@stingward.com. Hotmart, which takes the payment, is responsible for the payment data it collects, as its [privacy policy](https://hotmart.com/en/legal/data-privacy-policy) says."
             ]
           ],
           [
             "What we collect",
             [
               [
-                "Your email address, which Paddle passes to us after you pay, to send you the order link and notices about it.",
-                "The order: when it was made and paid, its status, the report language, the grade, Paddle's ids for the payment and for you as a customer, when you confirmed that the app is yours and that you accept the terms, and the label of the ad or post you came from, if any, which also goes to Paddle with the payment.",
+                "Your email address, which you give Hotmart when you pay and Hotmart passes to us, to send you the order link and notices about it.",
+                "The order: when it was made and paid, its status, the report language, the grade, Hotmart's code for the payment with the offer, the amount and the country chosen at checkout, when you confirmed that the app is yours and that you accept the terms, and the label of the ad or post you came from, if any, which also goes to Hotmart with the payment.",
                 "The project you send, as a zip file or one GitHub repository.",
                 "The report and the findings it is built from, with secrets masked.",
                 "Technical logs of errors and order events. They name the order, not your code, your email or your link."
               ],
-              "We never see your card or bank details: they go to Paddle."
+              "We never see your card or bank details: they go to Hotmart."
             ]
           ],
           [
@@ -139,7 +139,7 @@
             [
               "These companies process data for us, only to run the service:",
               [
-                "Paddle: the payment, the invoice, tax and refunds. As Merchant of Record, it is also responsible for this data itself.",
+                "Hotmart: the payment, the receipt and refunds. It is also responsible itself for the payment data it collects.",
                 "Google Cloud: our server, database and file storage, in the United States.",
                 "Anthropic: the automatic review of masked excerpts, with its AI model, in the United States.",
                 "Resend: sending the emails, in the United States.",
@@ -152,7 +152,7 @@
           [
             "Cookies",
             [
-              "The order pages set one cookie, only when you connect GitHub. It holds your order link for up to 30 minutes so GitHub can bring you back, and it is deleted when you return. The payment window is Paddle's, and Paddle may set its own cookies to take the payment. There are no cookies for analytics or ads."
+              "The order pages set one cookie, only when you connect GitHub. It holds your order link for up to 30 minutes so GitHub can bring you back, and it is deleted when you return. The payment page is Hotmart's, and Hotmart may set its own cookies to take the payment. There are no cookies for analytics or ads."
             ]
           ],
           [
@@ -163,7 +163,7 @@
                 "The report, the findings, your email address and the order link: 30 days after the report or the refund. Then they are deleted.",
                 "An order that was never paid: 2 days.",
                 "Technical logs: 30 days.",
-                "After that, a record of the order stays without your email (dates, status, grade, Paddle's ids and the ad label), for as long as tax and accounting rules require."
+                "After that, a record of the order stays without your email (dates, status, grade, Hotmart's code for the payment and the ad label), for as long as tax and accounting rules require."
               ]
             ]
           ],
@@ -196,8 +196,8 @@
       "refund": {
         "name": "Refunds",
         "title": "Refund policy",
-        "description": "When the Stingward report is refunded: automatic refunds, cancelling before you send your project and the 14-day guarantee.",
-        "intro": "Paddle, our reseller and Merchant of Record, takes the payment and sends refunds. A refund is always in full, goes back to the card or account you paid with and can take a few days to show.",
+        "description": "When the Stingward report is refunded: automatic refunds, cancelling before you send your project and the 15-day guarantee.",
+        "intro": "Hotmart, the platform you pay through, takes the payment and sends refunds. A refund is always in full, goes back to the card or account you paid with and can take a few days to show.",
         "sections": [
           [
             "Automatic refunds",
@@ -207,20 +207,20 @@
                 "Nothing was sent within 7 days of paying.",
                 "The report was not ready within 24 hours of receiving your project.",
                 "We could not make the report: the file is not a zip we can open, it has no code we can read, the project is over our limits, GitHub did not let us download it or something failed on our side.",
-                "You paid for an order that was already paid or that no longer exists."
+                "You paid twice for the same order."
               ]
             ]
           ],
           [
             "Changed your mind",
             [
-              "Until you send your project, you can cancel for any reason and get a full refund. Write to support@stingward.com from the email you ordered with, or ask Paddle at [paddle.net](https://paddle.net). If you never send it, the refund is automatic after 7 days."
+              "Until you send your project, you can cancel for any reason and get a full refund. Write to support@stingward.com from the email you ordered with. If you never send it, the refund is automatic after 7 days."
             ]
           ],
           [
             "Not as described",
             [
-              "If the report you got is not what this site describes, for example it is empty, does not open or is not in the language you chose, write to support@stingward.com within 14 days of paying and we refund you in full."
+              "If the report you got is not what this site describes, for example it is empty, does not open or is not in the language you chose, write to support@stingward.com within 15 days of paying and we refund you in full."
             ]
           ],
           [
@@ -232,7 +232,7 @@
           [
             "After a refund",
             [
-              "The order ends, and its code and report are deleted. Paddle may also refund a payment under its own [buyer terms](https://www.paddle.com/legal/invoiced-consumer-terms). Nothing in this policy limits rights that consumer law gives you."
+              "The order ends, and its code and report are deleted. Hotmart may also refund a payment under its own [purchase terms](https://hotmart.com/en/legal/purchase-terms), which let you ask it for a refund at [refund.hotmart.com](https://refund.hotmart.com) within 15 days of paying. Nothing in this policy limits rights that consumer law gives you."
             ]
           ]
         ]
@@ -258,9 +258,9 @@
             ]
           ],
           [
-            "Quem vende o relatório",
+            "Como você paga",
             [
-              "Nosso processo de compra é conduzido pela nossa revendedora on-line, a Paddle.com. A Paddle.com é a Merchant of Record (a vendedora oficial) de todos os nossos pedidos. A Paddle recebe o pagamento, emite a nota, cobra os impostos sobre a venda quando houver e faz os reembolsos. Os [termos de compra da Paddle](https://www.paddle.com/legal/invoiced-consumer-terms) também valem para a sua compra."
+              "Você compra o relatório de nós. O pagamento passa pela Hotmart, a plataforma em que vendemos: a Hotmart recebe o pagamento, manda o comprovante e faz os reembolsos. Os [termos de compra da Hotmart](https://hotmart.com/pt-br/legal/termos-de-compra) também valem para a sua compra."
             ]
           ],
           [
@@ -272,7 +272,7 @@
                 "Você recebe um relatório em PDF no idioma escolhido, com nota de A a F, um resumo em palavras simples, onde está cada problema, por que importa, como corrigir e o que corrigir primeiro.",
                 "Depois de corrigir, você pode mandar a nova versão do mesmo projeto uma vez, de graça, em até 30 dias do primeiro relatório."
               ],
-              "Pode haver imposto sobre a venda, conforme o país onde você mora. A Paddle mostra o total antes do pagamento."
+              "Pode haver imposto sobre a venda, conforme o país onde você mora. A Hotmart mostra o total antes do pagamento."
             ]
           ],
           [
@@ -346,20 +346,20 @@
           [
             "Quem é o responsável",
             [
-              "Isaque Moutta, no Brasil, mantém o Stingward e é o responsável pelos seus dados (o controlador, pela LGPD e pelo GDPR da União Europeia e do Reino Unido). Escreva para support@stingward.com. A Paddle, que vende o relatório, é responsável pelos dados de pagamento que coleta, como diz o [aviso de privacidade dela](https://www.paddle.com/legal/privacy)."
+              "Isaque Moutta, no Brasil, mantém o Stingward e é o responsável pelos seus dados (o controlador, pela LGPD e pelo GDPR da União Europeia e do Reino Unido). Escreva para support@stingward.com. A Hotmart, que recebe o pagamento, é responsável pelos dados de pagamento que coleta, como diz a [política de privacidade dela](https://hotmart.com/pt-br/legal/privacidade-de-dados)."
             ]
           ],
           [
             "O que coletamos",
             [
               [
-                "Seu e-mail, que a Paddle nos passa depois do pagamento, para enviar o link do pedido e os avisos sobre ele.",
-                "O pedido: quando foi feito e pago, a situação, o idioma do relatório, a nota, os identificadores da Paddle para o pagamento e para você como cliente, quando você confirmou que o app é seu e que aceita os termos, e a etiqueta do anúncio ou post de onde você veio, se houver, que também vai para a Paddle com o pagamento.",
+                "Seu e-mail, que você informa à Hotmart no pagamento e ela nos passa, para enviar o link do pedido e os avisos sobre ele.",
+                "O pedido: quando foi feito e pago, a situação, o idioma do relatório, a nota, o código da Hotmart para o pagamento com a oferta, o valor e o país escolhido no pagamento, quando você confirmou que o app é seu e que aceita os termos, e a etiqueta do anúncio ou post de onde você veio, se houver, que também vai para a Hotmart com o pagamento.",
                 "O projeto que você envia, em zip ou como um repositório do GitHub.",
                 "O relatório e os achados que o formam, com os segredos mascarados.",
                 "Registros técnicos de erros e de eventos do pedido. Eles citam o pedido, não o seu código, o seu e-mail nem o seu link."
               ],
-              "Nunca vemos os dados do seu cartão ou do seu banco: eles vão para a Paddle."
+              "Nunca vemos os dados do seu cartão ou do seu banco: eles vão para a Hotmart."
             ]
           ],
           [
@@ -379,7 +379,7 @@
             [
               "Estas empresas tratam dados para nós, só para o serviço funcionar:",
               [
-                "Paddle: o pagamento, a nota, os impostos e os reembolsos. Como Merchant of Record, ela também responde por esses dados.",
+                "Hotmart: o pagamento, o comprovante e os reembolsos. Ela também responde pelos dados de pagamento que coleta.",
                 "Google Cloud: nosso servidor, banco de dados e armazenamento de arquivos, nos Estados Unidos.",
                 "Anthropic: a revisão automática dos trechos mascarados, com o modelo de IA dela, nos Estados Unidos.",
                 "Resend: o envio dos e-mails, nos Estados Unidos.",
@@ -392,7 +392,7 @@
           [
             "Cookies",
             [
-              "As páginas do pedido usam um cookie, só quando você conecta o GitHub. Ele guarda o link do pedido por até 30 minutos, para o GitHub trazer você de volta, e é apagado quando você volta. A janela de pagamento é da Paddle, e ela pode usar cookies próprios para receber o pagamento. Não há cookies de análise nem de anúncios."
+              "As páginas do pedido usam um cookie, só quando você conecta o GitHub. Ele guarda o link do pedido por até 30 minutos, para o GitHub trazer você de volta, e é apagado quando você volta. A página de pagamento é da Hotmart, e ela pode usar cookies próprios para receber o pagamento. Não há cookies de análise nem de anúncios."
             ]
           ],
           [
@@ -403,7 +403,7 @@
                 "O relatório, os achados, seu e-mail e o link do pedido: 30 dias depois do relatório ou do reembolso. Depois são apagados.",
                 "Um pedido que nunca foi pago: 2 dias.",
                 "Registros técnicos: 30 dias.",
-                "Depois disso, fica um registro do pedido sem o seu e-mail (datas, situação, nota, identificadores da Paddle e a etiqueta do anúncio), pelo tempo que as regras fiscais e contábeis exigem."
+                "Depois disso, fica um registro do pedido sem o seu e-mail (datas, situação, nota, código da Hotmart para o pagamento e a etiqueta do anúncio), pelo tempo que as regras fiscais e contábeis exigem."
               ]
             ]
           ],
@@ -436,8 +436,8 @@
       "refund": {
         "name": "Reembolso",
         "title": "Política de reembolso",
-        "description": "Quando o relatório do Stingward é reembolsado: reembolsos automáticos, cancelamento antes de enviar o projeto e a garantia de 14 dias.",
-        "intro": "A Paddle, nossa revendedora e Merchant of Record, recebe o pagamento e faz os reembolsos. O reembolso é sempre do valor inteiro, volta para o cartão ou a conta usada no pagamento e pode levar alguns dias para aparecer.",
+        "description": "Quando o relatório do Stingward é reembolsado: reembolsos automáticos, cancelamento antes de enviar o projeto e a garantia de 15 dias.",
+        "intro": "A Hotmart, a plataforma pela qual você paga, recebe o pagamento e faz os reembolsos. O reembolso é sempre do valor inteiro, volta para o cartão ou a conta usada no pagamento e pode levar alguns dias para aparecer.",
         "sections": [
           [
             "Reembolso automático",
@@ -447,20 +447,20 @@
                 "Nada foi enviado em até 7 dias depois do pagamento.",
                 "O relatório não ficou pronto em 24 horas depois de recebermos o projeto.",
                 "Não conseguimos fazer o relatório: o arquivo não é um zip que abre, não tem código que dê para ler, o projeto passa dos nossos limites, o GitHub não deixou baixar ou algo falhou do nosso lado.",
-                "Você pagou um pedido que já estava pago ou que não existe mais."
+                "Você pagou duas vezes o mesmo pedido."
               ]
             ]
           ],
           [
             "Mudou de ideia",
             [
-              "Até enviar o projeto, você pode cancelar por qualquer motivo e receber o valor inteiro. Escreva para support@stingward.com do e-mail usado no pedido, ou peça à Paddle em [paddle.net](https://paddle.net). Se você nunca enviar, o reembolso é automático depois de 7 dias."
+              "Até enviar o projeto, você pode cancelar por qualquer motivo e receber o valor inteiro. Escreva para support@stingward.com do e-mail usado no pedido. Se você nunca enviar, o reembolso é automático depois de 7 dias."
             ]
           ],
           [
             "Diferente do anunciado",
             [
-              "Se o relatório que você recebeu não é o que este site descreve, por exemplo está vazio, não abre ou não está no idioma escolhido, escreva para support@stingward.com em até 14 dias depois do pagamento e devolvemos o valor inteiro."
+              "Se o relatório que você recebeu não é o que este site descreve, por exemplo está vazio, não abre ou não está no idioma escolhido, escreva para support@stingward.com em até 15 dias depois do pagamento e devolvemos o valor inteiro."
             ]
           ],
           [
@@ -472,7 +472,7 @@
           [
             "Depois do reembolso",
             [
-              "O pedido termina, e o código e o relatório dele são apagados. A Paddle também pode reembolsar um pagamento pelos [termos de compra dela](https://www.paddle.com/legal/invoiced-consumer-terms). Nada nesta política limita direitos que a lei do consumidor garante."
+              "O pedido termina, e o código e o relatório dele são apagados. A Hotmart também pode reembolsar um pagamento pelos [termos de compra dela](https://hotmart.com/pt-br/legal/termos-de-compra), que deixam você pedir o reembolso a ela em [refund.hotmart.com](https://refund.hotmart.com) em até 15 dias depois do pagamento. Nada nesta política limita direitos que a lei do consumidor garante."
             ]
           ]
         ]

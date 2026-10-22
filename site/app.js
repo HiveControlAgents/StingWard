@@ -1,6 +1,6 @@
-// Stingward site: copy buttons, the two tab lists (the three real reports and where it runs), the entrances, the
-// demo recordings and the ad label in links. Without this file every report and every preview is on the page,
-// one after another.
+// Stingward site: copy buttons, the menu on narrow screens, the two tab lists (the three real reports and where it
+// runs), the entrances, the demo recordings and the ad label in links. Without this file every report and every
+// preview is on the page, one after another, and the menu's links sit in a row under the bar.
 
 (() => {
   document.querySelectorAll("[data-copy]").forEach((button) => {
@@ -15,6 +15,19 @@
       clearTimeout(button.timer);
       button.timer = setTimeout(() => { label.textContent = idle; button.classList.remove("is-done"); }, 1800);
     });
+  });
+})();
+
+// The menu below 1080px: the button opens the links under the bar; a link, the button again or Escape closes them.
+(() => {
+  const top = document.querySelector(".top");
+  const button = top && top.querySelector(".menu");
+  if (!button) return;
+  const set = (open) => { top.classList.toggle("is-open", open); button.setAttribute("aria-expanded", String(open)); };
+  button.addEventListener("click", () => set(button.getAttribute("aria-expanded") !== "true"));
+  top.querySelectorAll(".nav a").forEach((link) => link.addEventListener("click", () => set(false)));
+  addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && top.classList.contains("is-open")) { set(false); button.focus(); }
   });
 })();
 

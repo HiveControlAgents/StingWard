@@ -4,6 +4,9 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Changed
+- The website's terms, privacy policy and refund policy, in both languages, say how the paid report is now sold: we sell it and Hotmart takes the payment, sends the receipt and sends refunds, with links to Hotmart's purchase terms and privacy policy. The refund policy adds that Hotmart's terms let a buyer ask for a refund at refund.hotmart.com within 15 days, and its own window for a report that is not as described is 15 days too. The Portuguese offer says Hotmart shows the right amount before paying.
+
 ## [0.1.8] - 2026-10-22
 
 ### Added
