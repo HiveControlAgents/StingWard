@@ -58,6 +58,8 @@ HELP = {
            "fail_on": "sai com código 1 se houver achado desta severidade ou acima (padrão: high)",
            "only": "só estas verificações: deps,secrets,app,code,agents",
            "offline": "não consulta as bases (pula dependências)",
+           "no_ignore": "não aplica o .stingwardignore nem os comentários stingward:ignore do projeto (para auditar o "
+                        "projeto de outra pessoa)",
            "no_color": "texto sem cores, mesmo no terminal",
            "version": "mostra a versão e sai"},
     "en": {"description": "Security audit for AI-built projects, skills and MCP servers.",
@@ -78,6 +80,8 @@ HELP = {
            "fail_on": "exit with code 1 if there is a finding at this severity or above (default: high)",
            "only": "only these checks: deps,secrets,app,code,agents",
            "offline": "do not query the online databases (skips dependencies)",
+           "no_ignore": "do not apply the project's .stingwardignore or stingward:ignore comments (to audit someone "
+                        "else's project)",
            "no_color": "plain text without colors, even in a terminal",
            "version": "show the version and exit"},
 }
@@ -115,6 +119,7 @@ def _parser(lang=None):
     ap.add_argument("--fail-on", choices=["critical", "high", "medium", "low", "never"], default="high", help=h["fail_on"])
     ap.add_argument("--only", metavar=h["list"], default=None, help=h["only"])
     ap.add_argument("--offline", action="store_true", help=h["offline"])
+    ap.add_argument("--no-ignore", action="store_true", help=h["no_ignore"])
     ap.add_argument("--no-color", action="store_true", help=h["no_color"])
     ap.add_argument("--version", action="version", version=f"stingward {__version__}", help=h["version"])
     return ap
@@ -365,7 +370,8 @@ def main(argv=None):
             if not os.path.isdir(args.target):
                 _say(lang, "nodir", path=args.target)
                 return 2
-            ctx, findings = scan.run(args.target, mode="project", offline=args.offline, only=only)
+            ctx, findings = scan.run(args.target, mode="project", offline=args.offline, only=only,
+                                     honor_ignores=not args.no_ignore)
             label = args.target
         if rv is not None:
             try:

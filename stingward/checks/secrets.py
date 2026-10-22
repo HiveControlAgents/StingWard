@@ -297,9 +297,9 @@ def mask(text: str) -> str:
 
 
 def drop_inline_ignored(ctx, findings):
-    """Comentário stingward:ignore na linha do achado vale para todas as regras, só no modo projeto.
-    Numa skill de terceiros o comentário é do autor, que poderia esconder o próprio ataque."""
-    if ctx.mode != "project":
+    """Comentário stingward:ignore na linha do achado vale para todas as regras, só no modo projeto e sem
+    --no-ignore. Numa skill de terceiros o comentário é do autor, que poderia esconder o próprio ataque."""
+    if ctx.mode != "project" or not ctx.honor_ignores:
         return findings
     lines = {}
 
