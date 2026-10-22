@@ -103,6 +103,7 @@ H = {
         "check_name": {"deps": "dependências", "secrets": "segredos", "app": "erros comuns de apps feitos com IA", "code": "falhas no código (injeção, XSS, SSRF e outras)", "agents": "agentes, MCP e skills"},
         "ignore": ("O projeto tem {n} regra no .stingwardignore, que esconde alguns achados de propósito. Confira se ela ainda faz sentido.",
                    "O projeto tem {n} regras no .stingwardignore, que escondem alguns achados de propósito. Confira se elas ainda fazem sentido."),
+        "ignore_off": "O projeto pede para esconder alguns achados (no .stingwardignore ou em comentários stingward:ignore), mas esta verificação não aceitou esses pedidos: todos os achados estão no relatório.",
         "sources_h": "Bases consultadas", "src_col": "Base", "src_role": "Para quê", "src_status": "Situação",
         "src": {"osv": ("OSV.dev", "falhas conhecidas e pacotes maliciosos"),
                 "kev": ("CISA KEV", "falhas que atacantes estão explorando agora"),
@@ -223,6 +224,7 @@ H = {
         "check_name": {"deps": "dependencies", "secrets": "secrets", "app": "common AI-built app mistakes", "code": "code flaws (injection, XSS, SSRF and more)", "agents": "agents, MCP and skills"},
         "ignore": ("The project has {n} rule in .stingwardignore that hides some findings on purpose. Check that it still makes sense.",
                    "The project has {n} rules in .stingwardignore that hide some findings on purpose. Check that they still make sense."),
+        "ignore_off": "The project asks to hide some findings (in .stingwardignore or in stingward:ignore comments), but this check did not apply those requests: every finding is in the report.",
         "sources_h": "Sources consulted", "src_col": "Source", "src_role": "Used for", "src_status": "Status",
         "src": {"osv": ("OSV.dev", "known vulnerabilities and malicious packages"),
                 "kev": ("CISA KEV", "vulnerabilities attackers are exploiting now"),
@@ -943,7 +945,12 @@ def _scope(ctx, lang, t, checks, audit=None, findings=()):
             f'{t["checks"]}: {_checks(checks, t)}', t["rules"].format(n=len(RULES))]
     items = "".join(f"<li>{_html.escape(w)}</li>" for w in what)
     ignored = len(scan.load_ignore(ctx.root)) if ctx.mode == "project" else 0
-    ign = f'<p class="warn">{_html.escape(_n(t, "ignore", ignored))}</p>' if ignored else ""
+    if not ctx.honor_ignores:
+        # --no-ignore: nada foi escondido. Só vale dizer isso quando o projeto pediu para esconder algo.
+        asked = ignored or any("stingward:ignore" in ctx.read(rel) for rel in ctx.files)
+        ign = f'<p>{_html.escape(t["ignore_off"])}</p>' if asked else ""
+    else:
+        ign = f'<p class="warn">{_html.escape(_n(t, "ignore", ignored))}</p>' if ignored else ""
     steps = list(t["method"])
     if reviewed:
         steps[-1:] = [t["method_review"], t["method_grade_review"]]
