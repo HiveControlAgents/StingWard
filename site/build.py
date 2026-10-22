@@ -512,14 +512,14 @@ class Page:
         here, other = folders[lang], "en" if lang == "pt" else "pt"
         args = ["./my-saas"]
         if ai:
-            review = os.path.join(SITE, "sample", f"review-{lang}.json")
+            review, shown = os.path.join(SITE, "sample", f"review-{lang}.json"), f"site/sample/review-{lang}.json"
             args += ["--no-ignore", "--review", review, "--notes", os.path.join(SITE, "sample", f"notes-{lang}.md")]
             got = json.loads(cli(args, self.demo, lang, "json", self.online))["review"]
             if got["counts"].get("unreviewed"):  # a finding the review file does not have would read "not reviewed yet"
-                raise SystemExit(f"site: {os.path.relpath(review, ROOT)} has no comment for "
+                raise SystemExit(f"site: {shown} has no comment for "
                                  f"{got['counts']['unreviewed']} finding(s) of the demo app")
             if got["masked"]:
-                raise SystemExit(f"site: something in {os.path.relpath(review, ROOT)} or its notes looks like a secret")
+                raise SystemExit(f"site: something in {shown} or its notes looks like a secret")
         report = cli(args, self.demo, lang, "html", self.online)
         title, text, see = ((t["sample_ai_title"], t["sample_ai_text"], t["sample_plain"]) if ai else
                             (t["sample_title"], t["sample_text"], t["sample_with_ai"]))
