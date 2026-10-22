@@ -373,7 +373,7 @@ mark { background: none; color: inherit; }
 /* ---------------------------------------------------------------- check its work: large names on tiles */
 
 .proof {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px;
   margin-top: var(--section); padding: 0 var(--margin);
 }
 .proof__head {
@@ -381,14 +381,14 @@ mark { background: none; color: inherit; }
   padding: clamp(24px, 2.6vw, 40px); background: var(--ink); color: var(--bg);
 }
 .proof__head p { max-width: 34ch; font-size: var(--step-lead); line-height: 1.35; text-wrap: pretty; }
-.proof__tiles { list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.proof__tiles { list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .tile {
   display: flex; flex-direction: column; justify-content: flex-end; gap: 10px;
-  min-height: 100%; aspect-ratio: 3 / 2; padding: clamp(18px, 1.8vw, 26px);
+  height: 100%; min-height: clamp(150px, 12vw, 216px); padding: clamp(18px, 1.8vw, 26px);
   background: var(--surface); text-decoration: none;
   transition: background-color 200ms ease;
 }
-.tile__name { font-size: var(--step-head); font-weight: 500; letter-spacing: -0.035em; line-height: 1; overflow-wrap: anywhere; }
+.tile__name { font-size: clamp(1.75rem, 1rem + 1.4vw, 2.75rem); font-weight: 500; letter-spacing: -0.035em; line-height: 1; overflow-wrap: anywhere; }
 .tile__line { color: var(--muted); font-size: var(--step-small); }
 @media (hover: hover) and (pointer: fine) {
   .tile:hover { background: var(--surface-2); }
@@ -594,7 +594,7 @@ mark { background: none; color: inherit; }
   .dock__tab { padding: 18px 20px 18px 44px; }
   .dock__tab::before { left: 20px; top: 26px; }
   .proof { grid-template-columns: minmax(0, 1fr); }
-  .proof__head { min-height: 240px; }
+  .proof__head { gap: 24px; }
   .price { display: block; }
   .price__words { margin-top: 48px; }
   .audit { grid-template-columns: minmax(0, 1fr); row-gap: 56px; }
@@ -642,7 +642,8 @@ mark { background: none; color: inherit; }
   .dock__pane[hidden], .js .dock__pane[data-off] { display: none; }
   .proof__tiles { gap: 6px; }
   .proof { gap: 6px; }
-  .tile { justify-content: flex-start; aspect-ratio: auto; min-height: 132px; }
+  .proof__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile { justify-content: flex-start; min-height: 132px; }
   .tile__name { font-size: 1.75rem; }
   .audit { padding-top: calc(72px * 0.577 + 56px); }
   .audit__ground { --cut: 72px; }
