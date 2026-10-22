@@ -22,6 +22,8 @@ URL = "https://stingward.com/"
 # English is the main site, at the root; Portuguese lives under pt/. Paths are given from the site's root.
 PAGES = {"en": "index.html", "pt": "pt/index.html"}
 SAMPLES = {"en": "example/index.html", "pt": "pt/exemplo/index.html"}
+# The same report with the AI review of site/sample/, as the paid report comes. The report service links here.
+SAMPLES_AI = {"en": "example/full/index.html", "pt": "pt/exemplo/completo/index.html"}
 # The addresses the site had before English moved to the root. They were shared, so each one must still lead somewhere:
 # the old folder, the language of the page left there and the folder the page moved to.
 MOVED = {"en/": ("en", ""), "en/example/": ("en", "example/"), "exemplo/": ("pt", "pt/exemplo/")}
@@ -61,8 +63,8 @@ class Site(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.build = _builder()
         cls.out = cls.build.build(os.path.join(cls.tmp.name, "site"))
-        cls.pages, cls.samples = {}, {}
-        for pages, paths in ((cls.pages, PAGES), (cls.samples, SAMPLES)):
+        cls.pages, cls.samples, cls.ai_samples = {}, {}, {}
+        for pages, paths in ((cls.pages, PAGES), (cls.samples, SAMPLES), (cls.ai_samples, SAMPLES_AI)):
             for lang, rel in paths.items():
                 pages[lang] = cls.file(rel)
         cls.moved = {old: cls.file(old + "index.html") for old in MOVED}
@@ -83,6 +85,11 @@ class Site(unittest.TestCase):
         for lang in PAGES:
             yield lang, PAGES[lang], self.pages[lang]
             yield lang, SAMPLES[lang], self.samples[lang]
+            yield lang, SAMPLES_AI[lang], self.ai_samples[lang]
+
+    def every_sample(self):
+        for samples in (self.samples, self.ai_samples):
+            yield from samples.items()
 
     @classmethod
     def tearDownClass(cls):
@@ -156,7 +163,7 @@ class Site(unittest.TestCase):
         og:url, og:image) must all land on a file the build wrote; a folder counts only with its index.html. A link
         that starts with "/" would leave the /StingWard/ folder Pages serves the site from, so there are none."""
         pages = sorted(self.built())
-        self.assertEqual(len(pages), len(PAGES) + len(SAMPLES) + len(MOVED) + 2 * len(LEGAL))
+        self.assertEqual(len(pages), len(PAGES) + len(SAMPLES) + len(SAMPLES_AI) + len(MOVED) + 2 * len(LEGAL))
         for rel in pages:
             page = self.file(rel)
             here = posixpath.dirname(rel)
@@ -216,12 +223,13 @@ class Site(unittest.TestCase):
                 self.assertEqual(rel.startswith("pt/"), lang == "pt")
         self.assertEqual(self.build.PAGE_DIR, {"en": ".", "pt": "pt"})
         self.assertEqual(self.build.SAMPLE, {"en": "example", "pt": "pt/exemplo"})
+        self.assertEqual(self.build.SAMPLE_AI, {"en": "example/full", "pt": "pt/exemplo/completo"})
 
     def test_each_page_names_its_address_and_the_other_language(self):
         """canonical is the page's own address, hreflang lists both languages and points x-default at English, and
         the social card says the same address and both locales."""
         locale = {"en": "en_US", "pt": "pt_BR"}
-        for paths in (PAGES, SAMPLES):
+        for paths in (PAGES, SAMPLES, SAMPLES_AI):
             address = {lang: URL + posixpath.dirname(rel) + ("/" if posixpath.dirname(rel) else "")
                        for lang, rel in paths.items()}
             want = {"en": address["en"], "pt-BR": address["pt"], "x-default": address["en"]}
@@ -349,9 +357,17 @@ class Site(unittest.TestCase):
             audit = page.split('id="audit"', 1)[1].split("</section>", 1)[0]
             with self.subTest(lang=lang):
                 self.assertIn(html.escape(t["audit_h2"]), audit)
-                # US dollars in both: "US$" as Brazil writes it, "$" as English does
-                self.assertEqual(t["audit_currency"], {"pt": "US$", "en": "$"}[lang])
-                self.assertIn(f'<span class="figure__cur">{t["audit_currency"]}</span><span class="figure__num">29</span>', audit)
+                # reais in Portuguese, the price Paddle charges in Brazil, with the dollar price beside it; dollars in
+                # English, where nobody is told about reais
+                self.assertEqual((t["audit_currency"], t["audit_price"]), {"pt": ("R$", "99"), "en": ("$", "29")}[lang])
+                self.assertIn(f'<span class="figure__cur">{t["audit_currency"]}</span>'
+                              f'<span class="figure__num">{t["audit_price"]}</span>', audit)
+                if lang == "pt":
+                    self.assertIn(f'<p class="audit__note" data-reveal>{html.escape(t["audit_note"])}</p>', audit)
+                    self.assertIn("US$ 29", t["audit_note"])
+                else:
+                    self.assertEqual(t["audit_note"], "")
+                    self.assertNotIn("audit__note", audit)
                 # the promises the report service keeps: one free new check, and a refund when the report is late
                 gets = " ".join(t["audit_gets"])
                 self.assertIn({"pt": "30 dias", "en": "30 days"}[lang], gets)
@@ -360,8 +376,11 @@ class Site(unittest.TestCase):
                     self.assertIn(f"<li>{html.escape(line)}</li>", audit)
                 self.assertIn(html.escape(t["soon_h3"]), audit)
                 # the sample report's note repeats the price: it must be the same one
-                self.assertIn({"pt": "US$ 29", "en": "$29"}[lang], t["sample_audit"])
-                self.assertIn(f"US$ {t['audit_price']}, ", self.file(LEGAL["terms"][lang]))  # the terms say the same price
+                self.assertIn({"pt": "R$ 99", "en": "$29"}[lang], t["sample_audit"])
+                # the terms, the same for everyone, give both prices in both languages
+                terms = self.file(LEGAL["terms"][lang])
+                self.assertIn("US$ 29", terms)
+                self.assertIn("R$ 99", terms)
 
     # ---------------------------------------------------------------- terms, privacy and refunds
 
@@ -462,7 +481,7 @@ class Site(unittest.TestCase):
 
     def test_sample_report_is_the_real_html_report_of_the_demo_app(self):
         heads = {"pt": "Resumo executivo", "en": "Executive summary"}
-        for lang, page in self.samples.items():
+        for lang, page in self.every_sample():
             with self.subTest(lang=lang):
                 self.assertTrue(page.startswith("<!doctype html>"))
                 self.assertIn(f'<html lang="{"pt-BR" if lang == "pt" else "en"}">', page)
@@ -470,13 +489,15 @@ class Site(unittest.TestCase):
                 self.assertIn("my-saas", page)
                 for rule in ("APP001", "APP009", "APP011", "COD001", "COD007", "COD008"):
                     self.assertIn(f" {rule}</span>", page)
-                self.assertIn(_text()[lang]["sample_title"], page)
+        for lang in SAMPLES:
+            self.assertIn(_text()[lang]["sample_title"], self.samples[lang])
+            self.assertIn(_text()[lang]["sample_ai_title"], self.ai_samples[lang])
 
     def test_sample_report_keeps_its_policy_and_loads_nothing_from_outside(self):
         """The report's CSP allows inline CSS only. The note on top must not need anything else, or Pages would show it
         broken: no script, no stylesheet, font or image file, and the policy comes before the first style. Its only
         links in the head are its address and its other language, which load nothing."""
-        for lang, page in self.samples.items():
+        for lang, page in self.every_sample():
             with self.subTest(lang=lang):
                 meta = f'<meta http-equiv="Content-Security-Policy" content="{report_html.CSP}">'
                 self.assertEqual(page.count(meta), 1)
@@ -490,12 +511,70 @@ class Site(unittest.TestCase):
                 self.assertNotIn("url(", style)
                 self.assertNotIn("@import", style)
                 self.assertIsNone(re.search(r"\s(?:src|srcset|poster|action)=", page))
-                for href in re.findall(r'href="([^"]+)"', page):
-                    self.assertTrue(href.startswith(("https://", "../", "#")), href)
+                for href in re.findall(r'href="([^"]+)"', page):  # a page of this site, or https
+                    self.assertTrue(href.startswith(("https://", "#")) or not re.match(r"[A-Za-z][\w+.-]*:|/", href), href)
 
     def test_sample_note_disappears_in_print(self):
-        for page in self.samples.values():
+        for _, page in self.every_sample():
             self.assertIn("@media print{.sample{display:none}}", page)
+
+    def test_the_paid_sample_has_the_ai_review_on_every_finding(self):
+        words = {"en": ("AI review", "Summary"), "pt": ("Revisão por IA", "Resumo")}
+        for lang, page in self.ai_samples.items():
+            with self.subTest(lang=lang):
+                self.assertIn(words[lang][0], page)
+                self.assertIn(f">{words[lang][1]}<", page)
+                with open(os.path.join(SITE, "sample", f"notes-{lang}.md"), encoding="utf-8") as fh:
+                    first = fh.read().split(". ", 1)[0]
+                self.assertIn(html.escape(first, quote=False), page)
+                badges = re.findall(r'class="rv rv-([\w-]+)"', page)
+                self.assertGreaterEqual(len(badges), 15)
+                self.assertEqual(set(badges), {"confirmed"})  # nothing "not reviewed yet"
+                self.assertNotIn('class="rv rv-confirmed"', self.samples[lang])  # the free one has no review
+
+    def test_the_review_files_match_each_other(self):
+        docs = {}
+        for lang in SAMPLES_AI:
+            with open(os.path.join(SITE, "sample", f"review-{lang}.json"), encoding="utf-8") as fh:
+                docs[lang] = json.load(fh)
+        for lang, doc in docs.items():
+            with self.subTest(lang=lang):
+                self.assertEqual(doc["review_kind"], "ai")
+                self.assertTrue(all(row["comment"] and row["status"] == "confirmed" for row in doc["findings"]))
+        self.assertEqual([r["fingerprint"] for r in docs["en"]["findings"]], [r["fingerprint"] for r in docs["pt"]["findings"]])
+
+    def test_a_finding_the_review_file_does_not_have_fails_the_build(self):
+        demo = os.path.join(self.tmp.name, "demo-review")
+        subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "demo", "fixtures.py"), demo], check=True, capture_output=True)
+        site = os.path.join(self.tmp.name, "site-review")
+        os.makedirs(os.path.join(site, "sample"))
+        for name in ("review-en.json", "notes-en.md"):
+            with open(os.path.join(SITE, "sample", name), encoding="utf-8") as fh:
+                text = fh.read()
+            if name.endswith(".json"):
+                doc = json.loads(text)
+                doc["findings"] = [r for r in doc["findings"] if r["finding"]["rule"] != "COD007"]
+                text = json.dumps(doc)
+            with open(os.path.join(site, "sample", name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        real = self.build.SITE
+        self.build.SITE = site
+        try:
+            with self.assertRaises(SystemExit) as caught:
+                self.build.Page("en", _text()["en"], demo, False, 0).sample(ai=True)
+        finally:
+            self.build.SITE = real
+        self.assertIn("has no comment for 1 finding(s) of the demo app", str(caught.exception))
+
+    def test_the_samples_link_to_each_other_and_the_offer_to_the_paid_one(self):
+        t = _text()
+        for lang, here in (("en", "example/"), ("pt", "pt/exemplo/")):
+            with self.subTest(lang=lang):
+                ai = {"en": "full/", "pt": "completo/"}[lang]
+                self.assertIn(f'<a href="{ai}">{html.escape(t[lang]["sample_with_ai"])}</a>', self.samples[lang])
+                self.assertIn(f'<a href="../">{html.escape(t[lang]["sample_plain"])}</a>', self.ai_samples[lang])
+                act = self.pages[lang].split('<div class="audit__act">', 1)[1].split("</div>", 1)[0]
+                self.assertIn(f'<a href="{"example/" if lang == "en" else "exemplo/"}{ai}">', act)
 
     # ---------------------------------------------------------------- what the new checks look like on the page
 

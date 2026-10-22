@@ -1,0 +1,169 @@
+{
+  "stingward_review": 1,
+  "review_kind": "ai",
+  "reviewer": "",
+  "findings": [
+    {
+      "fingerprint": "197dd4888118479b",
+      "status": "confirmed",
+      "comment": "Your OpenAI key is in a variable whose name starts with `NEXT_PUBLIC_`, and Next.js copies those into the code every visitor's browser downloads. Anyone can take the key from there and spend your OpenAI credit. Create a new key, delete this one in OpenAI, and save the new one as `OPENAI_API_KEY`, without the prefix.",
+      "finding": {
+        "rule": "APP001",
+        "where": ".env:1"
+      }
+    },
+    {
+      "fingerprint": "5187c201a83025d0",
+      "status": "confirmed",
+      "comment": "The chat route reads the key from that same variable, so renaming it in `.env` is not enough on its own. Change this line to read `OPENAI_API_KEY` once the key has its new name.",
+      "finding": {
+        "rule": "APP001",
+        "where": "app/api/chat/route.ts:3"
+      }
+    },
+    {
+      "fingerprint": "8bb8068ffe6d6e24",
+      "status": "confirmed",
+      "comment": "Whatever the AI answers is run as a command on your server, and the person who types the task decides much of that answer. Someone can ask for a chore that deletes files or sends your keys away, and the server will do it. Remove the `exec` call and let the agent choose only from a short list of fixed actions.",
+      "finding": {
+        "rule": "APP009",
+        "where": "app/api/agent/route.ts:16"
+      }
+    },
+    {
+      "fingerprint": "7eed5cd499ea80f8",
+      "status": "confirmed",
+      "comment": "Your app is locked to an old version of `next` with many published security problems. The worst one lets someone skip the checks that middleware (code that runs before each page) is meant to do. Update `next` to the version in the fix below, then check that the app still works.",
+      "finding": {
+        "rule": "DEP001",
+        "where": "package-lock.json:15"
+      }
+    },
+    {
+      "fingerprint": "2ae176afe4485304",
+      "status": "confirmed",
+      "comment": "This option tells the OpenAI library it may run in the browser, where the key would be visible to everyone. This file runs on the server, so remove `dangerouslyAllowBrowser`: it only turns off the warning that protects you.",
+      "finding": {
+        "rule": "APP002",
+        "where": "app/api/chat/route.ts:3"
+      }
+    },
+    {
+      "fingerprint": "94bfc08f48084693",
+      "status": "confirmed",
+      "comment": "The `profiles` table keeps your users' emails and plans, and without row level security (Supabase's rules for who can see each row) anyone with your app's public Supabase key can read or change all of them. Turn row level security on for this table and add a policy that lets each user see only their own row.",
+      "finding": {
+        "rule": "APP004",
+        "where": "supabase/migrations/0001_profiles.sql:1"
+      }
+    },
+    {
+      "fingerprint": "f9b6a028966392e5",
+      "status": "confirmed",
+      "comment": "The `user` value from the address goes straight into the database query, so a visitor can rewrite the query and read every customer's invoices. Have the query send that value separately (a parameterized query), so the database treats it as data and never as part of the command.",
+      "finding": {
+        "rule": "COD001",
+        "where": "app/api/invoices/route.ts:7"
+      }
+    },
+    {
+      "fingerprint": "5926898aaa8497e7",
+      "status": "confirmed",
+      "comment": "The file name comes from the address and is joined to the folder as it is, so a name like `../.env` lets anyone download files outside `invoices`, your keys included. Keep only the file's own name and check that the invoice belongs to the person who is logged in.",
+      "finding": {
+        "rule": "COD007",
+        "where": "app/api/invoices/pdf/route.ts:6"
+      }
+    },
+    {
+      "fingerprint": "2a5724eb24838bdb",
+      "status": "confirmed",
+      "comment": "Your server opens any address a visitor sends, including addresses that only the server can reach, such as internal services or the cloud's own address that hands out credentials. Accept only public web links and refuse private and internal addresses before fetching.",
+      "finding": {
+        "rule": "COD008",
+        "where": "app/api/preview/route.ts:4"
+      }
+    },
+    {
+      "fingerprint": "5683bd7155056fdc",
+      "status": "confirmed",
+      "comment": "Your project is locked to an old version of `axios` with published security problems, and the worst one can make your app stop answering. Update `axios` to the version in the fix below.",
+      "finding": {
+        "rule": "DEP001",
+        "where": "package-lock.json:19"
+      }
+    },
+    {
+      "fingerprint": "74b8004d859a06d0",
+      "status": "confirmed",
+      "comment": "This answer tells browsers that any website may call your chat route, so another site can use its visitors to spend your OpenAI credit. Remove the `Access-Control-Allow-Origin` header, or set it to your own site's address.",
+      "finding": {
+        "rule": "APP003",
+        "where": "app/api/chat/route.ts:8"
+      }
+    },
+    {
+      "fingerprint": "67a80fc2cbe7ade8",
+      "status": "confirmed",
+      "comment": "This rule lets anyone, even people who are not logged in, read every invoice. Change it so each user reads only the invoices whose `user_id` is their own.",
+      "finding": {
+        "rule": "APP005",
+        "where": "supabase/migrations/0001_profiles.sql:9"
+      }
+    },
+    {
+      "fingerprint": "89f4d92d17b2cd98",
+      "status": "confirmed",
+      "comment": "Chat messages, the AI's answers included, are put on the page as HTML. If someone gets the AI to answer with a script, it runs in your users' browsers and can act as them. Show the messages as plain text, or clean them with a sanitizer first.",
+      "finding": {
+        "rule": "APP009",
+        "where": "components/Chat.tsx:6"
+      }
+    },
+    {
+      "fingerprint": "a7af26c969bc0f08",
+      "status": "confirmed",
+      "comment": "Anyone on the internet can call this route as often as they like, and each call costs you an OpenAI request on top of running a command on your server. Require a login and limit how many requests each user can make per minute.",
+      "finding": {
+        "rule": "APP011",
+        "where": "app/api/agent/route.ts:7"
+      }
+    },
+    {
+      "fingerprint": "2e7e44855e48d4ad",
+      "status": "confirmed",
+      "comment": "The chat route also works with no login and no limit, so a script can use your OpenAI account for free until the bill arrives. Add the same login check and per-user limit here.",
+      "finding": {
+        "rule": "APP011",
+        "where": "app/api/chat/route.ts:5"
+      }
+    },
+    {
+      "fingerprint": "7c9ed278911a39b3",
+      "status": "confirmed",
+      "comment": "This line lets an install keep a version of `requests` from 2018 with known security problems. Raise the minimum to the version in the fix below, or better, lock exact versions, as the lockfile finding explains.",
+      "finding": {
+        "rule": "DEP004",
+        "where": "worker/requirements.txt:2"
+      }
+    },
+    {
+      "fingerprint": "76fd44c000376939",
+      "status": "confirmed",
+      "comment": "Your `.gitignore` does not list `.env`, so the file with your keys is easy to send to GitHub by accident. Add a line with `.env` to `.gitignore`, and if the file was ever committed, replace every key in it.",
+      "finding": {
+        "rule": "SEC003",
+        "where": ".env"
+      }
+    },
+    {
+      "fingerprint": "78d1115fd0086af5",
+      "status": "confirmed",
+      "comment": "Without a lockfile (a file that pins the exact version of every package), each install of the worker can get different versions, a broken or tampered one included. Create one with a tool such as `uv` or `pip-tools` and keep it in the project.",
+      "finding": {
+        "rule": "DEP003",
+        "where": "worker/requirements.txt"
+      }
+    }
+  ]
+}

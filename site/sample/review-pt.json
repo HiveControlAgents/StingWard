@@ -1,0 +1,169 @@
+{
+  "stingward_review": 1,
+  "review_kind": "ai",
+  "reviewer": "",
+  "findings": [
+    {
+      "fingerprint": "197dd4888118479b",
+      "status": "confirmed",
+      "comment": "Sua chave da OpenAI está numa variável que começa com `NEXT_PUBLIC_`, e o Next.js copia essas variáveis para o código que o navegador de cada visitante baixa. Qualquer pessoa pode pegar a chave ali e gastar o seu crédito na OpenAI. Crie uma chave nova, apague esta na OpenAI e guarde a nova como `OPENAI_API_KEY`, sem o prefixo.",
+      "finding": {
+        "rule": "APP001",
+        "where": ".env:1"
+      }
+    },
+    {
+      "fingerprint": "5187c201a83025d0",
+      "status": "confirmed",
+      "comment": "A rota do chat lê a chave dessa mesma variável, então trocar o nome só no `.env` não basta. Mude esta linha para ler `OPENAI_API_KEY` depois que a chave tiver o nome novo.",
+      "finding": {
+        "rule": "APP001",
+        "where": "app/api/chat/route.ts:3"
+      }
+    },
+    {
+      "fingerprint": "8bb8068ffe6d6e24",
+      "status": "confirmed",
+      "comment": "O que a IA responde é executado como comando no seu servidor, e quem digita a tarefa decide boa parte dessa resposta. Alguém pode pedir uma tarefa que apaga arquivos ou manda suas chaves para fora, e o servidor faz. Tire a chamada `exec` e deixe o agente escolher só entre uma lista curta de ações fixas.",
+      "finding": {
+        "rule": "APP009",
+        "where": "app/api/agent/route.ts:16"
+      }
+    },
+    {
+      "fingerprint": "7eed5cd499ea80f8",
+      "status": "confirmed",
+      "comment": "Seu app está preso a uma versão antiga do `next`, com muitos problemas de segurança já publicados. O pior deles deixa alguém pular as verificações que o middleware (o código que roda antes de cada página) deveria fazer. Atualize o `next` para a versão indicada na correção abaixo e confira se o app continua funcionando.",
+      "finding": {
+        "rule": "DEP001",
+        "where": "package-lock.json:15"
+      }
+    },
+    {
+      "fingerprint": "2ae176afe4485304",
+      "status": "confirmed",
+      "comment": "Esta opção avisa a biblioteca da OpenAI que ela pode rodar no navegador, onde a chave fica visível para todos. Este arquivo roda no servidor, então tire o `dangerouslyAllowBrowser`: ele só desliga o aviso que protege você.",
+      "finding": {
+        "rule": "APP002",
+        "where": "app/api/chat/route.ts:3"
+      }
+    },
+    {
+      "fingerprint": "94bfc08f48084693",
+      "status": "confirmed",
+      "comment": "A tabela `profiles` guarda o e-mail e o plano dos seus usuários, e sem RLS (as regras do Supabase sobre quem vê cada linha) qualquer pessoa com a chave pública do Supabase do seu app pode ler ou mudar todas elas. Ligue o RLS nesta tabela e crie uma regra que deixe cada usuário ver só a própria linha.",
+      "finding": {
+        "rule": "APP004",
+        "where": "supabase/migrations/0001_profiles.sql:1"
+      }
+    },
+    {
+      "fingerprint": "f9b6a028966392e5",
+      "status": "confirmed",
+      "comment": "O valor `user` que vem do endereço entra direto na consulta ao banco, então um visitante pode reescrever a consulta e ler as faturas de todos os clientes. Faça a consulta mandar esse valor separado (consulta com parâmetros), para o banco tratar como dado e nunca como parte do comando.",
+      "finding": {
+        "rule": "COD001",
+        "where": "app/api/invoices/route.ts:7"
+      }
+    },
+    {
+      "fingerprint": "5926898aaa8497e7",
+      "status": "confirmed",
+      "comment": "O nome do arquivo vem do endereço e é juntado à pasta do jeito que chega, então um nome como `../.env` deixa qualquer pessoa baixar arquivos de fora de `invoices`, inclusive suas chaves. Use só o nome do arquivo, sem pastas, e confira se a fatura é de quem está logado.",
+      "finding": {
+        "rule": "COD007",
+        "where": "app/api/invoices/pdf/route.ts:6"
+      }
+    },
+    {
+      "fingerprint": "2a5724eb24838bdb",
+      "status": "confirmed",
+      "comment": "Seu servidor abre qualquer endereço que o visitante mandar, inclusive endereços que só o servidor alcança, como serviços internos ou o endereço da própria nuvem que entrega credenciais. Aceite só links públicos da web e recuse endereços privados e internos antes de abrir.",
+      "finding": {
+        "rule": "COD008",
+        "where": "app/api/preview/route.ts:4"
+      }
+    },
+    {
+      "fingerprint": "5683bd7155056fdc",
+      "status": "confirmed",
+      "comment": "Seu projeto está preso a uma versão antiga do `axios`, com problemas de segurança já publicados, e o pior deles pode fazer o app parar de responder. Atualize o `axios` para a versão indicada na correção abaixo.",
+      "finding": {
+        "rule": "DEP001",
+        "where": "package-lock.json:19"
+      }
+    },
+    {
+      "fingerprint": "74b8004d859a06d0",
+      "status": "confirmed",
+      "comment": "Esta resposta diz aos navegadores que qualquer site pode chamar a sua rota de chat, então outro site pode usar os visitantes dele para gastar o seu crédito na OpenAI. Tire o cabeçalho `Access-Control-Allow-Origin` ou ponha nele só o endereço do seu site.",
+      "finding": {
+        "rule": "APP003",
+        "where": "app/api/chat/route.ts:8"
+      }
+    },
+    {
+      "fingerprint": "67a80fc2cbe7ade8",
+      "status": "confirmed",
+      "comment": "Esta regra deixa qualquer pessoa, mesmo sem login, ler todas as faturas. Mude para cada usuário ler só as faturas em que o `user_id` é o dele.",
+      "finding": {
+        "rule": "APP005",
+        "where": "supabase/migrations/0001_profiles.sql:9"
+      }
+    },
+    {
+      "fingerprint": "89f4d92d17b2cd98",
+      "status": "confirmed",
+      "comment": "As mensagens do chat, inclusive as respostas da IA, entram na página como HTML. Se alguém fizer a IA responder com um script, ele roda no navegador dos seus usuários e pode agir em nome deles. Mostre as mensagens como texto simples ou limpe com um sanitizador antes.",
+      "finding": {
+        "rule": "APP009",
+        "where": "components/Chat.tsx:6"
+      }
+    },
+    {
+      "fingerprint": "a7af26c969bc0f08",
+      "status": "confirmed",
+      "comment": "Qualquer pessoa na internet pode chamar esta rota quantas vezes quiser, e cada chamada custa uma requisição à OpenAI, além de rodar um comando no seu servidor. Exija login e limite quantos pedidos cada usuário pode fazer por minuto.",
+      "finding": {
+        "rule": "APP011",
+        "where": "app/api/agent/route.ts:7"
+      }
+    },
+    {
+      "fingerprint": "2e7e44855e48d4ad",
+      "status": "confirmed",
+      "comment": "A rota do chat também funciona sem login e sem limite, então um script pode usar a sua conta da OpenAI de graça até a fatura chegar. Ponha aqui a mesma exigência de login e o mesmo limite por usuário.",
+      "finding": {
+        "rule": "APP011",
+        "where": "app/api/chat/route.ts:5"
+      }
+    },
+    {
+      "fingerprint": "7c9ed278911a39b3",
+      "status": "confirmed",
+      "comment": "Esta linha deixa uma instalação ficar com uma versão do `requests` de 2018, com problemas de segurança conhecidos. Suba o mínimo para a versão indicada na correção abaixo ou, melhor, trave as versões exatas, como explica o achado sobre o lockfile.",
+      "finding": {
+        "rule": "DEP004",
+        "where": "worker/requirements.txt:2"
+      }
+    },
+    {
+      "fingerprint": "76fd44c000376939",
+      "status": "confirmed",
+      "comment": "O seu `.gitignore` não lista o `.env`, então o arquivo com as suas chaves vai fácil para o GitHub sem querer. Ponha uma linha com `.env` no `.gitignore` e, se o arquivo já foi enviado alguma vez, troque todas as chaves dele.",
+      "finding": {
+        "rule": "SEC003",
+        "where": ".env"
+      }
+    },
+    {
+      "fingerprint": "78d1115fd0086af5",
+      "status": "confirmed",
+      "comment": "Sem um lockfile (um arquivo que fixa a versão exata de cada pacote), cada instalação do worker pode pegar versões diferentes, inclusive uma quebrada ou adulterada. Gere um com uma ferramenta como `uv` ou `pip-tools` e guarde no projeto.",
+      "finding": {
+        "rule": "DEP003",
+        "where": "worker/requirements.txt"
+      }
+    }
+  ]
+}
