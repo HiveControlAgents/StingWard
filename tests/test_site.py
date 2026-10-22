@@ -23,7 +23,7 @@ URL = "https://stingward.com/"
 PAGES = {"en": "index.html", "pt": "pt/index.html"}
 SAMPLES = {"en": "example/index.html", "pt": "pt/exemplo/index.html"}
 # The same report with the AI review of site/sample/, as the paid report comes. The report service links here.
-SAMPLES_AI = {"en": "example/ai-review/index.html", "pt": "pt/exemplo/revisao-ia/index.html"}
+SAMPLES_AI = {"en": "example/full/index.html", "pt": "pt/exemplo/completo/index.html"}
 # The addresses the site had before English moved to the root. They were shared, so each one must still lead somewhere:
 # the old folder, the language of the page left there and the folder the page moved to.
 MOVED = {"en/": ("en", ""), "en/example/": ("en", "example/"), "exemplo/": ("pt", "pt/exemplo/")}
@@ -223,7 +223,7 @@ class Site(unittest.TestCase):
                 self.assertEqual(rel.startswith("pt/"), lang == "pt")
         self.assertEqual(self.build.PAGE_DIR, {"en": ".", "pt": "pt"})
         self.assertEqual(self.build.SAMPLE, {"en": "example", "pt": "pt/exemplo"})
-        self.assertEqual(self.build.SAMPLE_AI, {"en": "example/ai-review", "pt": "pt/exemplo/revisao-ia"})
+        self.assertEqual(self.build.SAMPLE_AI, {"en": "example/full", "pt": "pt/exemplo/completo"})
 
     def test_each_page_names_its_address_and_the_other_language(self):
         """canonical is the page's own address, hreflang lists both languages and points x-default at English, and
@@ -570,7 +570,7 @@ class Site(unittest.TestCase):
         t = _text()
         for lang, here in (("en", "example/"), ("pt", "pt/exemplo/")):
             with self.subTest(lang=lang):
-                ai = {"en": "ai-review/", "pt": "revisao-ia/"}[lang]
+                ai = {"en": "full/", "pt": "completo/"}[lang]
                 self.assertIn(f'<a href="{ai}">{html.escape(t[lang]["sample_with_ai"])}</a>', self.samples[lang])
                 self.assertIn(f'<a href="../">{html.escape(t[lang]["sample_plain"])}</a>', self.ai_samples[lang])
                 act = self.pages[lang].split('<div class="audit__act">', 1)[1].split("</div>", 1)[0]

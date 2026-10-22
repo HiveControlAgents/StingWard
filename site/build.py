@@ -3,7 +3,7 @@
 Every report and number on the page comes from this checkout: the script runs Stingward on the README
 demos and on its own skill, reads the rules and counts the tests, so the site cannot drift from the code.
 The sample report (example/ and pt/exemplo/) is the real HTML report of the demo app, with a note on top. The
-sample of the paid report (example/ai-review/ and pt/exemplo/revisao-ia/) is the same report with the AI review kept in
+sample of the paid report (example/full/ and pt/exemplo/completo/) is the same report with the AI review kept in
 site/sample/: a comment on every finding and the summary on top, applied with --review and --notes.
 The addresses the site had before English moved to the root (en/, en/example/ and exemplo/) are small pages
 that send the visitor on to the new ones. The terms, privacy and refund pages of the paid report (terms/, privacy/ and
@@ -40,7 +40,7 @@ SEVERITY = {"🔴": "crit", "🟠": "high", "🟡": "med", "🔵": "low", "⚪":
 ROW = r"^   [^ :]+(?: [^ :]+){0,2}: "  # "   where: ...", "   how to fix: ..." under a finding
 PAGE_DIR = {"en": ".", "pt": "pt"}  # English is the main site; Portuguese has its own folder
 SAMPLE = {"en": "example", "pt": "pt/exemplo"}  # where each language's sample report is published
-SAMPLE_AI = {"en": "example/ai-review", "pt": "pt/exemplo/revisao-ia"}  # and the one with the AI review
+SAMPLE_AI = {"en": "example/full", "pt": "pt/exemplo/completo"}  # and the paid one, with the AI review
 HREFLANG = {"en": "en", "pt": "pt-BR"}
 # The addresses the site had before English moved to the root, already shared, as old folder: (language, new folder).
 # Pages cannot redirect, so each old folder gets a page that sends the visitor on (see moved()).

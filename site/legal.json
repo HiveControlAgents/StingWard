@@ -28,7 +28,7 @@
             [
               "For US$ 29 (R$ 99 when you buy from Brazil), paid once, we check one project that you send as a zip file or as one GitHub repository.",
               [
-                "Stingward reads the code, an AI reviews each finding and a second AI checks the first.",
+                "Stingward reads the code and an automatic review goes over each finding.",
                 "You get a PDF report in the language you chose, with a grade from A to F, a summary in plain words, where each problem is, why it matters, how to fix it and what to fix first.",
                 "After you fix things, you can send the new version of the same project once, free, within 30 days of the first report."
               ],
@@ -41,7 +41,7 @@
               "The report reads the code you send. It looks for common, known mistakes and is not a guarantee that the app is secure.",
               [
                 "It does not test the running app, your servers, your cloud settings or anything that is not in the code.",
-                "Like any automatic check, it can miss problems, and the AI can be wrong about a finding.",
+                "Like any automatic check, it can miss problems, and the review can be wrong about a finding.",
                 "It says how to fix each problem. Making the fix is up to you.",
                 "It is information to help you, not a certification or legal or professional advice."
               ]
@@ -127,7 +127,7 @@
             [
               [
                 "Stingward reads it on our server, in a folder that is deleted when the check ends.",
-                "For the AI review, we send Anthropic's Claude a few lines around each finding, with secrets masked, and the rule that found it. We never send the whole project. Under its [commercial terms](https://www.anthropic.com/legal/commercial-terms), Anthropic does not train its models on this data.",
+                "For the automatic review, we send Claude, Anthropic's AI model, a few lines around each finding, with secrets masked, and the rule that found it. We never send the whole project. Under its [commercial terms](https://www.anthropic.com/legal/commercial-terms), Anthropic does not train its models on this data.",
                 "To look up known vulnerabilities, package names and versions go to OSV.dev, the US National Vulnerability Database, CISA and FIRST.",
                 "If you connect GitHub, you install our GitHub App on one repository, with read-only access. We download that repository once and remove the access right after.",
                 "The zip or the download is deleted as soon as the report is ready or the order fails, and always within 48 hours."
@@ -141,7 +141,7 @@
               [
                 "Paddle: the payment, the invoice, tax and refunds. As Merchant of Record, it is also responsible for this data itself.",
                 "Google Cloud: our server, database and file storage, in the United States.",
-                "Anthropic: the AI review of masked excerpts, in the United States.",
+                "Anthropic: the automatic review of masked excerpts, with its AI model, in the United States.",
                 "Resend: sending the emails, in the United States.",
                 "GitHub: the repository download, only if you connect one. GitHub also hosts this website and may log visitors' IP addresses for security.",
                 "Cloudflare: the stingward.com domain and the emails you send to support@stingward.com."
@@ -268,7 +268,7 @@
             [
               "Por R$ 99 no Brasil, ou US$ 29 fora dele, em pagamento único, verificamos um projeto que você envia em zip ou como um repositório do GitHub.",
               [
-                "O Stingward lê o código, uma IA revisa cada achado e uma segunda IA confere a primeira.",
+                "O Stingward lê o código e uma revisão automática confere cada achado.",
                 "Você recebe um relatório em PDF no idioma escolhido, com nota de A a F, um resumo em palavras simples, onde está cada problema, por que importa, como corrigir e o que corrigir primeiro.",
                 "Depois de corrigir, você pode mandar a nova versão do mesmo projeto uma vez, de graça, em até 30 dias do primeiro relatório."
               ],
@@ -281,7 +281,7 @@
               "O relatório lê o código que você manda. Ele procura erros comuns e conhecidos e não garante que o app é seguro.",
               [
                 "Ele não testa o app rodando, seus servidores, as configurações da sua nuvem nem nada que não esteja no código.",
-                "Como toda verificação automática, ele pode deixar passar problemas, e a IA pode errar sobre um achado.",
+                "Como toda verificação automática, ele pode deixar passar problemas, e a revisão pode errar sobre um achado.",
                 "Ele diz como corrigir cada problema. A correção fica com você.",
                 "Ele é uma informação para ajudar, não um certificado nem uma consultoria jurídica ou profissional."
               ]
@@ -367,7 +367,7 @@
             [
               [
                 "O Stingward lê o código no nosso servidor, numa pasta que é apagada quando a verificação termina.",
-                "Para a revisão por IA, enviamos ao Claude, da Anthropic, algumas linhas em volta de cada achado, com os segredos mascarados, e a regra que o encontrou. Nunca enviamos o projeto inteiro. Pelos [termos comerciais](https://www.anthropic.com/legal/commercial-terms) dela, a Anthropic não treina seus modelos com esses dados.",
+                "Para a revisão automática, enviamos ao Claude, o modelo de IA da Anthropic, algumas linhas em volta de cada achado, com os segredos mascarados, e a regra que o encontrou. Nunca enviamos o projeto inteiro. Pelos [termos comerciais](https://www.anthropic.com/legal/commercial-terms) dela, a Anthropic não treina seus modelos com esses dados.",
                 "Para consultar falhas conhecidas, o nome e a versão dos pacotes vão para o OSV.dev, a base nacional de vulnerabilidades dos EUA (NVD), a CISA e o FIRST.",
                 "Se você conecta o GitHub, instala o nosso app do GitHub em um repositório, só com permissão de leitura. Baixamos esse repositório uma vez e tiramos o acesso logo depois.",
                 "O zip ou o download é apagado assim que o relatório fica pronto ou o pedido falha, e sempre em até 48 horas."
@@ -381,7 +381,7 @@
               [
                 "Paddle: o pagamento, a nota, os impostos e os reembolsos. Como Merchant of Record, ela também responde por esses dados.",
                 "Google Cloud: nosso servidor, banco de dados e armazenamento de arquivos, nos Estados Unidos.",
-                "Anthropic: a revisão por IA dos trechos mascarados, nos Estados Unidos.",
+                "Anthropic: a revisão automática dos trechos mascarados, com o modelo de IA dela, nos Estados Unidos.",
                 "Resend: o envio dos e-mails, nos Estados Unidos.",
                 "GitHub: o download do repositório, só se você conectar um. O GitHub também hospeda este site e pode registrar o IP de quem visita, por segurança.",
                 "Cloudflare: o domínio stingward.com e os e-mails enviados para support@stingward.com."
