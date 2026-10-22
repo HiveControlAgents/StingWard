@@ -5,6 +5,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 ## [Unreleased]
 
 ### Added
+- DEP005, PHP version with known vulnerabilities: the PHP version a project runs on is looked up in OSV.dev, from the `php` image in a `Dockerfile` or `docker-compose.yml` (with `ARG` values filled in), `.php-version`, `.tool-versions` and `mise.toml`. A project on `php:8.3.30-apache` now gets CVE-2026-109618 and CVE-2026-109619, the remote code execution flaws in PHP disclosed on 2026-10-22, as critical, with the fix: PHP 8.3.36 (8.2.35, 8.4.27 and 8.5.12 in the other branches). A tag that follows a branch, such as `php:8.3-apache`, gets what the branch fixed in the last 90 days, one level lower, since only an image built before the fix has it; a branch with no fix, such as 8.1, gets the full severity.
 - A sample of the paid report on the website (`/example/full/` and `/pt/exemplo/completo/`): the demo app's HTML report with a comment on every finding from the AI review and a summary on top, from the review and notes files in `site/sample/`, applied with `--review` and `--notes` as the report service does. The plain sample and this one link to each other, and the offer's "See a sample report" opens this one. The build stops if the demo app has a finding the review file does not cover.
 
 ### Changed
