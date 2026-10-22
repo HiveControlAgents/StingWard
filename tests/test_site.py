@@ -375,12 +375,65 @@ class Site(unittest.TestCase):
                 for line in t["audit_gets"] + t["audit_not"]:
                     self.assertIn(f"<li>{html.escape(line)}</li>", audit)
                 self.assertIn(html.escape(t["soon_h3"]), audit)
+                # the code is deleted when the report is ready: the privacy summary in the terms says the same
+                deleted = {"pt": "Seu código apagado assim que o relatório fica pronto",
+                           "en": "Your code deleted as soon as the report is ready"}[lang]
+                self.assertIn(deleted, t["audit_gets"])
+                self.assertIn({"pt": "seu código é apagado assim que o relatório fica pronto",
+                               "en": "your code is deleted as soon as the report is ready"}[lang], json.dumps(_legal()[lang], ensure_ascii=False))
                 # the sample report's note repeats the price: it must be the same one
                 self.assertIn({"pt": "R$ 99", "en": "$29"}[lang], t["sample_audit"])
                 # the terms, the same for everyone, give both prices in both languages
                 terms = self.file(LEGAL["terms"][lang])
                 self.assertIn("US$ 29", terms)
                 self.assertIn("R$ 99", terms)
+
+    def test_the_offer_shows_real_pages_of_the_paid_sample(self):
+        text = _text()
+        for lang, page in self.pages.items():
+            audit = page.split('id="audit"', 1)[1].split("</section>", 1)[0]
+            paid = {"en": "example/full/", "pt": "exemplo/completo/"}[lang]
+            with self.subTest(lang=lang):
+                sheets = re.findall(r'<li class="sheet sheet--(\w+)"><figure><a href="([^"]+)"><img src="([^"]+)" '
+                                    r'width="(\d+)" height="(\d+)" alt="([^"]+)" decoding="async"></a>'
+                                    r'<figcaption>([^<]+)</figcaption>', audit)
+                self.assertEqual([name for name, *_ in sheets], ["cover", "summary", "findings"])
+                for (name, href, src, width, height, alt, caption), (want_caption, want_alt) in zip(sheets, text[lang]["pages"]):
+                    # each page opens the whole paid sample, and is the PNG the build copied, at its own size
+                    self.assertEqual(href, paid)
+                    self.assertEqual((html.unescape(caption), html.unescape(alt)), (want_caption, want_alt))
+                    path = os.path.join(self.out, posixpath.normpath(posixpath.join(posixpath.dirname(PAGES[lang]), src)))
+                    self.assertEqual(self.build.size(path), (int(width), int(height)))
+                    # a printed A4 page, not a drawing of one
+                    self.assertEqual(int(width), 900)
+                    self.assertAlmostEqual(int(height) / int(width), 297 / 210, delta=0.01)
+                # the pages sit between the price and what it includes
+                self.assertLess(audit.index("audit__figure"), audit.index("audit__pages"))
+                self.assertLess(audit.index("audit__pages"), audit.index("audit__list--gets"))
+
+    def test_the_offer_comes_right_after_the_first_screen(self):
+        text = _text()
+        for lang, page in self.pages.items():
+            with self.subTest(lang=lang):
+                order = [page.index(f'id="{id_}"') for id_ in ("report", "audit", "why", "how", "finds", "where", "price", "run")]
+                self.assertEqual(order, sorted(order))
+                # and the first screen points at the paid sample for those who don't use a terminal
+                alt = page.split('<p class="hero__alt">', 1)[1].split("</p>", 1)[0]
+                self.assertIn(html.escape(text[lang]["hero_alt"]), alt)
+                self.assertIn(f'<a href="{ {"en": "example/full/", "pt": "exemplo/completo/"}[lang] }">', alt)
+
+    def test_small_screens_get_a_menu_with_every_section(self):
+        with open(os.path.join(SITE, "app.js"), encoding="utf-8") as fh:
+            script = fh.read()
+        self.assertIn("aria-expanded", script)
+        self.assertIn("Escape", script)
+        for lang, page in self.pages.items():
+            with self.subTest(lang=lang):
+                self.assertIn(f'<button class="menu" type="button" aria-expanded="false" aria-controls="menu">'
+                              f'{html.escape(_text()[lang]["menu"])}</button>', page)
+                nav = page.split('<nav class="nav" id="menu"', 1)[1].split("</nav>", 1)[0]
+                for target in ("#audit", "#why", "#finds", "#price", "#where"):
+                    self.assertIn(f'href="{target}"', nav)
 
     # ---------------------------------------------------------------- terms, privacy and refunds
 
