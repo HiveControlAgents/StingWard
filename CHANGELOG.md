@@ -4,13 +4,17 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-22
+
 ### Added
 - DEP005, PHP version with known vulnerabilities: the PHP version a project runs on is looked up in OSV.dev, from the `php` image in a `Dockerfile` or `docker-compose.yml` (with `ARG` values filled in), `.php-version`, `.tool-versions` and `mise.toml`. A project on `php:8.3.30-apache` now gets CVE-2026-109618 and CVE-2026-109619, the remote code execution flaws in PHP disclosed on 2026-10-22, as critical, with the fix: PHP 8.3.36 (8.2.35, 8.4.27 and 8.5.12 in the other branches). A tag that follows a branch, such as `php:8.3-apache`, gets what the branch fixed in the last 90 days, one level lower, since only an image built before the fix has it; a branch with no fix, such as 8.1, gets the full severity.
+- Ad labels: a visitor who arrives from a link with `utm_source`, `utm_medium`, `utm_campaign` or `utm_content` (each a short plain word) keeps them on the links to the site's other pages and on the buy button, so the order and the payment can say which ad or post it came from. Nothing is stored on the visitor's device, other parameters are not passed on, and the privacy policy says what the label is and that the order keeps it.
 - A sample of the paid report on the website (`/example/full/` and `/pt/exemplo/completo/`): the demo app's HTML report with a comment on every finding from the AI review and a summary on top, from the review and notes files in `site/sample/`, applied with `--review` and `--notes` as the report service does. The plain sample and this one link to each other, and the offer's "See a sample report" opens this one. The build stops if the demo app has a finding the review file does not cover.
 
 ### Changed
 - The Portuguese site shows the report's price in reais, R$ 99, the amount Paddle charges buyers in Brazil, with a line saying that outside Brazil it is US$ 29. The English site still shows $29, and the terms in both languages give both prices.
 - The offer, the FAQ and the terms describe the paid report's review as an automatic review of every finding. The privacy policy still says which lines go to Anthropic's AI model for it.
+- Reports from a review file with `"review_kind": "ai"` say "automatic review" instead of "AI review", in the HTML, text and Markdown formats, as the website does; the scope section says the masked excerpt of each finding went to the review service. The review file format does not change.
 - The "Check its work" section of the website is more compact: the six tiles sit in three columns beside the heading and no longer grow taller as the screen gets wider, so the section stays short on wide displays.
 
 ## [0.1.7] - 2026-10-22
@@ -246,7 +250,8 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 First public release: CLI (`pipx`, `uvx`, `npx`), Claude Code plugin and skill, and GitHub Action. Checks dependencies (OSV.dev, CISA KEV, EPSS, NVD), secrets, AI-built app mistakes, agent and MCP setups, and skills, with reports in text, Markdown, JSON and SARIF in English and Portuguese.
 
-[Unreleased]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.4...v0.1.5

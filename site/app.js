@@ -1,5 +1,5 @@
-// Stingward site: copy buttons, the two tab lists (the three real reports and where it runs), the entrances and the
-// demo recordings. Without this file every report and every preview is on the page,
+// Stingward site: copy buttons, the two tab lists (the three real reports and where it runs), the entrances, the
+// demo recordings and the ad label in links. Without this file every report and every preview is on the page,
 // one after another.
 
 (() => {
@@ -104,4 +104,22 @@ tablist(document.querySelector(".term__tabs"), (out, byKey) => {
   addEventListener("load", () => setTimeout(() => {
     targets.forEach((el) => { const r = el.getBoundingClientRect(); if (r.top < innerHeight && r.bottom > 0) el.classList.add("is-in"); });
   }, 2500));
+})();
+
+// The label of the ad or post that brought the visitor (?utm_source=instagram&utm_content=reel-1) goes on with the
+// links to the site's other pages and to the buy page, so the order can keep it and show which ads sell. Nothing is
+// stored on the visitor's device: the label lives only in the address.
+(() => {
+  const params = new URLSearchParams(location.search);
+  const label = ["utm_source", "utm_medium", "utm_campaign", "utm_content"]
+    .filter((key) => /^[A-Za-z0-9._-]{1,40}$/.test(params.get(key) || ""))
+    .map((key) => [key, params.get(key)]);
+  if (!label.length) return;
+  document.querySelectorAll("a[href]").forEach((a) => {
+    const url = new URL(a.getAttribute("href"), location.href);
+    if (url.origin !== location.origin && !a.hasAttribute("data-buy")) return;
+    if (url.pathname === location.pathname && url.hash) return;  // a jump within the page
+    label.forEach(([key, value]) => url.searchParams.set(key, value));
+    a.href = url.href;
+  });
 })();
