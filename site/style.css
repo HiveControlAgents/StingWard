@@ -433,6 +433,7 @@ mark { background: none; color: inherit; }
 .audit__lead { margin-top: 28px; max-width: 50ch; font-size: var(--step-lead); line-height: 1.4; text-wrap: pretty; }
 .audit__offer { grid-column: 8 / -1; justify-self: end; display: grid; justify-items: start; }
 .audit__figure .figure__per { font-weight: 500; }
+.audit__note { margin-top: 12px; max-width: 34ch; font-size: var(--step-small); line-height: 1.45; text-wrap: pretty; }
 .audit__act { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 24px; margin-top: 32px; }
 .audit__act a:not(.button), .soon__act a:not(.button) { font-size: var(--step-small); font-weight: 600; text-decoration-thickness: 2px; }
 .audit .button { background: var(--accent-ink); color: var(--accent); }

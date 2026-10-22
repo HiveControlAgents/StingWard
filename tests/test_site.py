@@ -357,9 +357,17 @@ class Site(unittest.TestCase):
             audit = page.split('id="audit"', 1)[1].split("</section>", 1)[0]
             with self.subTest(lang=lang):
                 self.assertIn(html.escape(t["audit_h2"]), audit)
-                # US dollars in both: "US$" as Brazil writes it, "$" as English does
-                self.assertEqual(t["audit_currency"], {"pt": "US$", "en": "$"}[lang])
-                self.assertIn(f'<span class="figure__cur">{t["audit_currency"]}</span><span class="figure__num">29</span>', audit)
+                # reais in Portuguese, the price Paddle charges in Brazil, with the dollar price beside it; dollars in
+                # English, where nobody is told about reais
+                self.assertEqual((t["audit_currency"], t["audit_price"]), {"pt": ("R$", "149"), "en": ("$", "29")}[lang])
+                self.assertIn(f'<span class="figure__cur">{t["audit_currency"]}</span>'
+                              f'<span class="figure__num">{t["audit_price"]}</span>', audit)
+                if lang == "pt":
+                    self.assertIn(f'<p class="audit__note" data-reveal>{html.escape(t["audit_note"])}</p>', audit)
+                    self.assertIn("US$ 29", t["audit_note"])
+                else:
+                    self.assertEqual(t["audit_note"], "")
+                    self.assertNotIn("audit__note", audit)
                 # the promises the report service keeps: one free new check, and a refund when the report is late
                 gets = " ".join(t["audit_gets"])
                 self.assertIn({"pt": "30 dias", "en": "30 days"}[lang], gets)
@@ -368,8 +376,11 @@ class Site(unittest.TestCase):
                     self.assertIn(f"<li>{html.escape(line)}</li>", audit)
                 self.assertIn(html.escape(t["soon_h3"]), audit)
                 # the sample report's note repeats the price: it must be the same one
-                self.assertIn({"pt": "US$ 29", "en": "$29"}[lang], t["sample_audit"])
-                self.assertIn(f"US$ {t['audit_price']}, ", self.file(LEGAL["terms"][lang]))  # the terms say the same price
+                self.assertIn({"pt": "R$ 149", "en": "$29"}[lang], t["sample_audit"])
+                # the terms, the same for everyone, give both prices in both languages
+                terms = self.file(LEGAL["terms"][lang])
+                self.assertIn("US$ 29", terms)
+                self.assertIn("R$ 149", terms)
 
     # ---------------------------------------------------------------- terms, privacy and refunds
 

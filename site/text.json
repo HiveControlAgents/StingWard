@@ -113,9 +113,10 @@
 
     "audit_h2": "Relatório de segurança do seu app feito com IA",
     "audit_p": "Mande um zip ou um repositório do GitHub. O Stingward verifica o código, uma IA revisa cada achado e uma segunda IA confere a primeira, e em minutos você recebe um PDF em palavras simples.",
-    "audit_currency": "US$",
-    "audit_price": "29",
+    "audit_currency": "R$",
+    "audit_price": "149",
     "audit_per": "pagamento único",
+    "audit_note": "No Brasil, em reais. Fora do Brasil, US$ 29. O Paddle mostra o valor certo antes de você pagar.",
     "audit_buy": "Pedir o relatório",
     "audit_gets_h": "O que você recebe",
     "audit_gets": [
@@ -177,7 +178,7 @@
     "sample_with_ai": "Ver com a revisão por IA",
     "sample_plain": "Ver sem a revisão por IA",
     "sample_home": "Voltar ao site",
-    "sample_audit": "Relatório com revisão por IA: US$ 29",
+    "sample_audit": "Relatório com revisão por IA: R$ 149",
     "sample_other": "English",
 
     "moved": "Esta página tem um novo endereço"
@@ -298,6 +299,7 @@
     "audit_currency": "$",
     "audit_price": "29",
     "audit_per": "one payment",
+    "audit_note": "",
     "audit_buy": "Get the report",
     "audit_gets_h": "What you get",
     "audit_gets": [
