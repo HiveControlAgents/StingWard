@@ -1,0 +1,482 @@
+{
+  "en": {
+    "label": "Legal",
+    "home": "Back to Stingward",
+    "updated": "Last updated: October 22, 2026.",
+    "copy": "© 2026 Isaque Moutta.",
+    "pages": {
+      "terms": {
+        "name": "Terms",
+        "title": "Terms of service",
+        "description": "The terms of the Stingward report: what you buy, what it covers, time limits, refunds and liability.",
+        "intro": "These terms cover the Stingward report, a paid security check of one software project. The free Stingward tool (the command line, the Claude Code plugin and the GitHub Action) is covered by its Apache 2.0 license, not by these terms.",
+        "sections": [
+          [
+            "Who we are",
+            [
+              "Stingward is run by Isaque Moutta, an individual in Brazil (\"we\" and \"us\"). Write to support@stingward.com about anything in these terms."
+            ]
+          ],
+          [
+            "Who sells the report",
+            [
+              "Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders. Paddle takes the payment, issues the invoice, charges sales tax or VAT where it applies and sends refunds. [Paddle's buyer terms](https://www.paddle.com/legal/invoiced-consumer-terms) also apply to your purchase."
+            ]
+          ],
+          [
+            "What you get",
+            [
+              "For US$ 29, paid once, we check one project that you send as a zip file or as one GitHub repository.",
+              [
+                "Stingward reads the code, an AI reviews each finding and a second AI checks the first.",
+                "You get a PDF report in the language you chose, with a grade from A to F, a summary in plain words, where each problem is, why it matters, how to fix it and what to fix first.",
+                "After you fix things, you can send the new version of the same project once, free, within 30 days of the first report."
+              ],
+              "Sales tax or VAT may be added depending on where you live. Paddle shows the total before you pay."
+            ]
+          ],
+          [
+            "What it does not cover",
+            [
+              "The report reads the code you send. It looks for common, known mistakes and is not a guarantee that the app is secure.",
+              [
+                "It does not test the running app, your servers, your cloud settings or anything that is not in the code.",
+                "Like any automatic check, it can miss problems, and the AI can be wrong about a finding.",
+                "It says how to fix each problem. Making the fix is up to you.",
+                "It is information to help you, not a certification or legal or professional advice."
+              ]
+            ]
+          ],
+          [
+            "Your part",
+            [
+              "Send only code that is yours or that you have permission to check, and confirm it when you order. Do not use the service to check someone else's project without permission, to send malicious code or to try to break the service. We may refuse or end an order that does, and refund it.",
+              "Keep your own copy of the report: it is deleted after 30 days."
+            ]
+          ],
+          [
+            "Time limits",
+            [
+              [
+                "Send your project within 7 days of paying. If nothing arrives, we refund you in full.",
+                "The report is usually ready in minutes. If it is not ready within 24 hours of receiving your project, we refund you in full.",
+                "The zip can be up to 25 MB. A project we cannot check (over our limits, with no code we can read, or in a file we cannot open) is refunded in full.",
+                "The report and its link work for 30 days. Then the report is deleted."
+              ]
+            ]
+          ],
+          [
+            "Refunds",
+            [
+              "The [refund policy](refund) says when you get your money back. Most refunds are automatic."
+            ]
+          ],
+          [
+            "Your data",
+            [
+              "The [privacy policy](privacy) says what we collect, who else handles it and when it is deleted. In short: your code is deleted as soon as the report is ready, always within 48 hours."
+            ]
+          ],
+          [
+            "Liability",
+            [
+              "We work for the report to be right, but we cannot promise that it finds every problem or that every finding is correct. As far as the law allows, we are not liable for losses caused by a problem the report missed, by a wrong finding or by changes you make because of the report, and our total liability for an order is the amount you paid for it. Nothing in these terms limits rights that consumer law gives you and that cannot be waived."
+            ]
+          ],
+          [
+            "Changes",
+            [
+              "We may change these terms. The version published when you paid applies to your order. The date below says when they last changed."
+            ]
+          ],
+          [
+            "Law",
+            [
+              "These terms are governed by the laws of Brazil. If you buy as a consumer, you also keep the protection of the mandatory laws of the country where you live and can go to its courts."
+            ]
+          ]
+        ]
+      },
+      "privacy": {
+        "name": "Privacy",
+        "title": "Privacy policy",
+        "description": "What the Stingward report collects, why, who else handles it and when it is deleted.",
+        "intro": "This policy covers the Stingward report, the paid check sold on this site. The website itself sets no cookies and has no analytics or tracking. The free tool runs on your computer and sends only package names and versions, to look up known vulnerabilities.",
+        "sections": [
+          [
+            "Who is responsible",
+            [
+              "Isaque Moutta, in Brazil, runs Stingward and is responsible for your data (the controller, under Brazil's LGPD and the EU and UK GDPR). Write to support@stingward.com. Paddle, which sells the report, is responsible for the payment data it collects, as its [privacy notice](https://www.paddle.com/legal/privacy) says."
+            ]
+          ],
+          [
+            "What we collect",
+            [
+              [
+                "Your email address, which Paddle passes to us after you pay, to send you the order link and notices about it.",
+                "The order: when it was made and paid, its status, the report language, the grade, Paddle's ids for the payment and for you as a customer, and when you confirmed that the app is yours and that you accept the terms.",
+                "The project you send, as a zip file or one GitHub repository.",
+                "The report and the findings it is built from, with secrets masked.",
+                "Technical logs of errors and order events. They name the order, not your code, your email or your link."
+              ],
+              "We never see your card or bank details: they go to Paddle."
+            ]
+          ],
+          [
+            "What happens to your code",
+            [
+              [
+                "Stingward reads it on our server, in a folder that is deleted when the check ends.",
+                "For the AI review, we send Anthropic's Claude a few lines around each finding, with secrets masked, and the rule that found it. We never send the whole project. Under its [commercial terms](https://www.anthropic.com/legal/commercial-terms), Anthropic does not train its models on this data.",
+                "To look up known vulnerabilities, package names and versions go to OSV.dev, the US National Vulnerability Database, CISA and FIRST.",
+                "If you connect GitHub, you install our GitHub App on one repository, with read-only access. We download that repository once and remove the access right after.",
+                "The zip or the download is deleted as soon as the report is ready or the order fails, and always within 48 hours."
+              ]
+            ]
+          ],
+          [
+            "Who else handles it",
+            [
+              "These companies process data for us, only to run the service:",
+              [
+                "Paddle: the payment, the invoice, tax and refunds. As Merchant of Record, it is also responsible for this data itself.",
+                "Google Cloud: our server, database and file storage, in the United States.",
+                "Anthropic: the AI review of masked excerpts, in the United States.",
+                "Resend: sending the emails, in the United States.",
+                "GitHub: the repository download, only if you connect one. GitHub also hosts this website and may log visitors' IP addresses for security.",
+                "Cloudflare: the stingward.com domain and the emails you send to support@stingward.com."
+              ],
+              "Most of these servers are in the United States. Where the law asks for it, the transfer relies on the standard contractual clauses these companies offer. We do not sell your data or use it for advertising."
+            ]
+          ],
+          [
+            "Cookies",
+            [
+              "The order pages set one cookie, only when you connect GitHub. It holds your order link for up to 30 minutes so GitHub can bring you back, and it is deleted when you return. The payment window is Paddle's, and Paddle may set its own cookies to take the payment. There are no cookies for analytics or ads."
+            ]
+          ],
+          [
+            "How long we keep it",
+            [
+              [
+                "Your code: until the report is ready or the order fails, and never more than 48 hours.",
+                "The report, the findings, your email address and the order link: 30 days after the report or the refund. Then they are deleted.",
+                "An order that was never paid: 2 days.",
+                "Technical logs: 30 days.",
+                "After that, a record of the order stays without your email (dates, status, grade and Paddle's ids), for as long as tax and accounting rules require."
+              ]
+            ]
+          ],
+          [
+            "Why we use it",
+            [
+              "To make and deliver the report you bought (performing the contract), to keep the records that tax law requires (legal obligation), and to keep the service secure and fix errors (legitimate interest)."
+            ]
+          ],
+          [
+            "Your rights",
+            [
+              "You can ask to see, correct, export or delete your data, to know who we shared it with and to object to how we use it. Write to support@stingward.com from the email you ordered with, and we answer within 15 days. Deleting an order's data also ends the order. You can also complain to Brazil's data protection authority, the [ANPD](https://www.gov.br/anpd/pt-br), or to the authority where you live."
+            ]
+          ],
+          [
+            "Children",
+            [
+              "The report is sold to adults. We do not knowingly collect data from anyone under 18."
+            ]
+          ],
+          [
+            "Changes",
+            [
+              "If this policy changes, the new version is published here with a new date below."
+            ]
+          ]
+        ]
+      },
+      "refund": {
+        "name": "Refunds",
+        "title": "Refund policy",
+        "description": "When the Stingward report is refunded: automatic refunds, cancelling before you send your project and the 14-day guarantee.",
+        "intro": "Paddle, our reseller and Merchant of Record, takes the payment and sends refunds. A refund is always in full, goes back to the card or account you paid with and can take a few days to show.",
+        "sections": [
+          [
+            "Automatic refunds",
+            [
+              "You do not need to ask. We refund you in full when:",
+              [
+                "Nothing was sent within 7 days of paying.",
+                "The report was not ready within 24 hours of receiving your project.",
+                "We could not make the report: the file is not a zip we can open, it has no code we can read, the project is over our limits, GitHub did not let us download it or something failed on our side.",
+                "You paid for an order that was already paid or that no longer exists."
+              ]
+            ]
+          ],
+          [
+            "Changed your mind",
+            [
+              "Until you send your project, you can cancel for any reason and get a full refund. Write to support@stingward.com from the email you ordered with, or ask Paddle at [paddle.net](https://paddle.net). If you never send it, the refund is automatic after 7 days."
+            ]
+          ],
+          [
+            "Not as described",
+            [
+              "If the report you got is not what this site describes, for example it is empty, does not open or is not in the language you chose, write to support@stingward.com within 14 days of paying and we refund you in full."
+            ]
+          ],
+          [
+            "The free new check",
+            [
+              "If the free check of a fixed version does not go through, your first report stays and there is no refund, because that report was delivered. If the failure was on our side, you can send the new version again within the 30 days."
+            ]
+          ],
+          [
+            "After a refund",
+            [
+              "The order ends, and its code and report are deleted. Paddle may also refund a payment under its own [buyer terms](https://www.paddle.com/legal/invoiced-consumer-terms). Nothing in this policy limits rights that consumer law gives you."
+            ]
+          ]
+        ]
+      }
+    }
+  },
+  "pt": {
+    "label": "Informações legais",
+    "home": "Voltar ao Stingward",
+    "updated": "Última atualização: 22 de outubro de 2026.",
+    "copy": "© 2026 Isaque Moutta.",
+    "pages": {
+      "terms": {
+        "name": "Termos",
+        "title": "Termos de uso",
+        "description": "Os termos do relatório do Stingward: o que você compra, o que ele cobre, prazos, reembolsos e responsabilidade.",
+        "intro": "Estes termos valem para o relatório do Stingward, uma verificação de segurança paga de um projeto de software. A ferramenta gratuita do Stingward (a linha de comando, o plugin do Claude Code e a GitHub Action) segue a licença Apache 2.0, não estes termos.",
+        "sections": [
+          [
+            "Quem somos",
+            [
+              "O Stingward é mantido por Isaque Moutta, pessoa física no Brasil (\"nós\"). Escreva para support@stingward.com sobre qualquer ponto destes termos."
+            ]
+          ],
+          [
+            "Quem vende o relatório",
+            [
+              "Nosso processo de compra é conduzido pela nossa revendedora on-line, a Paddle.com. A Paddle.com é a Merchant of Record (a vendedora oficial) de todos os nossos pedidos. A Paddle recebe o pagamento, emite a nota, cobra os impostos sobre a venda quando houver e faz os reembolsos. Os [termos de compra da Paddle](https://www.paddle.com/legal/invoiced-consumer-terms) também valem para a sua compra."
+            ]
+          ],
+          [
+            "O que você recebe",
+            [
+              "Por US$ 29, em pagamento único, verificamos um projeto que você envia em zip ou como um repositório do GitHub.",
+              [
+                "O Stingward lê o código, uma IA revisa cada achado e uma segunda IA confere a primeira.",
+                "Você recebe um relatório em PDF no idioma escolhido, com nota de A a F, um resumo em palavras simples, onde está cada problema, por que importa, como corrigir e o que corrigir primeiro.",
+                "Depois de corrigir, você pode mandar a nova versão do mesmo projeto uma vez, de graça, em até 30 dias do primeiro relatório."
+              ],
+              "Pode haver imposto sobre a venda, conforme o país onde você mora. A Paddle mostra o total antes do pagamento."
+            ]
+          ],
+          [
+            "O que não cobre",
+            [
+              "O relatório lê o código que você manda. Ele procura erros comuns e conhecidos e não garante que o app é seguro.",
+              [
+                "Ele não testa o app rodando, seus servidores, as configurações da sua nuvem nem nada que não esteja no código.",
+                "Como toda verificação automática, ele pode deixar passar problemas, e a IA pode errar sobre um achado.",
+                "Ele diz como corrigir cada problema. A correção fica com você.",
+                "Ele é uma informação para ajudar, não um certificado nem uma consultoria jurídica ou profissional."
+              ]
+            ]
+          ],
+          [
+            "Sua parte",
+            [
+              "Mande só código que é seu ou que você tem permissão para verificar, e confirme isso no pedido. Não use o serviço para verificar o projeto de outra pessoa sem permissão, para mandar código malicioso nem para tentar quebrar o serviço. Podemos recusar ou encerrar um pedido assim, com reembolso.",
+              "Guarde sua cópia do relatório: ele é apagado depois de 30 dias."
+            ]
+          ],
+          [
+            "Prazos",
+            [
+              [
+                "Envie o projeto em até 7 dias depois de pagar. Se nada chegar, devolvemos o valor inteiro.",
+                "O relatório costuma ficar pronto em minutos. Se ele não ficar pronto em 24 horas depois de recebermos o projeto, devolvemos o valor inteiro.",
+                "O zip pode ter até 25 MB. Um projeto que não conseguimos verificar (acima dos nossos limites, sem código que dê para ler ou num arquivo que não abre) é reembolsado por inteiro.",
+                "O relatório e o link funcionam por 30 dias. Depois o relatório é apagado."
+              ]
+            ]
+          ],
+          [
+            "Reembolsos",
+            [
+              "A [política de reembolso](refund) diz quando você recebe o dinheiro de volta. A maioria dos reembolsos é automática."
+            ]
+          ],
+          [
+            "Seus dados",
+            [
+              "A [política de privacidade](privacy) diz o que coletamos, quem mais trata os dados e quando eles são apagados. Em resumo: seu código é apagado assim que o relatório fica pronto, sempre em até 48 horas."
+            ]
+          ],
+          [
+            "Responsabilidade",
+            [
+              "Trabalhamos para o relatório estar certo, mas não podemos prometer que ele acha todos os problemas nem que todo achado está correto. Até onde a lei permite, não respondemos por perdas causadas por um problema que o relatório não achou, por um achado errado ou por mudanças que você fizer por causa dele, e nossa responsabilidade total por um pedido é o valor pago por ele. Nada nestes termos limita direitos que a lei do consumidor garante e que não podem ser renunciados."
+            ]
+          ],
+          [
+            "Mudanças",
+            [
+              "Podemos mudar estes termos. Vale para o seu pedido a versão publicada quando você pagou. A data abaixo diz quando eles mudaram pela última vez."
+            ]
+          ],
+          [
+            "Lei aplicável",
+            [
+              "Estes termos seguem as leis do Brasil. Se você compra como consumidor, também conta com a proteção das leis obrigatórias do país onde mora e pode recorrer aos tribunais de lá."
+            ]
+          ]
+        ]
+      },
+      "privacy": {
+        "name": "Privacidade",
+        "title": "Política de privacidade",
+        "description": "O que o relatório do Stingward coleta, por quê, quem mais trata os dados e quando eles são apagados.",
+        "intro": "Esta política vale para o relatório do Stingward, a verificação paga vendida neste site. O site em si não usa cookies, análise de visitas nem rastreamento. A ferramenta gratuita roda no seu computador e só envia o nome e a versão dos pacotes, para consultar falhas conhecidas.",
+        "sections": [
+          [
+            "Quem é o responsável",
+            [
+              "Isaque Moutta, no Brasil, mantém o Stingward e é o responsável pelos seus dados (o controlador, pela LGPD e pelo GDPR da União Europeia e do Reino Unido). Escreva para support@stingward.com. A Paddle, que vende o relatório, é responsável pelos dados de pagamento que coleta, como diz o [aviso de privacidade dela](https://www.paddle.com/legal/privacy)."
+            ]
+          ],
+          [
+            "O que coletamos",
+            [
+              [
+                "Seu e-mail, que a Paddle nos passa depois do pagamento, para enviar o link do pedido e os avisos sobre ele.",
+                "O pedido: quando foi feito e pago, a situação, o idioma do relatório, a nota, os identificadores da Paddle para o pagamento e para você como cliente, e quando você confirmou que o app é seu e que aceita os termos.",
+                "O projeto que você envia, em zip ou como um repositório do GitHub.",
+                "O relatório e os achados que o formam, com os segredos mascarados.",
+                "Registros técnicos de erros e de eventos do pedido. Eles citam o pedido, não o seu código, o seu e-mail nem o seu link."
+              ],
+              "Nunca vemos os dados do seu cartão ou do seu banco: eles vão para a Paddle."
+            ]
+          ],
+          [
+            "O que acontece com seu código",
+            [
+              [
+                "O Stingward lê o código no nosso servidor, numa pasta que é apagada quando a verificação termina.",
+                "Para a revisão por IA, enviamos ao Claude, da Anthropic, algumas linhas em volta de cada achado, com os segredos mascarados, e a regra que o encontrou. Nunca enviamos o projeto inteiro. Pelos [termos comerciais](https://www.anthropic.com/legal/commercial-terms) dela, a Anthropic não treina seus modelos com esses dados.",
+                "Para consultar falhas conhecidas, o nome e a versão dos pacotes vão para o OSV.dev, a base nacional de vulnerabilidades dos EUA (NVD), a CISA e o FIRST.",
+                "Se você conecta o GitHub, instala o nosso app do GitHub em um repositório, só com permissão de leitura. Baixamos esse repositório uma vez e tiramos o acesso logo depois.",
+                "O zip ou o download é apagado assim que o relatório fica pronto ou o pedido falha, e sempre em até 48 horas."
+              ]
+            ]
+          ],
+          [
+            "Quem mais trata os dados",
+            [
+              "Estas empresas tratam dados para nós, só para o serviço funcionar:",
+              [
+                "Paddle: o pagamento, a nota, os impostos e os reembolsos. Como Merchant of Record, ela também responde por esses dados.",
+                "Google Cloud: nosso servidor, banco de dados e armazenamento de arquivos, nos Estados Unidos.",
+                "Anthropic: a revisão por IA dos trechos mascarados, nos Estados Unidos.",
+                "Resend: o envio dos e-mails, nos Estados Unidos.",
+                "GitHub: o download do repositório, só se você conectar um. O GitHub também hospeda este site e pode registrar o IP de quem visita, por segurança.",
+                "Cloudflare: o domínio stingward.com e os e-mails enviados para support@stingward.com."
+              ],
+              "A maioria desses servidores fica nos Estados Unidos. Quando a lei pede, a transferência se apoia nas cláusulas contratuais padrão que essas empresas oferecem. Não vendemos seus dados nem os usamos para publicidade."
+            ]
+          ],
+          [
+            "Cookies",
+            [
+              "As páginas do pedido usam um cookie, só quando você conecta o GitHub. Ele guarda o link do pedido por até 30 minutos, para o GitHub trazer você de volta, e é apagado quando você volta. A janela de pagamento é da Paddle, e ela pode usar cookies próprios para receber o pagamento. Não há cookies de análise nem de anúncios."
+            ]
+          ],
+          [
+            "Por quanto tempo guardamos",
+            [
+              [
+                "Seu código: até o relatório ficar pronto ou o pedido falhar, e nunca mais de 48 horas.",
+                "O relatório, os achados, seu e-mail e o link do pedido: 30 dias depois do relatório ou do reembolso. Depois são apagados.",
+                "Um pedido que nunca foi pago: 2 dias.",
+                "Registros técnicos: 30 dias.",
+                "Depois disso, fica um registro do pedido sem o seu e-mail (datas, situação, nota e identificadores da Paddle), pelo tempo que as regras fiscais e contábeis exigem."
+              ]
+            ]
+          ],
+          [
+            "Por que usamos",
+            [
+              "Para fazer e entregar o relatório que você comprou (execução do contrato), para guardar os registros que a lei fiscal exige (obrigação legal) e para manter o serviço seguro e corrigir erros (legítimo interesse)."
+            ]
+          ],
+          [
+            "Seus direitos",
+            [
+              "Você pode pedir para ver, corrigir, exportar ou apagar seus dados, saber com quem os compartilhamos e se opor ao uso que fazemos deles. Escreva para support@stingward.com do e-mail usado no pedido, e respondemos em até 15 dias. Apagar os dados de um pedido também encerra o pedido. Você também pode reclamar à Autoridade Nacional de Proteção de Dados, a [ANPD](https://www.gov.br/anpd/pt-br), ou à autoridade do lugar onde mora."
+            ]
+          ],
+          [
+            "Menores de idade",
+            [
+              "O relatório é vendido para adultos. Não coletamos de propósito dados de menores de 18 anos."
+            ]
+          ],
+          [
+            "Mudanças",
+            [
+              "Se esta política mudar, a nova versão é publicada aqui, com uma nova data abaixo."
+            ]
+          ]
+        ]
+      },
+      "refund": {
+        "name": "Reembolso",
+        "title": "Política de reembolso",
+        "description": "Quando o relatório do Stingward é reembolsado: reembolsos automáticos, cancelamento antes de enviar o projeto e a garantia de 14 dias.",
+        "intro": "A Paddle, nossa revendedora e Merchant of Record, recebe o pagamento e faz os reembolsos. O reembolso é sempre do valor inteiro, volta para o cartão ou a conta usada no pagamento e pode levar alguns dias para aparecer.",
+        "sections": [
+          [
+            "Reembolso automático",
+            [
+              "Você não precisa pedir. Devolvemos o valor inteiro quando:",
+              [
+                "Nada foi enviado em até 7 dias depois do pagamento.",
+                "O relatório não ficou pronto em 24 horas depois de recebermos o projeto.",
+                "Não conseguimos fazer o relatório: o arquivo não é um zip que abre, não tem código que dê para ler, o projeto passa dos nossos limites, o GitHub não deixou baixar ou algo falhou do nosso lado.",
+                "Você pagou um pedido que já estava pago ou que não existe mais."
+              ]
+            ]
+          ],
+          [
+            "Mudou de ideia",
+            [
+              "Até enviar o projeto, você pode cancelar por qualquer motivo e receber o valor inteiro. Escreva para support@stingward.com do e-mail usado no pedido, ou peça à Paddle em [paddle.net](https://paddle.net). Se você nunca enviar, o reembolso é automático depois de 7 dias."
+            ]
+          ],
+          [
+            "Diferente do anunciado",
+            [
+              "Se o relatório que você recebeu não é o que este site descreve, por exemplo está vazio, não abre ou não está no idioma escolhido, escreva para support@stingward.com em até 14 dias depois do pagamento e devolvemos o valor inteiro."
+            ]
+          ],
+          [
+            "A nova verificação grátis",
+            [
+              "Se a verificação grátis da versão corrigida não der certo, seu primeiro relatório continua valendo e não há reembolso, porque esse relatório foi entregue. Se a falha foi do nosso lado, você pode mandar a nova versão de novo dentro dos 30 dias."
+            ]
+          ],
+          [
+            "Depois do reembolso",
+            [
+              "O pedido termina, e o código e o relatório dele são apagados. A Paddle também pode reembolsar um pagamento pelos [termos de compra dela](https://www.paddle.com/legal/invoiced-consumer-terms). Nada nesta política limita direitos que a lei do consumidor garante."
+            ]
+          ]
+        ]
+      }
+    }
+  }
+}
