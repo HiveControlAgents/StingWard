@@ -114,6 +114,7 @@ It comments the report on the PR (and updates the same comment on every run), up
 | `--fail-on critical\|high\|medium\|low\|never` | Exit code 1 at this severity or above (default `high`) |
 | `--only deps,secrets,app,code,agents` | Run only some checks |
 | `--offline` | Skip the online databases (dependencies are not checked) |
+| `--no-ignore` | Do not apply the project's `.stingwardignore` or `stingward:ignore` comments, to audit someone else's project |
 | `--no-color` | Plain text output |
 | `--review-template FILE` | Write the human review file: one entry per finding, keeping what was already reviewed |
 | `--review FILE` | Apply the human review: a status and a comment for each finding |
@@ -137,7 +138,7 @@ Environment: `STINGWARD_LANG` sets the default language, `NVD_API_KEY` raises th
 
 **Human review:** for an audit you hand over to someone, write the review file with `stingward . --review-template review.json`. Each entry points at a finding by its `fingerprint` (also in the JSON and SARIF output), which does not change when other parts of the file are edited. It is built from the flagged line with the secret already masked, so nothing derived from a secret goes into the review file. That is on purpose, and it means a key replaced by another key on the same line keeps its status: when a key is rotated, check that line again before you reuse the review. Set `status` to `confirmed`, `false_positive`, `accepted_risk` or `fixed`, add a `comment`, then run `stingward . --review review.json --client "Client name" --notes notes.md --html report.html`. False positives move to an appendix; they and the findings fixed during the audit leave the grade, the fix-first list and `--fail-on`. Accepted risks stay in the grade but leave the fix-first list. The text and Markdown reports follow the review too. Comments and notes are escaped and go through the same secret masking as code excerpts. For a review done by an AI, add `"review_kind": "ai"` to the review file: the reports then say AI review instead of human review, `accepted_risk` is refused (only the client can accept a risk), and `fixed` is only accepted for a finding that is gone from a scan that could see it: not hidden by `.stingwardignore`, a `stingward:ignore` comment or the size and file limits.
 
-**False positives:** add a line to `.stingwardignore` in the project root (`RULE path/glob`, `RULE` or `path/glob`), or put `stingward:ignore` in a comment on the line. If a rule is wrong, [tell us](https://github.com/HiveControlAgents/StingWard/issues/new?template=false-positive.yml) with a minimal sample.
+**False positives:** add a line to `.stingwardignore` in the project root (`RULE path/glob`, `RULE` or `path/glob`), or put `stingward:ignore` in a comment on the line. When you audit someone else's project, `--no-ignore` turns both off. If a rule is wrong, [tell us](https://github.com/HiveControlAgents/StingWard/issues/new?template=false-positive.yml) with a minimal sample.
 
 **Standards:** findings carry **CWE**, **OWASP Top 10 for LLM Applications 2026** (`LLM01:2026`...), **OWASP Agentic Skills Top 10** (`AST01`..., v1 draft) and **OWASP Top 10 for Agentic Applications 2026** (`ASI01`...) IDs, in the text report, JSON and SARIF tags.
 

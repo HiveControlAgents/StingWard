@@ -360,7 +360,7 @@ def _hidden(ctx, rule, where):
     rel = m.group(1) if m else where
     if rel in ctx.too_big:
         return ("o arquivo ficou fora dela por ser grande demais", "the file was too big to read")
-    if ctx.mode != "project":
+    if ctx.mode != "project" or not ctx.honor_ignores:
         return None
     if scan._ignored(SimpleNamespace(rule=rule, file=rel), scan.load_ignore(ctx.root)):
         return ("uma linha do .stingwardignore esconde o arquivo", "a .stingwardignore line hides the file")
