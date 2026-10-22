@@ -559,6 +559,8 @@ class Page:
             "footer_cols": self.footer_cols(), "sample_href": self.sample_href, "sample_ai_href": self.sample_ai_href,
             "csp": CSP_SLOT,
             "legal_label": e(legal_texts()[self.lang]["label"]),
+            # the price in another currency, where the language's own one is not what everyone pays (empty: no line)
+            "audit_note": f'<p class="audit__note" data-reveal>{e(t["audit_note"])}</p>' if t["audit_note"] else "",
             "legal_links": legal_nav(legal_texts()[self.lang], self.lang, PAGE_DIR[self.lang]),
         })
         values.update(self.stages())
