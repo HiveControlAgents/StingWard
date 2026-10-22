@@ -435,6 +435,29 @@ class Site(unittest.TestCase):
                 for target in ("#audit", "#why", "#finds", "#price", "#where"):
                     self.assertIn(f'href="{target}"', nav)
 
+    def test_the_first_screen_shows_a_different_hook_on_each_visit(self):
+        """The page is built with the first hook, the one shown without the script; app.js picks one of data-hooks on
+        each visit, or hook N from ?hook=N. Every hook was measured in the browser on two lines from 360 to 1440px,
+        with 16 characters the longest line; a longer one has to be measured first."""
+        with open(os.path.join(SITE, "app.js"), encoding="utf-8") as fh:
+            script = fh.read()
+        self.assertIn("dataset.hooks", script)
+        self.assertIn('get("hook")', script)
+        for lang, page in self.pages.items():
+            with self.subTest(lang=lang):
+                text = _text()[lang]
+                hooks = text["hero_hooks"]
+                self.assertEqual(hooks[0], text["hero_h1"])
+                self.assertEqual(len({tuple(hook) for hook in hooks}), len(hooks))
+                found = re.search(r'<h1 class="hero__title" data-hooks="([^"]+)">', page)
+                self.assertEqual(json.loads(html.unescape(found.group(1))), hooks)
+                for hook in hooks:
+                    self.assertEqual(len(hook), 2, hook)
+                    for line in hook:
+                        self.assertLessEqual(len(line), 16, line)
+                        self.assertNotRegex(line.lower(), r"hack|guarant|garant|100\s*%", line)
+                        self.assertTrue(all(ord(char) < 0x2000 for char in line), line)
+
     # ---------------------------------------------------------------- terms, privacy and refunds
 
     def test_legal_texts_have_the_same_shape_in_both_languages(self):
