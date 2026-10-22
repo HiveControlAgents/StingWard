@@ -337,7 +337,7 @@ class Site(unittest.TestCase):
         for lang in PAGES:
             with self.subTest(lang=lang):
                 offers = self.build.Page(lang, text[lang], None, False, 0, urls).offers()
-                self.assertEqual(offers["audit_button"], f'<a class="button" href="{urls["audit_checkout"]}">'
+                self.assertEqual(offers["audit_button"], f'<a class="button" href="{urls["audit_checkout"]}" data-buy>'
                                                          f'{text[lang]["audit_buy"]}</a>')
                 self.assertEqual(offers["soon_button"], f'<a class="button" href="{urls["team_waitlist"]}">'
                                                         f'{text[lang]["soon_button"]}</a>')

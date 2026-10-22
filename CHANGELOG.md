@@ -5,6 +5,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 ## [Unreleased]
 
 ### Added
+- Ad labels: a visitor who arrives from a link with `utm_source`, `utm_medium`, `utm_campaign` or `utm_content` (each a short plain word) keeps them on the links to the site's other pages and on the buy button, so the order and the payment can say which ad or post it came from. Nothing is stored on the visitor's device, other parameters are not passed on, and the privacy policy says what the label is and that the order keeps it.
 - A sample of the paid report on the website (`/example/full/` and `/pt/exemplo/completo/`): the demo app's HTML report with a comment on every finding from the AI review and a summary on top, from the review and notes files in `site/sample/`, applied with `--review` and `--notes` as the report service does. The plain sample and this one link to each other, and the offer's "See a sample report" opens this one. The build stops if the demo app has a finding the review file does not cover.
 
 ### Changed
