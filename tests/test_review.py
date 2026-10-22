@@ -720,6 +720,27 @@ class AiReviewFile(AiCase):
         self.assertIn("CORS open to any website", done)
         self.assertIn(f'<span class="rv rv-fixed">{report.T["en"]["status"]["fixed"]}</span>', done)
 
+    def test_ai_review_says_fixed_since_the_previous_report(self):
+        """In an AI review nobody followed the fix: what was fixed is what a new scan no longer finds. Every format says
+        "since the previous report"; a review by a person keeps "during the audit"."""
+        with open(self.ai({"APP003": ("fixed", "Origin list set to the shop domain.")}), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        write(os.path.join(self.root, "api.js"), 'res.setHeader("Access-Control-Allow-Origin", "https://shop.example");\n')
+        for kind, phrase, other in (("ai", "since the previous report", "during the audit"),
+                                    ("person", "during the audit", "since the previous report")):
+            path = self.save_review(dict(doc, review_kind=kind))
+            for fmt in ("text", "markdown", "html"):
+                with self.subTest(kind=kind, format=fmt):
+                    code, out, err = run([self.root, "--offline", "--lang", "en", "--format", fmt, "--review", path, "--no-color"])
+                    self.assertIn(code, (0, 1), err)
+                    self.assertIn(f"1 fixed {phrase}", out)
+                    self.assertNotIn(other, out)
+        code, out, _ = run([self.root, "--offline", "--lang", "pt", "--review", self.save_review(dict(doc, review_kind="ai")),
+                            "--no-color"])
+        self.assertIn("1 corrigido desde o relatório anterior", out)
+        self.assertIn("Corrigidos desde o relatório anterior, já fora desta varredura (1):", out)
+        self.assertNotIn("durante a auditoria", out)
+
     def hidden(self, *, ignore=None, line=None, pad=0):
         """Revisão por IA que marca como corrigido o CORS aberto do api.js, que continua no código mas some da
         varredura: por uma linha do .stingwardignore, por um comentário stingward:ignore ou por tamanho."""

@@ -79,7 +79,10 @@ _PLACEHOLDER = re.compile(
 _ASSIGN = re.compile(r"""(?P<key>[A-Za-z_][\w.-]{1,63})["']?\s*(?::|=|:=|=>)\s*(?P<q>["'`])(?P<val>[^"'`\s]{8,200})(?P=q)""")
 _FENCE = re.compile(r"\s*(```|~~~)")
 _WEAK_PW = {"password", "pass", "senha", "postgres", "root", "admin", "secret", "user", "test", "changeme", "changethis",
-            "example", "guest", "mysql"}
+            "example", "guest", "mysql", "foo", "bar", "baz", "qux", "foobar"}
+# Vários hosts numa URL (MultiHostUrl do pydantic, PostgreSQL): "h1:5432,user:pw@h2". O começo casa como usuário
+# "h1" e senha "5432,user:pw"; a credencial é o que vem depois da última vírgula.
+_PORT_LIST = re.compile(r"\d{1,5},")
 _LOCAL_HOST = re.compile(r"(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|host\.docker\.internal)(?![\w.-])")
 KIND = {
     "private_key": ("chave privada", "private key"), "aws_access_key": ("chave de acesso AWS", "AWS access key"),
@@ -222,6 +225,10 @@ _WORD_PORT = re.compile(r"[^\s/?#@:\[\]]*:[^\W\d_]+(?!\w)")
 def _url_password(m, line):
     """None se for senha de exemplo; "low" se o banco é local; "high" no resto."""
     pw = m["pw"]
+    if _PORT_LIST.match(pw):
+        _, sep, pw = pw.rsplit(",", 1)[1].partition(":")
+        if not sep:  # "h1:5432,user@h2": um usuário, sem senha
+            return None
     if _PLACEHOLDER.search(pw) or pw.lower() in _WEAK_PW or pw.startswith("$") or _INTERP.fullmatch(pw):
         return None
     # Letra fora do ASCII só entra numa URL de verdade codificada (%C3%A7): "usuario:contraseña@" é texto de exemplo.

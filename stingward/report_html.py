@@ -282,6 +282,7 @@ H_AI = {
     "pt": {
         "review_meta": "Revisão por IA", "reviewer_none": "uma IA", "notes_h": "Resumo",
         "grade_rule": "Depois da revisão por IA, os alarmes falsos e o que foi corrigido não contam.",
+        "clean_reviewed": "Depois da revisão por IA, nenhum achado continua valendo: eram alarmes falsos ou foram corrigidos desde o relatório anterior. Isso não prova que está seguro.",
         "review_line": "Revisão por IA: {counts}.",
         "appendix_intro": "A revisão por IA leu o código destes achados e concluiu que não são problema neste projeto, com o motivo junto de cada um. Eles não contam para a nota, para o plano nem para o que corrigir primeiro. Ficam aqui para você ver o que foi descartado e por quê.",
         "human_h": "Revisão por IA",
@@ -300,6 +301,7 @@ H_AI = {
     "en": {
         "review_meta": "AI review", "reviewer_none": "an AI", "notes_h": "Summary",
         "grade_rule": "After the AI review, false positives and what was fixed do not count.",
+        "clean_reviewed": "After the AI review, no finding still stands: they were false positives or were fixed since the previous report. That does not prove it is safe.",
         "review_line": "AI review: {counts}.",
         "appendix_intro": "The AI review read the code of these findings and concluded they are not a problem in this project, with the reason next to each one. They do not count toward the grade, the plan or what to fix first. They are listed so you can see what was discarded and why.",
         "human_h": "AI review",

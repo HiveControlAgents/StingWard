@@ -138,6 +138,20 @@ class MoreTokenFormats(unittest.TestCase):
         for s in ("12:34:56", "build 20261020:AA ok", "SharedAccessKeyName=RootManageSharedAccessKey", "port 123456789:80"):
             self.assertEqual(redact.sanitize_text(s), s)
 
+    def test_language_literals_beside_a_sensitive_name_are_not_masked(self):
+        """cors({ credentials: true }) and password = None are settings, not secrets: the report shows them as they are.
+        A real value under the same names is still masked."""
+        from stingward.report_html import mask_line
+        for s in ('app.use(cors({ origin: "*", credentials: true }));', "password: false,", "secret = None",
+                  "api_key: undefined", "token: nil", "PASSWORD=NULL"):
+            with self.subTest(line=s):
+                self.assertEqual(redact.sanitize_text(s), s)
+                self.assertEqual(mask_line(s), s)
+        pw = "hunter2" + "Xq9"
+        for s in (f"password: {pw}", f"credentials: {pw}", f"secret = {pw}"):
+            with self.subTest(line=s):
+                self.assertNotIn(pw, redact.sanitize_text(s))
+
     def test_token_in_a_reported_permission_stays_out_of_every_report(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
