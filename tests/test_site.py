@@ -357,7 +357,7 @@ class Site(unittest.TestCase):
             audit = page.split('id="audit"', 1)[1].split("</section>", 1)[0]
             with self.subTest(lang=lang):
                 self.assertIn(html.escape(t["audit_h2"]), audit)
-                # reais in Portuguese, the price Paddle charges in Brazil, with the dollar price beside it; dollars in
+                # reais in Portuguese, the Hotmart offer for Brazil, with the dollar price beside it; dollars in
                 # English, where nobody is told about reais
                 self.assertEqual((t["audit_currency"], t["audit_price"]), {"pt": ("R$", "99"), "en": ("$", "29")}[lang])
                 self.assertIn(f'<span class="figure__cur">{t["audit_currency"]}</span>'
@@ -390,8 +390,8 @@ class Site(unittest.TestCase):
         self.assertEqual(sorted(legal["en"]["pages"]), sorted(LEGAL))
 
     def test_legal_pages_are_linked_from_every_page_of_the_site(self):
-        """Paddle, which sells the report, asks for the terms, privacy and refund policy to be reachable from the
-        site's navigation: the footer of both home pages and of every legal page links all three, in its language."""
+        """The terms, privacy and refund policy are reachable from the site's navigation, as Hotmart's review expects:
+        the footer of both home pages and of every legal page links all three, in its language."""
         legal = _legal()
         for lang, page in self.pages.items():
             names = [legal[lang]["pages"][k]["name"] for k in LEGAL]
@@ -438,24 +438,27 @@ class Site(unittest.TestCase):
                             self.assertFalse(re.match(r"^(?:[a-z]+:|//)", url), tag)
 
     def test_the_terms_say_who_sells_and_who_answers(self):
-        """The terms name the seller and Paddle as Merchant of Record, in Paddle's own words in English; every page
-        gives the support address as a mail link; the numbers match what the report service does."""
+        """The terms say that we sell the report and Hotmart takes the payment, with Hotmart's purchase terms in the
+        reader's language; every page gives the support address as a mail link; the numbers match what the report
+        service does."""
         legal = _legal()
-        paddle = {"en": "Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of "
-                        "Record for all our orders.",
-                  "pt": "Nosso processo de compra é conduzido pela nossa revendedora on-line, a Paddle.com. A Paddle.com é a "
-                        "Merchant of Record (a vendedora oficial) de todos os nossos pedidos."}
+        seller = {"en": ("You buy the report from us. The payment goes through Hotmart",
+                         "https://hotmart.com/en/legal/purchase-terms"),
+                  "pt": ("Você compra o relatório de nós. O pagamento passa pela Hotmart",
+                         "https://hotmart.com/pt-br/legal/termos-de-compra")}
         for lang in PAGES:
             with self.subTest(lang=lang):
                 terms = self.file(LEGAL["terms"][lang])
-                self.assertIn(html.escape(paddle[lang]), terms)
+                self.assertIn(html.escape(seller[lang][0]), terms)
+                self.assertIn(f'href="{seller[lang][1]}"', terms)
+                self.assertNotIn("Paddle", terms)
                 self.assertIn("Isaque Moutta", terms)
                 for key, paths in LEGAL.items():
                     self.assertIn('<a href="mailto:support@stingward.com">support@stingward.com</a>', self.file(paths[lang]))
                     self.assertIn(html.escape(legal[lang]["updated"]), self.file(paths[lang]))
                 refund = html.unescape(self.file(LEGAL["refund"][lang]))
                 for number in ({"en": "7 days", "pt": "7 dias"}, {"en": "24 hours", "pt": "24 horas"},
-                               {"en": "14 days", "pt": "14 dias"}):
+                               {"en": "15 days", "pt": "15 dias"}):
                     self.assertIn(number[lang], refund)
                 privacy = html.unescape(self.file(LEGAL["privacy"][lang]))
                 for number in ({"en": "48 hours", "pt": "48 horas"}, {"en": "30 days", "pt": "30 dias"},
@@ -465,8 +468,8 @@ class Site(unittest.TestCase):
     def test_legal_links_go_only_to_the_other_pages_or_https(self):
         self.assertEqual(self.build.inline("See the [refund policy](refund).", "pt", "pt/terms"),
                          'See the <a href="../refund/">refund policy</a>.')
-        self.assertEqual(self.build.inline("[Paddle](https://paddle.net) & <b>", "en", "terms"),
-                         '<a href="https://paddle.net">Paddle</a> &amp; &lt;b&gt;')
+        self.assertEqual(self.build.inline("[Hotmart](https://refund.hotmart.com) & <b>", "en", "terms"),
+                         '<a href="https://refund.hotmart.com">Hotmart</a> &amp; &lt;b&gt;')
         for bad in ("[x](javascript:alert(1))", "[x](http://example.com)", "[x](/terms)", "[x](terms\")",
                     "[x] (terms)](y"):
             with self.subTest(text=bad), self.assertRaises(SystemExit):
