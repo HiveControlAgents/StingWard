@@ -2,7 +2,9 @@
 
 Every report and number on the page comes from this checkout: the script runs Stingward on the README
 demos and on its own skill, reads the rules and counts the tests, so the site cannot drift from the code.
-The sample report (example/ and pt/exemplo/) is the real HTML report of the demo app, with a note on top.
+The sample report (example/ and pt/exemplo/) is the real HTML report of the demo app, with a note on top. The
+sample of the paid report (example/ai-review/ and pt/exemplo/revisao-ia/) is the same report with the AI review kept in
+site/sample/: a comment on every finding and the summary on top, applied with --review and --notes.
 The addresses the site had before English moved to the root (en/, en/example/ and exemplo/) are small pages
 that send the visitor on to the new ones. The terms, privacy and refund pages of the paid report (terms/, privacy/ and
 refund/, and the same under pt/) come from site/legal.json; the report service links to them at these addresses.
@@ -38,6 +40,7 @@ SEVERITY = {"🔴": "crit", "🟠": "high", "🟡": "med", "🔵": "low", "⚪":
 ROW = r"^   [^ :]+(?: [^ :]+){0,2}: "  # "   where: ...", "   how to fix: ..." under a finding
 PAGE_DIR = {"en": ".", "pt": "pt"}  # English is the main site; Portuguese has its own folder
 SAMPLE = {"en": "example", "pt": "pt/exemplo"}  # where each language's sample report is published
+SAMPLE_AI = {"en": "example/ai-review", "pt": "pt/exemplo/revisao-ia"}  # and the one with the AI review
 HREFLANG = {"en": "en", "pt": "pt-BR"}
 # The addresses the site had before English moved to the root, already shared, as old folder: (language, new folder).
 # Pages cannot redirect, so each old folder gets a page that sends the visitor on (see moved()).
@@ -307,6 +310,7 @@ class Page:
         self.urls = urls or dict.fromkeys(LINKS, "")
         self.root = "" if PAGE_DIR[lang] == "." else link_to(".", PAGE_DIR[lang])
         self.sample_href = link_to(SAMPLE[lang], PAGE_DIR[lang])
+        self.sample_ai_href = link_to(SAMPLE_AI[lang], PAGE_DIR[lang])
 
     def app_grade(self):
         return json.loads(cli(["./my-saas"], self.demo, self.lang, "json", self.online))["grade"]
@@ -500,22 +504,37 @@ class Page:
                 "audit_gets": "\n".join(f"<li>{e(x)}</li>" for x in t["audit_gets"]),
                 "audit_not": "\n".join(f"<li>{e(x)}</li>" for x in t["audit_not"])}
 
-    def sample(self):
-        """The real HTML report of the demo app, as Stingward writes it, with a note on top that says what it is."""
-        t, lang, here = self.t, self.lang, SAMPLE[self.lang]
-        other = "en" if lang == "pt" else "pt"
-        report = cli(["./my-saas"], self.demo, lang, "html", self.online)
+    def sample(self, ai=False):
+        """The real HTML report of the demo app, as Stingward writes it, with a note on top that says what it is.
+        ai: with the AI review of site/sample/, run with --no-ignore as the report service runs it."""
+        t, lang = self.t, self.lang
+        folders, twin = (SAMPLE_AI, SAMPLE) if ai else (SAMPLE, SAMPLE_AI)
+        here, other = folders[lang], "en" if lang == "pt" else "pt"
+        args = ["./my-saas"]
+        if ai:
+            review = os.path.join(SITE, "sample", f"review-{lang}.json")
+            args += ["--no-ignore", "--review", review, "--notes", os.path.join(SITE, "sample", f"notes-{lang}.md")]
+            got = json.loads(cli(args, self.demo, lang, "json", self.online))["review"]
+            if got["counts"].get("unreviewed"):  # a finding the review file does not have would read "not reviewed yet"
+                raise SystemExit(f"site: {os.path.relpath(review, ROOT)} has no comment for "
+                                 f"{got['counts']['unreviewed']} finding(s) of the demo app")
+            if got["masked"]:
+                raise SystemExit(f"site: something in {os.path.relpath(review, ROOT)} or its notes looks like a secret")
+        report = cli(args, self.demo, lang, "html", self.online)
+        title, text, see = ((t["sample_ai_title"], t["sample_ai_text"], t["sample_plain"]) if ai else
+                            (t["sample_title"], t["sample_text"], t["sample_with_ai"]))
         note = (f'<aside class="sample" aria-label="{e(t["sample_label"])}"><div class="sample-in">'
-                f'<p><strong>{e(t["sample_title"])}</strong> {e(fill(t["sample_text"]))}</p><p class="sample-links">'
+                f'<p><strong>{e(title)}</strong> {e(fill(text))}</p><p class="sample-links">'
                 f'<a href="{link_to(PAGE_DIR[lang], here)}">{e(t["sample_home"])}</a>'
                 f'<a href="{link_to(PAGE_DIR[lang], here)}#audit">{e(t["sample_audit"])}</a>'
-                f'<a href="{link_to(SAMPLE[other], here)}" hreflang="{HREFLANG[other]}" '
+                f'<a href="{link_to(twin[lang], here)}">{e(see)}</a>'
+                f'<a href="{link_to(folders[other], here)}" hreflang="{HREFLANG[other]}" '
                 f'lang="{HREFLANG[other]}">{e(t["sample_other"])}</a></p></div></aside>')
         head, sep, body = report.partition("</head>")
         if not sep or head.count("</style>") != 1 or not head.endswith("</style>\n") or not body.startswith("\n<body>\n"):
             raise SystemExit("site: the HTML report changed shape; update Page.sample")
         # its address and its other language; these links load nothing, so the report's policy stays as it is
-        links = f'<link rel="canonical" href="{address(here)}">\n{alternates(SAMPLE)}\n'
+        links = f'<link rel="canonical" href="{address(here)}">\n{alternates(folders)}\n'
         return (head.replace("</style>", SAMPLE_CSS + "</style>") + links + sep
                 + body.replace("<body>\n", "<body>\n" + note + "\n", 1))
 
@@ -537,7 +556,8 @@ class Page:
             "proof_items": self.proof(), "faq_items": self.faq(), "find_rows": self.finds(),
             "price_lines": "\n".join(f"<li>{e(fill(x))}</li>" for x in t["price_lines"]),
             "cta_copy": copy_button(t, t["cta_cmd"], "button cta__copy"),
-            "footer_cols": self.footer_cols(), "sample_href": self.sample_href, "csp": CSP_SLOT,
+            "footer_cols": self.footer_cols(), "sample_href": self.sample_href, "sample_ai_href": self.sample_ai_href,
+            "csp": CSP_SLOT,
             "legal_label": e(legal_texts()[self.lang]["label"]),
             "legal_links": legal_nav(legal_texts()[self.lang], self.lang, PAGE_DIR[self.lang]),
         })
@@ -668,6 +688,7 @@ def build(out, online=False):
             page = Page(lang, text[lang], demo, online, tests, urls)
             files[posixpath.normpath(posixpath.join(PAGE_DIR[lang], "index.html"))] = page.render()
             files[posixpath.join(SAMPLE[lang], "index.html")] = page.sample()
+            files[posixpath.join(SAMPLE_AI[lang], "index.html")] = page.sample(ai=True)
     for old, (lang, new) in MOVED.items():
         rel_path = posixpath.join(old, "index.html")
         if rel_path in files:

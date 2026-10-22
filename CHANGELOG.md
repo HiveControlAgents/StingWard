@@ -4,6 +4,9 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+- A sample of the paid report on the website (`/example/ai-review/` and `/pt/exemplo/revisao-ia/`): the demo app's HTML report with an AI comment on every finding and a summary on top, from the review and notes files in `site/sample/`, applied with `--review` and `--notes` as the report service does. The plain sample and this one link to each other, and the offer's "See a sample report" opens this one. The build stops if the demo app has a finding the review file does not cover.
+
 ## [0.1.7] - 2026-10-22
 
 ### Added
