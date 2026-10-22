@@ -19,7 +19,9 @@
   <a href="https://github.com/HiveControlAgents/StingWard/blob/main/README.md">English</a> · <a href="https://github.com/HiveControlAgents/StingWard/blob/main/README.pt-BR.md">Português</a> · <b>Español</b>
 </p>
 
-Cada vez más gente publica apps, skills de Claude Code y servidores MCP escritos con IA. Pocos saben qué es una CVE, por qué `NEXT_PUBLIC_OPENAI_API_KEY` es un problema, o que una skill puede esconder instrucciones que solo el modelo lee. **Stingward encuentra esos agujeros y explica, con palabras simples, cómo cerrar cada uno.**
+**La IA lo escribió. ¿Quién lo leyó?** Cada vez más gente publica apps, skills de Claude Code y servidores MCP escritos con IA. Pocos saben qué es una CVE, por qué `NEXT_PUBLIC_OPENAI_API_KEY` es un problema, o que una skill puede esconder instrucciones que solo el modelo lee. **Stingward encuentra esos agujeros y explica, con palabras simples, cómo cerrar cada uno.**
+
+¿No usas la terminal? El [informe de US$ 29](https://stingward.com/?utm_source=github&utm_medium=readme&utm_campaign=readme) explica cada problema y su arreglo con palabras simples, con una nueva revisión gratis después de corregir. [Ver un informe de ejemplo](https://stingward.com/example/full/?utm_source=github&utm_medium=readme&utm_campaign=readme) (en inglés).
 
 > Los informes salen en inglés (`--lang en`) o portugués (`--lang pt`). Esta página está en español; la herramienta todavía no.
 

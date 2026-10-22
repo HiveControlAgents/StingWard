@@ -19,7 +19,9 @@
   <a href="https://github.com/HiveControlAgents/StingWard/blob/main/README.md">English</a> · <b>Português</b> · <a href="https://github.com/HiveControlAgents/StingWard/blob/main/README.es.md">Español</a>
 </p>
 
-Muita gente publica apps, skills do Claude Code e servidores MCP escritos com IA. Pouca gente sabe o que é uma CVE, por que `NEXT_PUBLIC_OPENAI_API_KEY` é um problema, ou que uma skill pode esconder instruções que só o modelo lê. **O Stingward encontra essas brechas e explica, em português simples, como fechar cada uma.**
+**A IA escreveu. Quem leu?** Muita gente publica apps, skills do Claude Code e servidores MCP escritos com IA. Pouca gente sabe o que é uma CVE, por que `NEXT_PUBLIC_OPENAI_API_KEY` é um problema, ou que uma skill pode esconder instruções que só o modelo lê. **O Stingward encontra essas brechas e explica, em português simples, como fechar cada uma.**
+
+Não usa terminal? O [relatório de R$ 99](https://stingward.com/pt/?utm_source=github&utm_medium=readme&utm_campaign=readme) explica cada problema e a correção em palavras simples, com uma nova verificação grátis depois que você corrigir. [Ver um relatório de exemplo](https://stingward.com/pt/exemplo/completo/?utm_source=github&utm_medium=readme&utm_campaign=readme).
 
 <p align="center">
   <img alt="stingward skill ./pdf-helper: Não instale ainda. Instrução escondida em Unicode, script que lê as credenciais da AWS e envia para o webhook.site, shell sem restrição. Nota F." src="https://raw.githubusercontent.com/HiveControlAgents/StingWard/main/docs/assets/demo-skill-pt.gif" width="820">
