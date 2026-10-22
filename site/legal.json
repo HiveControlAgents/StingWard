@@ -101,7 +101,7 @@
         "name": "Privacy",
         "title": "Privacy policy",
         "description": "What the Stingward report collects, why, who else handles it and when it is deleted.",
-        "intro": "This policy covers the Stingward report, the paid check sold on this site. The website itself sets no cookies and has no analytics or tracking. The free tool runs on your computer and sends only package names and versions, to look up known vulnerabilities.",
+        "intro": "This policy covers the Stingward report, the paid check sold on this site. The website itself sets no cookies and has no analytics. A link from one of our ads or posts carries a label naming it, such as utm_content=reel-1; if you buy, the order keeps that label so we can tell which ads lead to sales. The label says nothing about you. The free tool runs on your computer and sends only package names and versions, to look up known vulnerabilities.",
         "sections": [
           [
             "Who is responsible",
@@ -114,7 +114,7 @@
             [
               [
                 "Your email address, which Paddle passes to us after you pay, to send you the order link and notices about it.",
-                "The order: when it was made and paid, its status, the report language, the grade, Paddle's ids for the payment and for you as a customer, and when you confirmed that the app is yours and that you accept the terms.",
+                "The order: when it was made and paid, its status, the report language, the grade, Paddle's ids for the payment and for you as a customer, when you confirmed that the app is yours and that you accept the terms, and the label of the ad or post you came from, if any, which also goes to Paddle with the payment.",
                 "The project you send, as a zip file or one GitHub repository.",
                 "The report and the findings it is built from, with secrets masked.",
                 "Technical logs of errors and order events. They name the order, not your code, your email or your link."
@@ -163,7 +163,7 @@
                 "The report, the findings, your email address and the order link: 30 days after the report or the refund. Then they are deleted.",
                 "An order that was never paid: 2 days.",
                 "Technical logs: 30 days.",
-                "After that, a record of the order stays without your email (dates, status, grade and Paddle's ids), for as long as tax and accounting rules require."
+                "After that, a record of the order stays without your email (dates, status, grade, Paddle's ids and the ad label), for as long as tax and accounting rules require."
               ]
             ]
           ],
@@ -341,7 +341,7 @@
         "name": "Privacidade",
         "title": "Política de privacidade",
         "description": "O que o relatório do Stingward coleta, por quê, quem mais trata os dados e quando eles são apagados.",
-        "intro": "Esta política vale para o relatório do Stingward, a verificação paga vendida neste site. O site em si não usa cookies, análise de visitas nem rastreamento. A ferramenta gratuita roda no seu computador e só envia o nome e a versão dos pacotes, para consultar falhas conhecidas.",
+        "intro": "Esta política vale para o relatório do Stingward, a verificação paga vendida neste site. O site em si não usa cookies nem análise de visitas. Um link de um anúncio ou post nosso leva uma etiqueta com o nome dele, como utm_content=reel-1; se você compra, o pedido guarda essa etiqueta para sabermos quais anúncios trazem vendas. A etiqueta não diz nada sobre você. A ferramenta gratuita roda no seu computador e só envia o nome e a versão dos pacotes, para consultar falhas conhecidas.",
         "sections": [
           [
             "Quem é o responsável",
@@ -354,7 +354,7 @@
             [
               [
                 "Seu e-mail, que a Paddle nos passa depois do pagamento, para enviar o link do pedido e os avisos sobre ele.",
-                "O pedido: quando foi feito e pago, a situação, o idioma do relatório, a nota, os identificadores da Paddle para o pagamento e para você como cliente, e quando você confirmou que o app é seu e que aceita os termos.",
+                "O pedido: quando foi feito e pago, a situação, o idioma do relatório, a nota, os identificadores da Paddle para o pagamento e para você como cliente, quando você confirmou que o app é seu e que aceita os termos, e a etiqueta do anúncio ou post de onde você veio, se houver, que também vai para a Paddle com o pagamento.",
                 "O projeto que você envia, em zip ou como um repositório do GitHub.",
                 "O relatório e os achados que o formam, com os segredos mascarados.",
                 "Registros técnicos de erros e de eventos do pedido. Eles citam o pedido, não o seu código, o seu e-mail nem o seu link."
@@ -403,7 +403,7 @@
                 "O relatório, os achados, seu e-mail e o link do pedido: 30 dias depois do relatório ou do reembolso. Depois são apagados.",
                 "Um pedido que nunca foi pago: 2 dias.",
                 "Registros técnicos: 30 dias.",
-                "Depois disso, fica um registro do pedido sem o seu e-mail (datas, situação, nota e identificadores da Paddle), pelo tempo que as regras fiscais e contábeis exigem."
+                "Depois disso, fica um registro do pedido sem o seu e-mail (datas, situação, nota, identificadores da Paddle e a etiqueta do anúncio), pelo tempo que as regras fiscais e contábeis exigem."
               ]
             ]
           ],
