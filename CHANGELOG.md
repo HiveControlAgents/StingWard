@@ -10,6 +10,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 ### Changed
 - The Portuguese site shows the report's price in reais, R$ 99, the amount Paddle charges buyers in Brazil, with a line saying that outside Brazil it is US$ 29. The English site still shows $29, and the terms in both languages give both prices.
 - The offer, the FAQ and the terms describe the paid report's review as an automatic review of every finding. The privacy policy still says which lines go to Anthropic's AI model for it.
+- The "Check its work" section of the website is more compact: the six tiles sit in three columns beside the heading and no longer grow taller as the screen gets wider, so the section stays short on wide displays.
 
 ## [0.1.7] - 2026-10-22
 
@@ -20,7 +21,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ### Changed
 - The website moved to https://stingward.com/. The old GitHub Pages address sends visitors there.
-- The website offers the Stingward report in place of the human-reviewed audit: US$ 29 (`$29` in English), paid once. You send a zip or one GitHub repository, Stingward checks it, an AI reviews every finding and a second AI checks the first, and the PDF report arrives in minutes, with one free new check of the fixed version within 30 days and a full automatic refund if it is not ready in 24 hours. The FAQ and the note on the sample report say the same. The buy button still reads "Coming soon" while `links.audit_checkout` is empty.
+- The website offers the Stingward report in place of the human-reviewed audit: US$ 29 (`$29` in English), paid once. You send a zip or one GitHub repository, Stingward checks it, an automatic review goes over every finding, and the PDF report arrives in minutes, with one free new check of the fixed version within 30 days and a full automatic refund if it is not ready in 24 hours. The FAQ and the note on the sample report say the same. The buy button still reads "Coming soon" while `links.audit_checkout` is empty.
 - The language switch shows each language beside its flag (Brazil for Portuguese, the United States for English) and lists Portuguese first, since the site opens in English. The flags are two small SVG files published with the site.
 
 ### Fixed
