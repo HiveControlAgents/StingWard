@@ -4,6 +4,13 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+- A sample of the paid report on the website (`/example/full/` and `/pt/exemplo/completo/`): the demo app's HTML report with a comment on every finding from the AI review and a summary on top, from the review and notes files in `site/sample/`, applied with `--review` and `--notes` as the report service does. The plain sample and this one link to each other, and the offer's "See a sample report" opens this one. The build stops if the demo app has a finding the review file does not cover.
+
+### Changed
+- The Portuguese site shows the report's price in reais, R$ 99, the amount Paddle charges buyers in Brazil, with a line saying that outside Brazil it is US$ 29. The English site still shows $29, and the terms in both languages give both prices.
+- The offer, the FAQ and the terms describe the paid report's review as an automatic review of every finding. The privacy policy still says which lines go to Anthropic's AI model for it.
+
 ## [0.1.7] - 2026-10-22
 
 ### Added
