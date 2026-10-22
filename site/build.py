@@ -177,10 +177,11 @@ def links(text):
     return {key: given.get(key, "") for key in LINKS}
 
 
-def offer(url, label, soon, cls="button"):
-    """A buy or sign-up button. Until its address exists it is a plain label, so nothing on the page takes payment."""
+def offer(url, label, soon, cls="button", buy=False):
+    """A buy or sign-up button. Until its address exists it is a plain label, so nothing on the page takes payment.
+    buy: the button to the buy page, which app.js gives the label of the ad the visitor came from."""
     if url:
-        return f'<a class="{cls}" href="{e(url)}">{e(label)}</a>'
+        return f'<a class="{cls}" href="{e(url)}"{" data-buy" if buy else ""}>{e(label)}</a>'
     return f'<span class="{cls} button--soon" role="link" aria-disabled="true">{e(soon)}</span>'
 
 
@@ -499,7 +500,7 @@ class Page:
 
     def offers(self):
         t, urls = self.t, self.urls
-        return {"audit_button": offer(urls["audit_checkout"], t["audit_buy"], t["soon"]),
+        return {"audit_button": offer(urls["audit_checkout"], t["audit_buy"], t["soon"], buy=True),
                 "soon_button": offer(urls["team_waitlist"], t["soon_button"], t["soon"]),
                 "audit_gets": "\n".join(f"<li>{e(x)}</li>" for x in t["audit_gets"]),
                 "audit_not": "\n".join(f"<li>{e(x)}</li>" for x in t["audit_not"])}
