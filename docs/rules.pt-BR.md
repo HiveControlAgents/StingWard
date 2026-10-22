@@ -19,6 +19,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [DEP002](#dep002) | Pacote malicioso | 🔴 |
 | [DEP003](#dep003) | Manifesto sem lockfile | 🔵 |
 | [DEP004](#dep004) | Faixa de versão aceita versões com falhas | 🔴 |
+| [DEP005](#dep005) | Versão do PHP com falhas conhecidas | 🔴 |
 | [SEC001](#sec001) | Segredo no código | 🔴 |
 | [SEC002](#sec002) | `.env` no git | 🟠 |
 | [SEC003](#sec003) | `.env` fora do `.gitignore` | 🟡 |
@@ -98,6 +99,14 @@ Registros `MAL-*` do OSV e alertas de "malware" do GitHub: pacotes publicados pa
 Sem lockfile, uma faixa como `Pillow>=10` ou `"axios": "^1.6.0"` é tudo o que decide a versão, e a menor versão dela continua valendo: quem já tem essa versão instalada fica com ela, e o instalador pode escolhê-la. O Stingward consulta no OSV.dev a menor versão de cada faixa (`>=`, `~=` e `==X.*` no Python; `^` e `~` no Poetry; `^`, `~`, `>=`, `1.2.x` e `>=a <b` no npm), no mesmo lote dos pacotes fixados, em `requirements*.txt` e `*-requirements.txt` (também os `.txt` de uma pasta `requirements/` e os arquivos que eles incluem com `-r` ou `-c`) e `package.json` sem lockfile ao lado e nas dependências de um `pyproject.toml` sem `poetry.lock`, `uv.lock` ou `pdm.lock` (`[project]` e as dependências opcionais, `[dependency-groups]`, o `dev-dependencies` do `[tool.uv]` e, no Poetry, `[tool.poetry.dependencies]`, `dev-dependencies` e os grupos; dependência de git, path ou URL fica de fora). Pacote fixado em outro arquivo do projeto fica com o DEP001. A versão instalada costuma ser mais nova, então o achado vai no máximo a médio (baixo quando a pior falha fica abaixo de alta), a não ser que o teto da faixa deixe a correção de fora: aí toda versão aceita tem a falha e a severidade é a mesma do DEP001.
 
 **Como corrigir:** suba a versão mínima para a indicada, por exemplo troque `Pillow>=10` por `Pillow>=12.3.0`. Se nenhuma versão da faixa tem a correção, amplie a faixa.
+**Padrões:** `CWE-1395`
+
+<a id="dep005"></a>
+### DEP005 · Versão do PHP com falhas conhecidas
+
+Lê a versão do PHP em que o projeto roda e a consulta no OSV.dev, onde estão os avisos do próprio PHP: a imagem `php` (também `library/php`, um espelho conhecido do Docker Hub e `bitnami/php-fpm`) numa linha `FROM` de `Dockerfile` ou `Containerfile`, com os valores dos `ARG` declarados antes dela, ou numa linha `image:` de `docker-compose.yml` ou `compose.yaml`; `.php-version`; o `php` do `.tool-versions` (asdf); e o `php` da tabela `[tools]` do `mise.toml`. Tag sem versão (`php:latest`, `php:8-cli`), versão de teste (RC) e restrição de versão como `"php": "^8.2"` no `composer.json` ficam de fora. Uma versão exata como `php:8.3.30-apache` sai como no DEP001, com a severidade cheia. Uma tag que acompanha a série, como `php:8.3-apache` ou `8.3` no `.php-version`, roda a 8.3 mais nova do dia em que a imagem foi montada ou o PHP foi atualizado, então o achado lista o que as versões da série corrigiram nos últimos 90 dias, um nível abaixo; a falha que nenhuma versão da série corrige, como numa série sem suporte, sai com a severidade cheia. Em testes e exemplos fica baixa.
+
+**Como corrigir:** use a versão indicada, por exemplo troque `php:8.3.30-apache` por `php:8.3.36-apache`, monte a imagem de novo e publique. Numa tag que acompanha a série, monte de novo com `docker build --pull --no-cache` ou fixe a versão. Sem Docker, atualize o PHP onde o app roda e reinicie o PHP-FPM ou o Apache.
 **Padrões:** `CWE-1395`
 
 ## Segredos
