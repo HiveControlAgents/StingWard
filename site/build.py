@@ -568,6 +568,7 @@ class Page:
             "languages": self.languages(), "nav_links": self.nav(), "front_tab": e(t["tabs"][4]),
             "why_facts": self.why(), "report_pages": self.pages(),
             "hero_h1": "".join(f'<span class="line"><span>{e(line)}</span></span>' for line in t["hero_h1"]),
+            "hero_hooks": e(json.dumps(t["hero_hooks"], ensure_ascii=False)),
             "hero_copy": copy_button(t, "pipx install stingward", "button install__copy"),
             "report_p": e(fill(t["report_p"])),
             "report_tabs": report_tabs, "report_panels": report_panels,
