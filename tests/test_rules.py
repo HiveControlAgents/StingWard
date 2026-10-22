@@ -5,6 +5,7 @@ montados por concatenação, e caracteres invisíveis aparecem só como escapes,
 próprio repositório continue limpo na auditoria do CI.
 """
 import base64
+import datetime
 import hashlib
 import hmac
 import json
@@ -16,6 +17,7 @@ import unittest
 from unittest import mock
 
 from stingward import report, scan, vulndb
+from stingward.checks import deps as deps_check
 from stingward.checks import secrets
 from stingward.model import SEVERITIES
 from stingward.net import NetError
@@ -1069,6 +1071,17 @@ def _adv(vid, pkg, fixed=None, **extra):
     return dict({"id": vid, "summary": f"Issue in {pkg}", "affected": [{"package": {"ecosystem": "npm", "name": pkg}, "ranges": ranges}]}, **extra)
 
 
+def _phpadv(vid, fixes, published, severity="Critical", **extra):
+    """Aviso do PHP como o OSV.dev guarda: ecossistema Bitnami, uma faixa por série (introduced 8.3.0, fixed 8.3.36)."""
+    events = [ev for intro, fix in fixes for ev in ({"introduced": intro}, {"fixed": fix})]
+    return dict({"id": vid, "summary": f"Issue {vid}", "published": f"{published}T08:08:19Z",
+                 "affected": [{"package": {"ecosystem": "Bitnami", "name": "php"}, "ranges": [{"type": "SEMVER", "events": events}]}],
+                 "database_specific": {"severity": severity}}, **extra)
+
+
+_EVERY_BRANCH = [("0", "8.2.35"), ("8.3.0", "8.3.36"), ("8.4.0", "8.4.27"), ("8.5.0", "8.5.12")]
+
+
 def _pyadv(vid, pkg, fixed=None, **extra):
     ranges = [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}] + ([{"fixed": fixed}] if fixed else [])}]
     return dict({"id": vid, "summary": f"Issue in {pkg}", "affected": [{"package": {"ecosystem": "PyPI", "name": pkg}, "ranges": ranges}]}, **extra)
@@ -1081,7 +1094,7 @@ class DepRules(RuleTest):
         def query(pkgs):
             if osv_error:
                 raise NetError("api.osv.dev: timed out")
-            return [ids.get(n, []) for _, n, _ in pkgs]
+            return [ids.get((n, v), ids.get(n, [])) for _, n, v in pkgs]
         with mock.patch.object(vulndb, "fetch_json", side_effect=AssertionError("network")), \
                 mock.patch.object(vulndb, "osv_query", side_effect=query) as q, \
                 mock.patch.object(vulndb, "osv_vulns", side_effect=lambda want: {i: docs[i] for i in want if i in docs}), \
@@ -1416,6 +1429,159 @@ class DepRules(RuleTest):
         ctx, f, _ = self.deps(files, {}, {}, osv_error=True)
         self.assertEqual(brief(f), [("DEP003", "requirements.txt", None, "low")])
         self.assertIn("timed out", ctx.sources["osv_error"])
+
+    # ------------------------------------------------------------------ DEP005: PHP version
+    PHP = {d["id"]: d for d in (
+        _phpadv("BIT-php-2026-109618", _EVERY_BRANCH, "2026-10-22", aliases=["CVE-2026-109618"]),
+        _phpadv("BIT-php-2026-91765", [("8.2.0", "8.2.34"), ("8.3.0", "8.3.35"), ("8.4.0", "8.4.26")], "2026-10-01",
+                severity="High", aliases=["CVE-2026-91765"]),
+        _phpadv("BIT-php-2024-4577", [("8.1.0", "8.1.29"), ("8.2.0", "8.2.20"), ("8.3.0", "8.3.8")], "2024-06-12",
+                aliases=["CVE-2024-4577"]),
+    )}
+
+    def php(self, files, ids, today=datetime.date(2026, 10, 23), **kw):
+        with mock.patch.object(deps_check, "_today", return_value=today):
+            return self.deps(files, ids, self.PHP, **kw)
+
+    def test_dep005_php_version_in_the_dockerfile(self):
+        files = {"Dockerfile": "ARG PHP_VERSION=8.3.30\nFROM php:${PHP_VERSION}-apache AS web\nCOPY . /var/www/html/\n"}
+        ctx, f, q = self.php(files, {("php", "8.3.30"): ["BIT-php-2026-109618", "BIT-php-2026-91765"]})
+        self.assertEqual(q.call_args[0][0], [("Bitnami", "php", "8.3.30")])
+        self.assertEqual(brief(f), [("DEP005", "Dockerfile", 2, "critical")])
+        d = f[0]
+        self.assertEqual((d.params["runtime"], d.params["version"], d.params["fixed"]), ("php:8.3.30-apache", "8.3.30", "8.3.36"))
+        self.assertEqual(d.refs, ["https://osv.dev/vulnerability/BIT-php-2026-109618", "https://nvd.nist.gov/vuln/detail/CVE-2026-109618"])
+        title, _, fix = texts("DEP005", "en", d.params)
+        self.assertEqual(title, "php:8.3.30-apache: 2 known vulnerabilities; worst is CVE-2026-109618 (Issue BIT-php-2026-109618)")
+        self.assertEqual(fix, "Use PHP 8.3.36 or later: set ARG PHP_VERSION to 8.3.36, rebuild the image and deploy again.")
+        self.assertIn("troque o valor do ARG PHP_VERSION para 8.3.36", texts("DEP005", "pt", d.params)[2])
+        self.assertEqual(ctx.sources["packages"], 1)
+        # Without the ARG, the fix names the image to use; a CISA KEV entry makes it critical as in DEP001.
+        files = {"Dockerfile": "FROM docker.io/library/php:8.3.30-fpm-alpine@sha256:" + "a" * 64 + "\n"}
+        _, f, _ = self.php(files, {("php", "8.3.30"): ["BIT-php-2026-91765"]}, kev={"CVE-2026-91765": {}})
+        self.assertEqual(brief(f), [("DEP005", "Dockerfile", 1, "critical")])
+        self.assertIn("kev", f[0].tags)
+        self.assertIn("change the image to docker.io/library/php:8.3.35-fpm-alpine,", texts("DEP005", "en", f[0].params)[2])
+
+    def test_dep005_version_files_and_compose(self):
+        files = {".php-version": "8.4.20\n", ".tool-versions": "nodejs 20.11.0\nphp 8.4.20\n",
+                 "mise.toml": '[env]\nphp = "9.9.9"\n[tools]\nphp = ["8.3.30", "8.2"]\n',
+                 "docker-compose.yml": 'services:\n  web:\n    image: "php:${PHP_TAG:-8.4.20-fpm}"\n'}
+        ids = {("php", "8.4.20"): ["BIT-php-2026-109618"], ("php", "8.3.30"): ["BIT-php-2026-109618"]}
+        _, f, q = self.php(files, ids)
+        # The same version in two version files is one finding; an image is fixed elsewhere, so it is another.
+        self.assertEqual(sorted(q.call_args[0][0]), [("Bitnami", "php", "8.3.30"), ("Bitnami", "php", "8.4.20"),
+                                                     ("Bitnami", "php", "8.4.20")])
+        self.assertEqual(sorted(brief(f)), [("DEP005", ".php-version", 1, "critical"), ("DEP005", "docker-compose.yml", 3, "critical"),
+                                            ("DEP005", "mise.toml", 4, "critical")])
+        version_file = next(x for x in f if x.file == ".php-version")
+        self.assertEqual(texts("DEP005", "en", version_file.params)[2],
+                         "Install PHP 8.4.27 or later where the app runs, update .php-version and restart PHP (PHP-FPM or Apache).")
+
+    def test_dep005_tag_that_follows_a_branch(self):
+        # php:8.2-fpm gets the newest 8.2 when the image is built: what the last 90 days of releases fixed is what an
+        # image nobody rebuilt can still have, one level lower. Older fixes are left out.
+        files = {"compose.yaml": "services:\n  app:\n    image: php:8.2-fpm\n"}
+        ids = {("php", "8.2.0"): sorted(self.PHP)}
+        _, f, q = self.php(files, ids)
+        self.assertEqual(q.call_args[0][0], [("Bitnami", "php", "8.2.0")])
+        self.assertEqual(brief(f), [("DEP005", "compose.yaml", 3, "high")])
+        d = f[0]
+        self.assertEqual([v["id"] for v in d.params["vulns"]], ["CVE-2026-109618", "CVE-2026-91765"])
+        self.assertEqual(d.params["fixed"], "8.2.35")
+        title, why, fix = texts("DEP005", "en", d.params)
+        self.assertEqual(title, "php:8.2-fpm: an image built before Oct 22, 2026 has CVE-2026-109618 (Issue BIT-php-2026-109618)")
+        self.assertIn("image built before PHP 8.2.35 came out still runs an older 8.2", why)
+        self.assertIn("docker build --pull --no-cache", fix)
+        self.assertIn("change the image to php:8.2.35-fpm.", fix)
+        self.assertIn("se a imagem foi montada antes de 22/10/2026", texts("DEP005", "pt", d.params)[0])
+        # Months later, nothing recent is left: no finding.
+        _, f, _ = self.php(files, ids, today=datetime.date(2027, 3, 1))
+        self.assertSilent(f)
+        # A version file with a branch: the fix is to update PHP where it runs.
+        _, f, _ = self.php({".php-version": "8.2\n"}, ids)
+        self.assertEqual(brief(f), [("DEP005", ".php-version", 1, "high")])
+        self.assertEqual(texts("DEP005", "en", f[0].params)[2],
+                         "Update PHP 8.2 to 8.2.35 or later where the app runs and restart PHP (PHP-FPM or Apache).")
+
+    def test_dep005_branch_with_no_fix(self):
+        # PHP 8.1 is no longer supported: no 8.1 release fixes CVE-2026-109618, so every 8.1 has it, at full severity.
+        files = {"Dockerfile": "ARG PHP_VERSION=8.1\nFROM php:${PHP_VERSION}-apache\n"}
+        # CVE-2024-4577 has an 8.1 fix (8.1.29), long ago: an 8.1 image built since then does not have it.
+        _, f, _ = self.php(files, {("php", "8.1.0"): ["BIT-php-2024-4577", "BIT-php-2026-109618"]}, today=datetime.date(2027, 3, 1))
+        self.assertEqual(brief(f), [("DEP005", "Dockerfile", 2, "critical")])
+        d = f[0]
+        self.assertEqual([v["id"] for v in d.params["vulns"]], ["CVE-2026-109618"])
+        title, why, fix = texts("DEP005", "en", d.params)
+        self.assertEqual(title, "php:8.1-apache: no 8.1 release fixes CVE-2026-109618 (Issue BIT-php-2026-109618)")
+        self.assertIn("Every PHP 8.1 release has CVE-2026-109618", why)
+        self.assertEqual(fix, "Move to PHP 8.2 (8.2.35 or later): set ARG PHP_VERSION to 8.2, test the app, rebuild the image and deploy again.")
+        self.assertIn("nenhuma versão 8.1 corrige a CVE-2026-109618", texts("DEP005", "pt", d.params)[0])
+
+    def test_dep005_examples_are_low(self):
+        _, f, _ = self.php({"examples/php/Dockerfile": "FROM php:8.3.30-cli\n"}, {("php", "8.3.30"): ["BIT-php-2026-109618"]})
+        self.assertEqual(brief(f), [("DEP005", "examples/php/Dockerfile", 1, "low")])
+
+    def test_dep005_near_misses(self):
+        cases = {
+            "no version in the tag": {"Dockerfile": "FROM php:latest\nFROM php:apache\nFROM php:8-cli\n"},
+            "release candidate": {"Dockerfile": "FROM php:8.5-rc-apache\nFROM php:8.5.0RC1-cli\n"},
+            "other images": {"Dockerfile": "FROM phpmyadmin:5.2\nFROM acme/php:8.3.30\nFROM node:20\n",
+                             "docker-compose.yml": "services:\n  db:\n    image: phpmyadmin/phpmyadmin:5.2\n"},
+            "ARG without a value": {"Dockerfile": "ARG PHP_VERSION\nFROM php:${PHP_VERSION}-apache\n"},
+            "ARG after the first FROM": {"Dockerfile": "FROM node:20 AS assets\nARG PHP=8.3.30\nFROM php:${PHP}\n"},
+            "compose variable without a default": {"compose.yml": "services:\n  web:\n    image: php:${PHP_TAG}\n"},
+            "constraints, not the runtime": {"composer.json": '{"require": {"php": "^8.2"}, "config": {"platform": {"php": "8.2.10"}}}\n',
+                                             ".github/workflows/ci.yml": "steps:\n  - uses: shivammathur/setup-php@v2\n"
+                                                                         "    with: { php-version: '8.3' }\n"},
+            "not a version": {".php-version": "system\n", ".tool-versions": "php latest\n", "mise.toml": '[tools]\nphp = "latest"\n'},
+            "empty version file": {".php-version": "\n# set by the host\n"},
+        }
+        for name, files in cases.items():
+            with self.subTest(name=name):
+                _, f, q = self.php(files, {"php": sorted(self.PHP)})
+                self.assertSilent(f)
+                q.assert_not_called()
+        # A version with no known issue is checked and quiet.
+        _, f, q = self.php({"Dockerfile": "FROM php:8.5.12-apache\n"}, {})
+        self.assertEqual(q.call_args[0][0], [("Bitnami", "php", "8.5.12")])
+        self.assertSilent(f)
+
+    def test_dep005_issue_with_no_fix_yet(self):
+        nofix = _phpadv("BIT-php-2026-1", [], "2026-10-20", severity="High", aliases=["CVE-2026-1"])
+        nofix["affected"][0]["ranges"][0]["events"] = [{"introduced": "0"}]
+        docs = dict(self.PHP, **{"BIT-php-2026-1": nofix})
+        both = ["BIT-php-2026-1", "BIT-php-2026-109618"]
+
+        def run(files, version, ids):
+            with mock.patch.object(deps_check, "_today", return_value=datetime.date(2026, 10, 23)):
+                _, f, _ = self.deps(files, {("php", version): ids}, docs)
+            self.assertEqual(len(f), 1, brief(f))
+            return f[0], texts("DEP005", "en", f[0].params)
+        f, (_, _, fix) = run({"Dockerfile": "FROM php:8.3.30-apache\n"}, "8.3.30", both)
+        self.assertEqual(fix, "Use PHP 8.3.36 or later: change the image to php:8.3.36-apache, rebuild the image and deploy "
+                              "again. 1 issue(s) still unfixed: see the advisories for a mitigation.")
+        f, (_, _, fix) = run({"Dockerfile": "FROM php:8.3.30-apache\n"}, "8.3.30", ["BIT-php-2026-1"])
+        self.assertEqual((f.severity, f.params["fixed"]), ("high", ""))
+        self.assertTrue(fix.startswith("No PHP release fixes it yet."), fix)
+        # Every 8.1 has both: the fix that exists is in a newer branch, and one issue has none anywhere.
+        f, (title, why, fix) = run({".php-version": "8.1\n"}, "8.1.0", both)
+        self.assertEqual(f.severity, "critical")
+        self.assertIn("Others: CVE-2026-1.", why)
+        self.assertEqual(fix, "Move to PHP 8.2.35 or later where the app runs, update .php-version, test the app and restart "
+                              "PHP (PHP-FPM or Apache). 1 issue(s) still unfixed: see the advisories for a mitigation.")
+        f, (title, why, fix) = run({"Dockerfile": "FROM php:8.3-apache\n"}, "8.3.0", ["BIT-php-2026-1"])
+        self.assertEqual((f.severity, title), ("high", "php:8.3-apache: no PHP release fixes CVE-2026-1 (Issue BIT-php-2026-1) yet"))
+        self.assertEqual(why, "Every PHP 8.3 release has CVE-2026-1, and no fix is out yet.")
+        self.assertTrue(fix.startswith("No PHP release fixes it yet."), fix)
+        self.assertIn("nenhuma versão do PHP corrige ainda a CVE-2026-1", texts("DEP005", "pt", f.params)[0])
+
+    def test_dep005_offline(self):
+        ctx, f, q = self.php({"Dockerfile": "FROM php:8.3.30-apache\n"}, {"php": sorted(self.PHP)}, offline=True)
+        q.assert_not_called()
+        self.assertSilent(f)
+        self.assertEqual(ctx.sources, {"packages": 1})
+        self.assertIsInstance(deps_check._today(), datetime.date)
 
 
 # =========================================================================== motor: ignore, dedupe, limites, modos

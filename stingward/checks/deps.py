@@ -1,13 +1,14 @@
-"""Dependências com falha conhecida (OSV.dev), priorizadas por CISA KEV e EPSS."""
+"""Dependências e versão do PHP com falha conhecida (OSV.dev), priorizadas por CISA KEV e EPSS."""
 from __future__ import annotations
 
+import datetime
 import fnmatch
 import json
 import re
 from pathlib import Path
 
-from .. import lockfiles, vulndb
-from ..model import SEV_RANK, Finding, bump
+from .. import lockfiles, runtimes, vulndb
+from ..model import SEV_RANK, SEVERITIES, Finding, bump
 from ..net import NetError
 from .agents import mcp_packages
 
@@ -152,17 +153,20 @@ def check(ctx):
     floors = {}  # faixas com o mesmo pacote e o mesmo piso viram uma consulta só
     for r in ranges:
         floors.setdefault(_floor_key(r), (r.eco, r.name, r.floor))
-    ctx.sources["packages"] = len(pkgs) + len(floors)
-    if not (pkgs or floors) or ctx.offline:
+    rts = runtimes.collect(ctx)
+    ctx.sources["packages"] = len(pkgs) + len(floors) + len(rts)
+    if not (pkgs or floors or rts) or ctx.offline:
         return out
     try:
-        # Versões fixadas e pisos das faixas vão no mesmo lote.
-        found = vulndb.osv_query([(e, n, v) for e, n, v, _, _ in pkgs] + list(floors.values()))
+        # Versões fixadas, pisos das faixas e versões do PHP vão no mesmo lote.
+        found = vulndb.osv_query([(e, n, v) for e, n, v, _, _ in pkgs] + list(floors.values())
+                                 + [(runtimes.ECOSYSTEM, runtimes.NAME, rt.query) for rt in rts])
     except NetError as e:
         ctx.sources["osv_error"] = str(e)
         return out
     ctx.sources["osv"] = True
-    ids_per_pkg, ids_per_floor = found[:len(pkgs)], dict(zip(floors, found[len(pkgs):]))
+    ids_per_pkg, ids_per_floor = found[:len(pkgs)], dict(zip(floors, found[len(pkgs):len(pkgs) + len(floors)]))
+    ids_per_runtime = found[len(pkgs) + len(floors):]
     all_ids = sorted({i for ids in found for i in ids})
     docs = vulndb.osv_vulns(all_ids) if all_ids else {}
     missing = [i for i in all_ids if i not in docs]
@@ -272,6 +276,12 @@ def check(ctx):
             vulns = [dict(x, spans=vulndb.affects_whole_range(docs.get(x["osv"], {}), r.eco, r.name, r.floor, r.upper, r.inclusive))
                      for x in vulns]
             out.append(_range_finding(r, vulns, kev))
+    for rt, ids in zip(rts, ids_per_runtime):
+        vulns, _ = assess(ids, runtimes.ECOSYSTEM, runtimes.NAME, rt.query)
+        vulns = [dict(x, published=str((docs.get(x["osv"]) or {}).get("published") or "")[:10]) for x in vulns]
+        found_rt = _runtime_finding(rt, vulns, kev)
+        if found_rt:
+            out.append(found_rt)
     return out
 
 
@@ -446,3 +456,139 @@ def _range_finding(r, vulns, kev):
         "headline_pt": head_pt, "headline_en": head_en, "why_pt": why_pt, "why_en": why_en,
         "exploit_pt": exploit_pt, "exploit_en": exploit_en, "fix_pt": fix_pt, "fix_en": fix_en,
     }, _refs(lead), tags)
+
+
+# DEP005. Uma tag que acompanha a série (php:8.3-apache) só pega a correção quando a imagem é montada de novo: contam
+# as falhas corrigidas nesta janela, o tempo em que uma imagem que ninguém montou de novo ainda roda a versão antiga.
+RECENT_DAYS = 90
+_MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
+_RESTART = ("reinicie o PHP (PHP-FPM ou Apache)", "restart PHP (PHP-FPM or Apache)")
+_PHP_UNFIXED = (" {n} falha(s) ainda sem correção: veja a mitigação nos avisos.",
+                " {n} issue(s) still unfixed: see the advisories for a mitigation.")
+_PHP_NO_FIX = ("Ainda não saiu versão do PHP que corrija. Aplique a mitigação do aviso e atualize assim que a correção sair.",
+               "No PHP release fixes it yet. Apply the advisory's mitigation and update as soon as a fix is out.")
+
+
+def _today():
+    return datetime.datetime.now(datetime.timezone.utc).date()
+
+
+def _in_branch(fix, branch):
+    return bool(fix) and fix.startswith(branch + ".")
+
+
+def _dates(iso):
+    """22/10/2026 e Oct 22, 2026."""
+    y, m, d = iso.split("-")
+    return f"{d}/{m}/{y}", f"{_MONTHS[int(m) - 1]} {int(d)}, {y}"
+
+
+def _use(rt, version, arg_value=None):
+    """Onde trocar a versão: o ARG de onde ela veio, a imagem, ou o arquivo de versão."""
+    if rt.arg:
+        v = arg_value or version
+        return f"troque o valor do ARG {rt.arg} para {v}", f"set ARG {rt.arg} to {v}"
+    new = runtimes.retag(rt, arg_value or version)
+    return f"troque a imagem por {new}", f"change the image to {new}"
+
+
+def _runtime_finding(rt, vulns, kev):
+    """DEP005, um por lugar que define a versão do PHP. Versão exata: como o DEP001, com a severidade cheia. Série
+    (php:8.3-apache, .php-version com 8.3): a versão instalada é a última da série de quando a imagem foi montada ou o
+    PHP atualizado. Contam a falha que nenhuma versão da série corrige (série sem suporte), com a severidade cheia, e
+    as corrigidas nos últimos RECENT_DAYS dias, um nível abaixo: só uma instalação de antes da correção as tem."""
+    recent = False
+    if rt.floating:
+        known = [x for x in vulns if x.get("details", True)]
+        stuck = [x for x in known if not _in_branch(x["fixed"], rt.branch)]
+        since = (_today() - datetime.timedelta(days=RECENT_DAYS)).isoformat()
+        recent = not stuck
+        vulns = stuck or [x for x in known if x["published"] >= since]
+    if not vulns:
+        return None
+    vulns.sort(key=_rank)
+    worst = vulns[0]
+    tags, exploit_pt, exploit_en = _exploit(vulns, kev)
+    target, unfixed = _target(vulns, runtimes.ECOSYSTEM)
+    n, branch, where = len(vulns), rt.branch, rt.file.rsplit("/", 1)[-1]
+    others_pt, others_en = _others(vulns)
+    severity = worst["severity"]
+    if recent:
+        severity = SEVERITIES[max(SEV_RANK["low"], SEV_RANK[severity] - 1)]
+        day_pt, day_en = _dates(worst["published"])
+        if rt.image:
+            head_pt = f"se a imagem foi montada antes de {day_pt}, ela tem a {_named(worst)}"
+            head_en = f"an image built before {day_en} has {_named(worst)}"
+            why_pt = (f"A imagem {rt.image} só acompanha a última versão {branch} do PHP quando é montada de novo: a "
+                      f"montada antes de sair o PHP {target} continua com uma {branch} antiga.")
+            why_en = (f"The {rt.image} image follows the newest PHP {branch} release only when it is built again: an "
+                      f"image built before PHP {target} came out still runs an older {branch}.")
+            pin_pt, pin_en = _use(rt, target)
+            fix_pt = (f"Monte a imagem de novo com a base mais recente (docker build --pull --no-cache) e publique, "
+                      f"ou fixe a versão: {pin_pt}.")
+            fix_en = f"Rebuild the image with the newest base (docker build --pull --no-cache) and deploy again, or pin the version: {pin_en}."
+        else:
+            head_pt = f"se o PHP foi atualizado pela última vez antes de {day_pt}, ele tem a {_named(worst)}"
+            head_en = f"if PHP was last updated before {day_en}, it has {_named(worst)}"
+            why_pt = (f"{where} pede o PHP {branch}, então a versão que roda depende de quando o PHP foi atualizado no "
+                      f"servidor: o atualizado antes de sair o PHP {target} tem essas falhas.")
+            why_en = (f"{where} asks for PHP {branch}, so the version that runs depends on when PHP was last updated on "
+                      f"the server: one updated before PHP {target} came out has these issues.")
+            fix_pt = f"Atualize o PHP {branch} para {target} ou mais nova onde o app roda e {_RESTART[0]}."
+            fix_en = f"Update PHP {branch} to {target} or later where the app runs and {_RESTART[1]}."
+        if n > 1:
+            why_pt += f" As versões {branch} dos últimos {RECENT_DAYS} dias corrigiram {n} falhas. Outras: {others_pt}."
+            why_en += f" The last {RECENT_DAYS} days of {branch} releases fixed {n} issues. Others: {others_en}."
+    elif rt.floating:
+        if target:
+            head_pt, head_en = f"nenhuma versão {branch} corrige a {_named(worst)}", f"no {branch} release fixes {_named(worst)}"
+            why_pt = f"Toda versão {branch} do PHP tem a {worst['id']}: a correção só saiu em séries mais novas."
+            why_en = f"Every PHP {branch} release has {worst['id']}: the fix only exists in newer branches."
+        else:
+            head_pt, head_en = f"nenhuma versão do PHP corrige ainda a {_named(worst)}", f"no PHP release fixes {_named(worst)} yet"
+            why_pt = f"Toda versão {branch} do PHP tem a {worst['id']}, e a correção ainda não saiu."
+            why_en = f"Every PHP {branch} release has {worst['id']}, and no fix is out yet."
+        if n > 1:
+            why_pt += f" Outras: {others_pt}."
+            why_en += f" Others: {others_en}."
+        if target:
+            new_branch = ".".join(target.split(".")[:2])
+            if rt.image:
+                use_pt, use_en = _use(rt, target, new_branch)
+                fix_pt = (f"Passe para o PHP {new_branch} ({target} ou mais nova): {use_pt}, teste o app, monte a "
+                          "imagem de novo e publique.")
+                fix_en = f"Move to PHP {new_branch} ({target} or later): {use_en}, test the app, rebuild the image and deploy again."
+            else:
+                fix_pt = (f"Passe para o PHP {target} ou mais novo onde o app roda, troque a versão em {where}, teste o "
+                          f"app e {_RESTART[0]}.")
+                fix_en = f"Move to PHP {target} or later where the app runs, update {where}, test the app and {_RESTART[1]}."
+        else:
+            fix_pt, fix_en = _PHP_NO_FIX
+    else:
+        if n == 1:
+            head_pt = head_en = _named(worst)
+            why_pt, why_en = "Esta versão do PHP tem uma falha pública conhecida.", "This PHP version has a publicly known vulnerability."
+        else:
+            head_pt = f"{n} falhas conhecidas; a pior é {_named(worst)}"
+            head_en = f"{n} known vulnerabilities; worst is {_named(worst)}"
+            why_pt = f"Esta versão do PHP tem falhas públicas. Outras: {others_pt}."
+            why_en = f"This PHP version has public vulnerabilities. Others: {others_en}."
+        if target and rt.image:
+            use_pt, use_en = _use(rt, target)
+            fix_pt = f"Use o PHP {target} ou mais novo: {use_pt}, monte a imagem de novo e publique."
+            fix_en = f"Use PHP {target} or later: {use_en}, rebuild the image and deploy again."
+        elif target:
+            fix_pt = f"Instale o PHP {target} ou mais novo onde o app roda, troque a versão em {where} e {_RESTART[0]}."
+            fix_en = f"Install PHP {target} or later where the app runs, update {where} and {_RESTART[1]}."
+        else:
+            fix_pt, fix_en = _PHP_NO_FIX
+    if target and unfixed:
+        fix_pt += _PHP_UNFIXED[0].format(n=unfixed)
+        fix_en += _PHP_UNFIXED[1].format(n=unfixed)
+    fix_pt, fix_en = _with_missing(vulns, fix_pt, fix_en, alone=not target and not unfixed)
+    return Finding("DEP005", severity, rt.file, rt.line, {
+        "runtime": rt.image or f"PHP {rt.version}", "version": rt.version, "image": rt.image, "floating": rt.floating,
+        "fixed": target or "", "vulns": vulns,
+        "headline_pt": head_pt, "headline_en": head_en, "why_pt": why_pt, "why_en": why_en,
+        "exploit_pt": exploit_pt, "exploit_en": exploit_en, "fix_pt": fix_pt, "fix_en": fix_en,
+    }, _refs(worst), tags)

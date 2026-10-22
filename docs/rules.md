@@ -19,6 +19,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [DEP002](#dep002) | Malicious package | 🔴 |
 | [DEP003](#dep003) | Manifest without a lockfile | 🔵 |
 | [DEP004](#dep004) | Version range allows vulnerable versions | 🔴 |
+| [DEP005](#dep005) | PHP version with known vulnerabilities | 🔴 |
 | [SEC001](#sec001) | Secret in code | 🔴 |
 | [SEC002](#sec002) | `.env` committed to git | 🟠 |
 | [SEC003](#sec003) | `.env` missing from `.gitignore` | 🟡 |
@@ -98,6 +99,14 @@ OSV `MAL-*` records and GitHub "malware" advisories: packages published to steal
 Without a lockfile, a range such as `Pillow>=10` or `"axios": "^1.6.0"` is all that decides the version, and its lowest version still counts: a machine that already has it keeps it, and installers can pick it. Stingward asks OSV.dev about the lowest version of each range (`>=`, `~=` and `==X.*` in Python; `^` and `~` in Poetry; `^`, `~`, `>=`, `1.2.x` and `>=a <b` in npm), in the same batch as the pinned packages, for `requirements*.txt` and `*-requirements.txt` (also the `.txt` files of a `requirements/` folder and the files they include with `-r` or `-c`) and `package.json` without a lockfile beside them and for the dependencies of a `pyproject.toml` without `poetry.lock`, `uv.lock` or `pdm.lock` (`[project]` and its optional dependencies, `[dependency-groups]`, the `dev-dependencies` of `[tool.uv]`, and Poetry's `[tool.poetry.dependencies]`, `dev-dependencies` and groups; git, path and URL dependencies are left out). A package pinned elsewhere in the project is left to DEP001. The installed version is often newer, so the finding is medium at most (low when the worst issue is below high), unless the range's upper bound leaves out the fix: then every version it allows is affected and the severity is the full DEP001 one.
 
 **Fix:** raise the minimum to the version shown, for example replace `Pillow>=10` with `Pillow>=12.3.0`. If no version in the range has the fix, widen the range.
+**Standards:** `CWE-1395`
+
+<a id="dep005"></a>
+### DEP005 · PHP version with known vulnerabilities
+
+Reads the PHP version the project runs on and looks it up in OSV.dev, where PHP's own advisories are listed: the `php` image (also `library/php`, a known Docker Hub mirror and `bitnami/php-fpm`) on a `FROM` line of a `Dockerfile` or `Containerfile`, with the `ARG` values declared before it filled in, or on an `image:` line of `docker-compose.yml` or `compose.yaml`; `.php-version`; `php` in `.tool-versions` (asdf); and `php` in the `[tools]` table of `mise.toml`. Tags without a version (`php:latest`, `php:8-cli`), release candidates and version constraints such as `"php": "^8.2"` in `composer.json` are left out. An exact version such as `php:8.3.30-apache` is reported like DEP001, with the full severity. A tag that follows a branch, such as `php:8.3-apache` or `8.3` in `.php-version`, runs the newest 8.3 of the day the image was built or PHP was updated, so it lists what the branch's releases fixed in the last 90 days, one level lower; an issue that no release of the branch fixes, as in a branch that is no longer supported, is reported with the full severity. In tests and examples it is low.
+
+**Fix:** use the version shown, for example change `php:8.3.30-apache` to `php:8.3.36-apache`, rebuild the image and deploy again. For a tag that follows a branch, rebuild with `docker build --pull --no-cache` or pin the version. Without Docker, update PHP where the app runs and restart PHP-FPM or Apache.
 **Standards:** `CWE-1395`
 
 ## Secrets
