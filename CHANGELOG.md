@@ -4,9 +4,16 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-22
+
 ### Added
 - AI review in the review file: `"review_kind": "ai"` (the default is `"person"`). The HTML, text and Markdown reports then say AI review instead of human review, and the scope section says what was checked, in which files and on what date. An AI review refuses `accepted_risk`, because only the client can accept a risk, and accepts `fixed` only for a finding that is gone from a scan that could see it: not hidden by `.stingwardignore`, a `stingward:ignore` comment or the size and file limits. The HTML report also says that the code excerpt of each finding, with secrets masked, went to the AI model. The JSON review block gains `kind` and `masked`, which is true when something in a comment, the notes or a name looked like a secret and was masked, in any of the formats.
 - `--no-ignore`, to audit someone else's project: its `.stingwardignore` and `stingward:ignore` comments hide nothing, so whoever wrote the code does not choose what the audit shows. When the project asked to hide findings, the HTML report says those requests were not applied. Since nothing is hidden, an AI review can mark `fixed` a finding that is gone even where an ignore line or comment would have covered it.
+
+### Fixed
+- SEC001 no longer reports a password in a database URL with several hosts, such as `postgresql://h1:5432,user:password@h2/db` from pydantic's `MultiHostUrl`: the start used to be read as the user `h1` with the password `5432,user:password`. The credential after the last comma is checked as any other, and a user with no password is not reported. `foo`, `bar`, `baz`, `qux` and `foobar` count as sample passwords.
+- Language words beside a sensitive name, such as `credentials: true` in a CORS or `fetch` setting or `password = None`, are no longer masked as secrets in code excerpts and reports.
+- With an AI review, the text, Markdown and HTML reports say "fixed since the previous report" instead of "fixed during the audit", since nobody followed the fix: it is what a new scan no longer finds.
 
 ## [0.1.6] - 2026-10-21
 
@@ -224,7 +231,8 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 First public release: CLI (`pipx`, `uvx`, `npx`), Claude Code plugin and skill, and GitHub Action. Checks dependencies (OSV.dev, CISA KEV, EPSS, NVD), secrets, AI-built app mistakes, agent and MCP setups, and skills, with reports in text, Markdown, JSON and SARIF in English and Portuguese.
 
-[Unreleased]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.3...v0.1.4

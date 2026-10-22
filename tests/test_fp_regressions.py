@@ -170,6 +170,17 @@ class GenericSecrets(Case):
             with self.subTest(line=line):
                 self.assertSilent(scan_files({"supabase/config.toml": line + "\n"}), "SEC001")
 
+    def test_multi_host_urls_and_metasyntactic_passwords(self):
+        """pydantic documents MultiHostUrl with 'https://foo.com:123,foo:bar@bar.com/path': the first host's port and
+        the second host's user read as user "foo.com" and password "123,foo:bar". The credential is the part after the
+        last comma, and foo:bar is a textbook example. A real password in the same shape is still found."""
+        doc = ("def hosts(self):\n    \'\'\'\n    mhu = MultiHostUrl('https://foo.com:123,foo:bar@bar.com/path')\n    \'\'\'\n"
+               "ONE = 'postgresql://h1:5432,app@h2/db'\n")
+        self.assertSilent(scan_files({"networks.py": doc}), "SEC001")
+        pw = "Zq8vLm2" + "pXr"
+        f = scan_files({"db.py": f"URL = 'postgresql://db1.prod.net:5432,app:{pw}@db2.prod.net/app'\n"})
+        self.assertEqual(brief(f, "SEC001"), [("SEC001", "db.py", 1, "high")])
+
     def test_local_database_and_samples_are_low(self):
         pw = "Tr0ub4dor" + "-77-xK"
         f = scan_files({
