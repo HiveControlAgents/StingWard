@@ -198,10 +198,14 @@ class Site(unittest.TestCase):
         self.assertIn('<a href="pt/" hreflang="pt-BR" lang="pt-BR">', self.pages["en"])
         self.assertIn('<span lang="pt-BR" aria-current="page">', self.pages["pt"])
         self.assertIn('<a href="../" hreflang="en" lang="en">', self.pages["pt"])
-        for lang, page in self.pages.items():  # English, the main language, comes first
+        flags = {"en": "", "pt": "../"}
+        for lang, page in self.pages.items():  # the site is English by default, so Portuguese, the other one, comes first
             with self.subTest(lang=lang):
                 switch = page.split('<nav class="lang"', 1)[1].split("</nav>", 1)[0]
-                self.assertLess(switch.index("English"), switch.index("Português"))
+                self.assertLess(switch.index("Português"), switch.index("English"))
+                # each language beside its flag, a picture the name already says, so readers skip it
+                self.assertEqual(re.findall(r'<img class="lang__flag" src="([^"]+)" alt="" width="16" height="12">', switch),
+                                 [f"{flags[lang]}assets/flag-br.svg", f"{flags[lang]}assets/flag-us.svg"])
 
     # ---------------------------------------------------------------- addresses
 

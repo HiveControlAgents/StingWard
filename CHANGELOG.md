@@ -7,6 +7,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 ### Changed
 - The website moved to https://stingward.com/. The old GitHub Pages address sends visitors there.
 - The website offers the Stingward report in place of the human-reviewed audit: US$ 29 (`$29` in English), paid once. You send a zip or one GitHub repository, Stingward checks it, an AI reviews every finding and a second AI checks the first, and the PDF report arrives in minutes, with one free new check of the fixed version within 30 days and a full automatic refund if it is not ready in 24 hours. The FAQ and the note on the sample report say the same. The buy button still reads "Coming soon" while `links.audit_checkout` is empty.
+- The language switch shows each language beside its flag (Brazil for Portuguese, the United States for English) and lists Portuguese first, since the site opens in English. The flags are two small SVG files published with the site.
 
 ### Added
 - Terms of service, privacy policy and refund policy for the paid report, in English (`/terms/`, `/privacy/`, `/refund/`) and Portuguese (`/pt/terms/`, `/pt/privacy/`, `/pt/refund/`). They are built from `site/legal.json`, linked from the footer of every page, and load the site's stylesheet and no script; a link in them can only go to another of the three pages or to an `https://` address.
