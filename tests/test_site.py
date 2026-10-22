@@ -519,7 +519,7 @@ class Site(unittest.TestCase):
             self.assertIn("@media print{.sample{display:none}}", page)
 
     def test_the_paid_sample_has_the_ai_review_on_every_finding(self):
-        words = {"en": ("AI review", "Summary"), "pt": ("Revisão por IA", "Resumo")}
+        words = {"en": ("Automatic review", "Summary"), "pt": ("Revisão automática", "Resumo")}
         for lang, page in self.ai_samples.items():
             with self.subTest(lang=lang):
                 self.assertIn(words[lang][0], page)
