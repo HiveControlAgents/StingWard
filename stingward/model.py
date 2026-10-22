@@ -55,6 +55,8 @@ class Context:
     mode: str = "project"                          # project | skill | agents
     too_big: list = field(default_factory=list)    # arquivos de código e texto que o limite de tamanho deixou de fora
     truncated: bool = False                        # a listagem parou em scan.MAX_FILES
+    # False com --no-ignore: o .stingwardignore e os comentários stingward:ignore do projeto não escondem nada.
+    honor_ignores: bool = True
     _cache: dict = field(default_factory=dict)
 
     def read(self, rel: str) -> str:

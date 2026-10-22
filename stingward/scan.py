@@ -134,7 +134,9 @@ def _ignored(f, rules):
                for r, g in rules)
 
 
-def run(root: str, mode: str = "project", offline: bool = False, only=None, files=None):
+def run(root: str, mode: str = "project", offline: bool = False, only=None, files=None, honor_ignores: bool = True):
+    """honor_ignores=False (--no-ignore) audita o projeto de outra pessoa: o .stingwardignore e os comentários
+    stingward:ignore dele não escondem achados, porque quem escreveu o código não decide o que o auditor vê."""
     root = os.path.abspath(root)
     too_big, truncated = [], False
     if files is None:
@@ -142,7 +144,8 @@ def run(root: str, mode: str = "project", offline: bool = False, only=None, file
         files = list_files(root, max_files=MAX_FILES + 1, mode=mode, too_big=too_big)
         truncated = len(files) > MAX_FILES
         files = files[:MAX_FILES]
-    ctx = Context(root=root, files=files, offline=offline, mode=mode, too_big=too_big, truncated=truncated)
+    ctx = Context(root=root, files=files, offline=offline, mode=mode, too_big=too_big, truncated=truncated,
+                  honor_ignores=honor_ignores)
     ctx.git_tracked = git_tracked(root) if mode != "agents" else None
     findings = []
     for name, fn in CHECKS.items():
@@ -156,7 +159,7 @@ def run(root: str, mode: str = "project", offline: bool = False, only=None, file
         for floor, prefixes in _TEST_DOWNGRADE[mode].items():
             if f.rule.startswith(prefixes) and SEV_RANK[f.severity] > SEV_RANK[floor]:
                 f.severity = floor
-    rules = load_ignore(root) if mode == "project" else []
+    rules = load_ignore(root) if mode == "project" and honor_ignores else []
     uniq, seen = [], set()
     # O mesmo token no config do MCP vira AGT004, que explica melhor; os outros segredos do arquivo continuam.
     agt004 = {(f.file, f.line) for f in findings if f.rule == "AGT004"}
