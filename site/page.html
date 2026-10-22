@@ -29,9 +29,10 @@ ${alternates}
 
 <header class="top" id="top">
   <a class="brand" href="./" aria-label="Stingward"><img src="${root}assets/logo.svg" alt="" width="26" height="26"><span>Stingward</span></a>
-  <nav class="nav" aria-label="${nav_label}">${nav_links}<a class="nav__link" href="${repo}">${nav_github}</a></nav>
+  <nav class="nav" id="menu" aria-label="${nav_label}">${nav_links}<a class="nav__link" href="${repo}">${nav_github}</a><a class="nav__link nav__install" href="#where">${front_tab}</a></nav>
   <nav class="lang" aria-label="${lang_label}">${languages}</nav>
   <a class="button button--small top__act" href="#where">${front_tab}</a>
+  <button class="menu" type="button" aria-expanded="false" aria-controls="menu">${menu}</button>
 </header>
 
 <main id="main">
@@ -41,6 +42,7 @@ ${alternates}
   <div class="hero__words">
     <p class="hero__lead">${hero_lead}</p>
     <div class="install"><code class="install__cmd">pipx install stingward</code>${hero_copy}</div>
+    <p class="hero__alt">${hero_alt} <a href="${sample_ai_href}">${report_sample}</a></p>
     <p class="hero__more">${hero_more} <a href="${repo}">${hero_source}</a></p>
   </div>
   <section class="report" id="report" aria-labelledby="report-h">
@@ -61,6 +63,44 @@ ${report_panels}
     </div>
   </section>
 </div>
+
+<section class="audit" id="audit" aria-labelledby="audit-h">
+  <div class="audit__row">
+  <div class="audit__words">
+    <h2 class="head" id="audit-h" data-reveal>${audit_h2}</h2>
+    <p class="audit__lead" data-reveal>${audit_p}</p>
+  </div>
+  <div class="audit__offer">
+    <p class="figure audit__figure" data-reveal><span class="figure__cur">${audit_currency}</span><span class="figure__num">${audit_price}</span><span class="figure__per">${audit_per}</span></p>
+    ${audit_note}
+    <div class="audit__act">${audit_button}<a href="${sample_ai_href}">${report_sample}</a></div>
+  </div>
+  </div>
+  <div class="audit__row">
+  <ul class="audit__pages">
+${report_pages}
+  </ul>
+  </div>
+  <div class="audit__row">
+  <div class="audit__list audit__list--gets">
+    <h3>${audit_gets_h}</h3>
+    <ul>
+${audit_gets}
+    </ul>
+  </div>
+  <div class="audit__list audit__list--not">
+    <h3>${audit_not_h}</h3>
+    <ul>
+${audit_not}
+    </ul>
+  </div>
+  <div class="soon" role="group" aria-label="${soon_tab}">
+    <h3 class="soon__title">${soon_h3}</h3>
+    <p>${soon_p}</p>
+    <div class="soon__act">${soon_button}<a href="${repo}/releases">${soon_link}</a></div>
+  </div>
+  </div>
+</section>
 
 <section class="why" id="why" aria-labelledby="why-h">
   <div class="why__words">
@@ -116,41 +156,11 @@ ${proof_items}
   <div class="price__words">
     <h2 class="head" id="price-h" data-reveal>${price_h2}</h2>
     <p data-reveal>${price_p}</p>
-    <ul class="price__lines">
-${price_lines}
-    </ul>
     <a class="button" href="#where">${price_button}</a>
   </div>
-</section>
-
-<section class="audit" id="audit" aria-labelledby="audit-h">
-  <div class="audit__ground" aria-hidden="true"></div>
-  <div class="audit__words">
-    <h2 class="head" id="audit-h" data-reveal>${audit_h2}</h2>
-    <p class="audit__lead" data-reveal>${audit_p}</p>
-  </div>
-  <div class="audit__offer">
-    <p class="figure audit__figure" data-reveal><span class="figure__cur">${audit_currency}</span><span class="figure__num">${audit_price}</span><span class="figure__per">${audit_per}</span></p>
-    ${audit_note}
-    <div class="audit__act">${audit_button}<a href="${sample_ai_href}">${report_sample}</a></div>
-  </div>
-  <div class="audit__list audit__list--gets">
-    <h3>${audit_gets_h}</h3>
-    <ul>
-${audit_gets}
-    </ul>
-  </div>
-  <div class="audit__list audit__list--not">
-    <h3>${audit_not_h}</h3>
-    <ul>
-${audit_not}
-    </ul>
-  </div>
-  <div class="soon" role="group" aria-label="${soon_tab}">
-    <h3 class="soon__title">${soon_h3}</h3>
-    <p>${soon_p}</p>
-    <div class="soon__act">${soon_button}<a href="${repo}/releases">${soon_link}</a></div>
-  </div>
+  <ul class="price__lines">
+${price_lines}
+  </ul>
 </section>
 
 <section class="faq" id="faq" aria-labelledby="faq-h">
@@ -161,7 +171,7 @@ ${faq_items}
 </section>
 
 <section class="cta" id="run" aria-labelledby="cta-h">
-  <h2 class="cta__line" id="cta-h" data-reveal>${cta_before}<span class="sr-only"> ${cta_cmd}</span></h2>
+  <h2 class="cta__line" id="cta-h" data-reveal>${cta_before}</h2>
   <p class="cta__cmd" data-reveal><code>${cta_cmd}</code>${cta_copy}</p>
   <p class="cta__note" data-reveal>${cta_note}</p>
 </section>

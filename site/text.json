@@ -13,12 +13,14 @@
     "nav_label": "Seções",
     "hero_h1": ["Você cria.", "Quem confere?"],
     "hero_lead": "Com IA, qualquer um publica um app, uma skill ou um servidor MCP sem saber o que é vulnerabilidade. O\u00a0Stingward acha as brechas e diz como fechar.",
-    "tabs": ["Por que existe", "Relatório", "O que pega", "Preço", "Instalar"],
+    "tabs": ["Relatório", "Por que existe", "O que pega", "Código aberto", "Instalar"],
+    "menu": "Menu",
     "copy": "Copiar",
     "copied": "Copiado",
     "copy_failed": "Selecione e copie",
     "hero_more": "Também roda com npx stingward, como plugin do Claude Code e como GitHub Action.",
     "hero_source": "Ver o código",
+    "hero_alt": "Não usa terminal? O relatório de R$ 99 explica tudo em palavras simples.",
 
     "why_h2": "Por que ele existe",
     "why_p": "A IA escreve o código, escolhe as versões dos pacotes e monta a configuração. Ela faz funcionar, mas não avisa o que deixou aberto, e quem publica muitas vezes nunca ouviu falar em CVE, RLS ou chave exposta. Você não precisa virar especialista: o Stingward lê o projeto e explica, sem jargão, o que está errado e como resolver.",
@@ -40,6 +42,7 @@
     "grades_label": "Notas de A a F",
     "report_more": "O mesmo resultado também sai como relatório em HTML, com resumo, plano de correção e o trecho de código de cada problema. Ele imprime direto em PDF.",
     "report_sample": "Ver um relatório de exemplo",
+    "pages": [["A capa, com a nota", "Capa do exemplo do relatório pago, para o app de demonstração my-saas: nota F, há problemas graves."], ["O resumo, em palavras simples", "Página do resumo executivo: o que corrigir primeiro, o que a nota quer dizer e quantos achados há de cada gravidade."], ["Cada achado, explicado", "Primeira página dos achados em detalhe: onde a chave está exposta, o comentário da revisão automática, o trecho do código, por que importa e como corrigir."]],
 
     "how_label": "Etapas da auditoria",
     "stages": [
@@ -120,12 +123,13 @@
     "audit_buy": "Pedir o relatório",
     "audit_gets_h": "O que você recebe",
     "audit_gets": [
-      "Revisão automática de cada achado, sem os alarmes falsos",
       "Relatório em PDF com nota de A a F e um resumo para quem não é da área",
-      "Plano de correção em ordem, com o esforço de cada item",
       "Para cada problema: onde está, o trecho de código, por que importa e como corrigir",
+      "Plano de correção em ordem, com o esforço de cada item",
+      "Revisão automática de cada achado, sem os alarmes falsos",
       "Uma nova verificação grátis da versão corrigida, em até 30 dias",
-      "Reembolso total e automático se o relatório não ficar pronto em 24 horas"
+      "Reembolso total e automático se o relatório não ficar pronto em 24 horas",
+      "Seu código apagado assim que o relatório fica pronto"
     ],
     "audit_not_h": "O que não cobre",
     "audit_not": [
@@ -154,7 +158,7 @@
       ["Ele verifica projetos de outras pessoas?", "Não. O aviso vai só para quem roda a ferramenta, sobre o código que essa pessoa escolheu verificar. Ele não abre issues em repositórios de ninguém."]
     ],
 
-    "cta_before": "Antes de instalar a próxima skill, rode",
+    "cta_before": "Antes de cada skill, rode",
     "cta_cmd": "stingward skill dono/repo",
     "cta_note": "Funciona com uma pasta no seu disco, com dono/repo ou com a URL de uma subpasta no GitHub.",
 
@@ -196,12 +200,14 @@
     "nav_label": "Sections",
     "hero_h1": ["You build it.", "Who checks it?"],
     "hero_lead": "With AI, anyone can ship an app, a skill or an MCP server without knowing what a vulnerability is. Stingward finds the holes and shows how to close them.",
-    "tabs": ["Why it exists", "Report", "What it finds", "Pricing", "Install"],
+    "tabs": ["Report", "Why it exists", "What it finds", "Open source", "Install"],
+    "menu": "Menu",
     "copy": "Copy",
     "copied": "Copied",
     "copy_failed": "Select and copy",
     "hero_more": "It also runs via npx stingward, as a Claude Code plugin and as a GitHub Action.",
     "hero_source": "See the code",
+    "hero_alt": "Don't use a terminal? The $29 report explains it all in plain words.",
 
     "why_h2": "Why it exists",
     "why_p": "AI writes the code, picks the package versions and sets up the config. It gets things working, but it doesn't tell you what it left open, and whoever ships the project has often never heard of a CVE, RLS or an exposed key. You don't need to become an expert: Stingward reads the project and explains, without jargon, what's wrong and how to fix it.",
@@ -223,6 +229,7 @@
     "grades_label": "Grades from A to F",
     "report_more": "The same results also come as an HTML report, with a summary, a remediation plan and the code excerpt for each problem. It prints straight to PDF.",
     "report_sample": "See a sample report",
+    "pages": [["The cover, with the grade", "Cover of the sample paid report, for the demo app my-saas: grade F, serious problems found."], ["The summary, in plain words", "Executive summary page: what to fix first, what the grade means and how many findings there are of each severity."], ["Each finding, explained", "First page of the findings in detail: where the key is exposed, the automatic review's comment, the code excerpt, why it matters and how to fix it."]],
 
     "how_label": "Audit stages",
     "stages": [
@@ -303,12 +310,13 @@
     "audit_buy": "Get the report",
     "audit_gets_h": "What you get",
     "audit_gets": [
-      "An automatic review of every finding, with false alarms set aside",
       "A PDF report with an A to F grade and a summary for non-experts",
-      "A step-by-step remediation plan, with an effort estimate for each item",
       "For each problem: where it is, the code excerpt, why it matters and how to fix it",
+      "A step-by-step remediation plan, with an effort estimate for each item",
+      "An automatic review of every finding, with false alarms set aside",
       "One free new check of the fixed version, within 30 days",
-      "A full refund, automatically, if the report isn't ready in 24 hours"
+      "A full refund, automatically, if the report isn't ready in 24 hours",
+      "Your code deleted as soon as the report is ready"
     ],
     "audit_not_h": "What it doesn't cover",
     "audit_not": [
@@ -337,7 +345,7 @@
       ["Does it check other people's projects?", "No. Results go only to the person who runs it, about the code they chose to check. It never opens issues on anyone's repository."]
     ],
 
-    "cta_before": "Before you install the next skill, run",
+    "cta_before": "Before each skill, run",
     "cta_cmd": "stingward skill owner/repo",
     "cta_note": "It works with a local folder, an owner/repo name or the URL of a subfolder on GitHub.",
 

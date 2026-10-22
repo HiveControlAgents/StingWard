@@ -34,13 +34,17 @@ SITE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SITE)
 URL = "https://stingward.com/"
 REPO = "https://github.com/HiveControlAgents/StingWard"
-ASSETS = ["logo.svg", "social-preview.png", "flag-br.svg", "flag-us.svg"] + [f"demo-{d}-{lang}.{ext}" for d in ("app", "skill") for lang in ("pt", "en") for ext in ("mp4", "png")]
+# The pages of the paid sample shown on the home page, printed by scripts/demo/record.mjs --report (docs/assets).
+REPORT_PAGES = ("cover", "summary", "findings")
+ASSETS = (["logo.svg", "social-preview.png", "flag-br.svg", "flag-us.svg"]
+          + [f"demo-{d}-{lang}.{ext}" for d in ("app", "skill") for lang in ("pt", "en") for ext in ("mp4", "png")]
+          + [f"report-{lang}-{name}.png" for lang in ("pt", "en") for name in REPORT_PAGES])
 CACHE = os.path.join(tempfile.gettempdir(), "stingward-site-cache")
 SEVERITY = {"🔴": "crit", "🟠": "high", "🟡": "med", "🔵": "low", "⚪": "info", "🟢": "ok"}
 ROW = r"^   [^ :]+(?: [^ :]+){0,2}: "  # "   where: ...", "   how to fix: ..." under a finding
 PAGE_DIR = {"en": ".", "pt": "pt"}  # English is the main site; Portuguese has its own folder
 SAMPLE = {"en": "example", "pt": "pt/exemplo"}  # where each language's sample report is published
-SAMPLE_AI = {"en": "example/full", "pt": "pt/exemplo/completo"}  # and the paid one, with the AI review
+SAMPLE_AI = {"en": "example/full", "pt": "pt/exemplo/completo"}  # and the paid one, with the automatic review
 HREFLANG = {"en": "en", "pt": "pt-BR"}
 # The addresses the site had before English moved to the root, already shared, as old folder: (language, new folder).
 # Pages cannot redirect, so each old folder gets a page that sends the visitor on (see moved()).
@@ -319,7 +323,7 @@ class Page:
     # ---------------------------------------------------------------- top of the page
 
     def nav(self):
-        targets = ["#why", "#report", "#finds", "#price"]
+        targets = ["#audit", "#why", "#finds", "#price"]
         return "".join(f'<a class="nav__link" href="{href}">{e(name)}</a>' for href, name in zip(targets, self.t["tabs"]))
 
     def languages(self):
@@ -347,6 +351,20 @@ class Page:
                 f'{"" if on else " data-off"}><span class="t-note"><b aria-hidden="true"># </b>{e(item["note"])}</span>'
                 f'<span class="t-cmd"><b aria-hidden="true">$ </b>{e(shown)}</span>{terminal(text)}</pre>')
         return "\n".join(tabs), "\n".join(panels)
+
+    # ---------------------------------------------------------------- the paid report, as it prints
+
+    def pages(self):
+        """Three pages of the paid sample report as it prints: the cover with the grade, the summary and the first
+        page of findings. They are the report a visitor who doesn't read terminals gets, and each opens the whole sample."""
+        items = []
+        for name, (caption, alt) in pairs("pages", REPORT_PAGES, self.t["pages"]):
+            file = f"report-{self.lang}-{name}.png"
+            width, height = size(os.path.join(ROOT, "docs", "assets", file))
+            items.append(f'<li class="sheet sheet--{name}"><figure><a href="{self.sample_ai_href}"><img src="{self.root}assets/{file}" '
+                         f'width="{width}" height="{height}" alt="{e(alt)}" decoding="async"></a>'
+                         f'<figcaption>{e(caption)}</figcaption></figure></li>')
+        return "\n".join(items)
 
     # ---------------------------------------------------------------- why
 
@@ -548,7 +566,7 @@ class Page:
             "root": self.root, "url": URL, "repo": REPO, "version": __version__,
             "canonical": address(PAGE_DIR[self.lang]), "alternates": alternates(PAGE_DIR),
             "languages": self.languages(), "nav_links": self.nav(), "front_tab": e(t["tabs"][4]),
-            "why_facts": self.why(),
+            "why_facts": self.why(), "report_pages": self.pages(),
             "hero_h1": "".join(f'<span class="line"><span>{e(line)}</span></span>' for line in t["hero_h1"]),
             "hero_copy": copy_button(t, "pipx install stingward", "button install__copy"),
             "report_p": e(fill(t["report_p"])),

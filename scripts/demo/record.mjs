@@ -1,6 +1,7 @@
 // Maintainers only: regenerates the README images in docs/assets from real Stingward output.
 // Needs Linux with Node 18+ and the `playwright` package (global is fine), ffmpeg, Python 3.9+ and network access (OSV, KEV, EPSS).
 // Usage: node scripts/demo/record.mjs            (the 4 demo GIFs, with an MP4 and a poster of each for the website)   node scripts/demo/record.mjs --banners   (banners + social preview)
+//        node scripts/demo/record.mjs --report   (three pages of the paid sample report for the website; also needs poppler-utils)
 import { createRequire } from "module";
 import { execFileSync, execSync } from "child_process";
 import fs from "fs";
@@ -318,6 +319,49 @@ async function banners() {
   await browser.close();
 }
 
+// ---------------------------------------------------------------- pages of the paid sample report
+
+// The website shows three pages of the paid sample report (site/build.py publishes it at example/full/ and
+// pt/exemplo/completo/): the cover with the grade, the executive summary and the first page of the findings in detail.
+// Each is the sample printed to A4 by Chromium, as a visitor's browser prints it, with the note on top left out by the
+// report's own print style. A page is found by its heading, after the cover, whose contents list names them all.
+const REPORT_PAGES = {
+  en: { dir: "example/full", heads: { summary: "Executive summary", findings: "Findings in detail" } },
+  pt: { dir: "pt/exemplo/completo", heads: { summary: "Resumo executivo", findings: "Achados em detalhe" } },
+};
+const REPORT_WIDTH = 900; // shown at about 450px, so it stays sharp on a 2x screen
+
+async function reportPages() {
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "stingward-report-"));
+  const site = path.join(work, "site");
+  execFileSync("python3", [path.join(ROOT, "site/build.py"), site, "--online"], { stdio: "ignore" });
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+  for (const [lang, { dir, heads }] of Object.entries(REPORT_PAGES)) {
+    await page.goto("file://" + path.join(site, dir, "index.html"));
+    const pdf = path.join(work, `report-${lang}.pdf`);
+    await page.pdf({ path: pdf, format: "A4", printBackground: true, preferCSSPageSize: true });
+    const text = execFileSync("pdftotext", ["-layout", pdf, "-"]).toString().split("\f");
+    if (/sk-proj|Demo7Fake/.test(text.join(""))) throw new Error(`report-${lang}: the fake key reached the report`);
+    const found = { cover: 1 };
+    for (const [name, head] of Object.entries(heads)) {
+      const index = text.findIndex((t, i) => i > 0 && t.includes(head));
+      if (index < 0) throw new Error(`report-${lang}: no page has the heading ${head}`);
+      found[name] = index + 1;
+    }
+    for (const [name, number] of Object.entries(found)) {
+      const base = path.join(ASSETS, `report-${lang}-${name}`);
+      execFileSync("pdftoppm", ["-png", "-f", String(number), "-l", String(number), "-scale-to-x", String(REPORT_WIDTH),
+        "-scale-to-y", "-1", "-singlefile", pdf, base]);
+      shrinkPng(base + ".png");
+      console.log(`${path.relative(ROOT, base)}.png  page ${number}  ${(fs.statSync(base + ".png").size / 1024).toFixed(0)} KB`);
+    }
+  }
+  await browser.close();
+  fs.rmSync(work, { recursive: true, force: true });
+}
+
 fs.mkdirSync(ASSETS, { recursive: true });
 if (process.argv.includes("--banners")) await banners();
+else if (process.argv.includes("--report")) await reportPages();
 else await demos();
