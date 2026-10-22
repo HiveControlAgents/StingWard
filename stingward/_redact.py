@@ -277,6 +277,10 @@ def _read_value(s: str, i: int):
     return j
 
 
+# Valor sem aspas que é palavra da linguagem, não segredo: credentials: true (cors, fetch), password = None.
+_LITERALS = {"true", "false", "null", "undefined", "nil", "None", "True", "False", "NULL", "TRUE", "FALSE"}
+
+
 def _apply_assign(s: str, f) -> str:
     out, pos = [], 0
     for m in _ASSIGN_KEY.finditer(s):
@@ -288,7 +292,7 @@ def _apply_assign(s: str, f) -> str:
         if not val:
             continue
         core = val[1:] if val[0] in "\"'" else val
-        if _is_ph(core) or val.startswith("\x00") or val in ('""', "''"):
+        if _is_ph(core) or val.startswith("\x00") or val in ('""', "''") or val in _LITERALS:
             continue
         # "Authorization: Bearer [REDACTED...]" já foi tratado pelo cabeçalho.
         if val.lower() in ("bearer", "basic", "digest", "token") and s.startswith(" [REDACTED:", vend):

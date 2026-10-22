@@ -115,6 +115,23 @@ T = {
 # revisado. Alarme falso e o que foi corrigido e conferido durante a auditoria não contam. "Corrija primeiro" e as
 # faixas do plano só têm o que ainda é para fazer: confirmados e não revisados.
 STATUS_ORDER = ("confirmed", "false_positive", "accepted_risk", "fixed", "")   # ordem das contagens
+# Revisão por IA: ninguém acompanhou a correção. O que foi corrigido é o que sumiu de uma nova varredura, então é
+# "desde o relatório anterior", e não "durante a auditoria".
+T_AI = {
+    "pt": {"n_status": dict(T["pt"]["n_status"], fixed=("{n} corrigido desde o relatório anterior",
+                                                        "{n} corrigidos desde o relatório anterior")),
+           "gone": "Corrigidos desde o relatório anterior, já fora desta varredura ({n})",
+           "grade_rule": "A nota não conta alarmes falsos nem o que foi corrigido desde o relatório anterior."},
+    "en": {"n_status": dict(T["en"]["n_status"], fixed=("{n} fixed since the previous report",
+                                                        "{n} fixed since the previous report")),
+           "gone": "Fixed since the previous report, no longer in this scan ({n})",
+           "grade_rule": "The grade leaves out false positives and what was fixed since the previous report."},
+}
+
+
+def words(lang, review=None):
+    """As frases do texto e do Markdown: as da revisão por IA no lugar das outras quando o arquivo diz "ai"."""
+    return dict(T[lang], **T_AI[lang]) if review is not None and review.kind == "ai" else T[lang]
 _GROUP = {"": 0, "confirmed": 0, "accepted_risk": 1, "fixed": 2, "false_positive": 3}  # ordem dos itens
 TODO = ("", "confirmed")
 NOT_COUNTED = ("false_positive", "fixed")
@@ -131,7 +148,7 @@ def review_parts(findings, review, lang):
     """["14 confirmados", "2 alarmes falsos descartados"]: só os status que aparecem."""
     from .review import counts
     c = counts(findings, review)
-    forms = T[lang]["n_status"]
+    forms = words(lang, review)["n_status"]
     return [(forms[k][0] if c[k] == 1 else forms[k][1]).format(n=c[k]) for k in STATUS_ORDER if c[k]]
 
 
@@ -545,8 +562,8 @@ def _notes_label(audit, t):
 
 
 def text(ctx, findings, lang="pt", color=False, target=None, show_verdict=False, max_low=15, audit=None):
-    t = T[lang]
     rv = audit.review if audit else None
+    t = words(lang, rv)
     valid = counted(findings, rv)
     shown, discarded = split(merge(findings, lang, rv))
     empty = nothing_read(ctx, findings)
@@ -663,8 +680,8 @@ def _md_comment(audit, e, lang):
 
 
 def markdown(ctx, findings, lang="pt", target=None, show_verdict=False, audit=None):
-    t = T[lang]
     rv = audit.review if audit else None
+    t = words(lang, rv)
     valid = counted(findings, rv)
     g = grade(valid)
     shown, discarded = split(merge(findings, lang, rv))
