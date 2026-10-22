@@ -14,6 +14,7 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 ### Changed
 - The Portuguese site shows the report's price in reais, R$ 99, the amount Paddle charges buyers in Brazil, with a line saying that outside Brazil it is US$ 29. The English site still shows $29, and the terms in both languages give both prices.
 - The offer, the FAQ and the terms describe the paid report's review as an automatic review of every finding. The privacy policy still says which lines go to Anthropic's AI model for it.
+- Reports from a review file with `"review_kind": "ai"` say "automatic review" instead of "AI review", in the HTML, text and Markdown formats, as the website does; the scope section says the masked excerpt of each finding went to the review service. The review file format does not change.
 - The "Check its work" section of the website is more compact: the six tiles sit in three columns beside the heading and no longer grow taller as the screen gets wider, so the section stays short on wide displays.
 
 ## [0.1.7] - 2026-10-22
