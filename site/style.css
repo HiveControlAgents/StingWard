@@ -518,6 +518,23 @@ mark { background: none; color: inherit; }
 @media (hover: hover) and (pointer: fine) {
   .footer__col a:hover, .footer__last a:hover { color: var(--accent); }
 }
+.footer__legal { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+
+/* ---------------------------------------------------------------- terms, privacy and refunds */
+
+.legal { max-width: calc(68ch + 2 * var(--margin)); padding: clamp(56px, 9vw, 120px) var(--margin) 0; overflow-wrap: break-word; }
+.legal__lead { margin-top: 28px; color: var(--muted); font-size: var(--step-lead); line-height: 1.4; text-wrap: pretty; }
+.legal h2 { margin: 56px 0 14px; font-size: var(--step-lead); font-weight: 600; letter-spacing: -0.015em; line-height: 1.25; }
+.legal p, .legal li { text-wrap: pretty; }
+.legal section > * + * { margin-top: 14px; }
+.legal ul { display: grid; gap: 10px; padding-left: 1.25em; }
+.legal li::marker { color: var(--accent); }
+.legal a { text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.legal__date { margin-top: 64px; color: var(--muted); font-size: var(--step-small); }
+.footer--legal { margin-top: 96px; padding-top: 8px; }
+@media (hover: hover) and (pointer: fine) {
+  .legal a:hover { color: var(--accent); }
+}
 
 /* ---------------------------------------------------------------- motion */
 

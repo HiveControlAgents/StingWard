@@ -111,18 +111,20 @@
     ],
     "price_button": "Instalar",
 
-    "audit_h2": "Auditoria de segurança do seu app feito com IA",
-    "audit_p": "O Stingward roda no seu projeto e uma pessoa revisa cada achado antes da entrega: confirma o que é real, tira o alarme falso e explica a correção em palavras simples.",
+    "audit_h2": "Relatório de segurança do seu app feito com IA",
+    "audit_p": "Mande um zip ou um repositório do GitHub. O Stingward verifica o código, uma IA revisa cada achado e uma segunda IA confere a primeira, e em minutos você recebe um PDF em palavras simples.",
     "audit_currency": "US$",
-    "audit_price": "149",
-    "audit_per": "entrega em 48 h",
-    "audit_buy": "Comprar a auditoria",
+    "audit_price": "29",
+    "audit_per": "pagamento único",
+    "audit_buy": "Pedir o relatório",
     "audit_gets_h": "O que você recebe",
     "audit_gets": [
-      "Cada achado revisado por uma pessoa, não só pela ferramenta",
+      "Cada achado revisado por uma IA e conferido por uma segunda",
       "Relatório em PDF com nota de A a F e um resumo para quem não é da área",
       "Plano de correção em ordem, com o esforço de cada item",
-      "Para cada problema: onde está, o trecho de código, por que importa e como corrigir"
+      "Para cada problema: onde está, o trecho de código, por que importa e como corrigir",
+      "Uma nova verificação grátis da versão corrigida, em até 30 dias",
+      "Reembolso total e automático se o relatório não ficar pronto em 24 horas"
     ],
     "audit_not_h": "O que não cobre",
     "audit_not": [
@@ -141,9 +143,9 @@
     "faq_h2": "Perguntas",
     "faq": [
       ["Preciso entender de segurança para usar?", "Não. Cada problema vem explicado em linguagem simples: o que é, onde está, por que importa e o que fazer. A nota de A a F resume tudo."],
-      ["Meu código sai da minha máquina?", "Com a ferramenta, não. Só o nome e a versão dos pacotes saem, para api.osv.dev, www.cisa.gov, api.first.org e services.nvd.nist.gov, e as respostas ficam em cache por algumas horas. Na auditoria paga, a pessoa que revisa precisa ler o código."],
+      ["Meu código sai da minha máquina?", "Com a ferramenta, não. Só o nome e a versão dos pacotes saem, para api.osv.dev, www.cisa.gov, api.first.org e services.nvd.nist.gov, e as respostas ficam em cache por algumas horas. O relatório pago roda no nosso servidor: o código é apagado assim que o relatório fica pronto, e a IA só vê algumas linhas mascaradas em volta de cada achado."],
       ["Relatório limpo quer dizer que está seguro?", "Não. Quer dizer que os erros mais comuns não estão lá. O Stingward é uma primeira linha rápida, não um teste de invasão."],
-      ["O que a auditoria paga tem a mais?", "A ferramenta é a mesma e continua gratuita. Na auditoria, uma pessoa revisa cada achado, tira o alarme falso e entrega em 48 horas o relatório em PDF com o plano de correção."],
+      ["O que o relatório pago tem a mais?", "A ferramenta é a mesma e continua gratuita. No relatório pago, uma IA revisa cada achado e uma segunda IA confere a primeira, tirando os alarmes falsos, e você recebe em minutos o PDF com o plano de correção. Depois de corrigir, uma nova verificação é grátis."],
       ["Funciona sem internet?", "Funciona com --offline. Aí as dependências não são verificadas, e o resto da auditoria roda igual."],
       ["Qual a diferença para o npm audit ou o Dependabot?", "Cada um cobre uma parte. O Stingward junta dependências, segredos, falhas no código e os erros típicos de apps feitos com IA, agentes, skills e servidores MCP num relatório só, e audita uma skill antes de você instalar."],
       ["Por que o npx stingward precisa de Python?", "O motor é um pacote em Python puro, sem dependências. O pacote do npm só dá a partida, para quem usa JavaScript rodar sem pip."],
@@ -171,7 +173,7 @@
     "sample_title": "Relatório de exemplo.",
     "sample_text": "Saída real do Stingward {version} para o app de demonstração do repositório, que tem erros de propósito e só chaves falsas. Para salvar em PDF, use Imprimir no navegador.",
     "sample_home": "Voltar ao site",
-    "sample_audit": "Auditoria com revisão humana: US$ 149",
+    "sample_audit": "Relatório com revisão por IA: US$ 29",
     "sample_other": "English",
 
     "moved": "Esta página tem um novo endereço"
@@ -287,18 +289,20 @@
     ],
     "price_button": "Install",
 
-    "audit_h2": "A security audit of your AI-built app",
-    "audit_p": "Stingward runs on your project, and a person reviews every finding before delivery, confirming what's real, removing false alarms and explaining each fix in plain language.",
+    "audit_h2": "A security report for your AI-built app",
+    "audit_p": "Send a zip or one GitHub repository. Stingward checks the code, an AI reviews every finding and a second AI checks the first, and in minutes you get a PDF in plain language.",
     "audit_currency": "$",
-    "audit_price": "149",
-    "audit_per": "delivered in 48 hours",
-    "audit_buy": "Buy the audit",
+    "audit_price": "29",
+    "audit_per": "one payment",
+    "audit_buy": "Get the report",
     "audit_gets_h": "What you get",
     "audit_gets": [
-      "Every finding reviewed by a person, not just the tool",
+      "Every finding reviewed by an AI and checked by a second one",
       "A PDF report with an A to F grade and a summary for non-experts",
       "A step-by-step remediation plan, with an effort estimate for each item",
-      "For each problem: where it is, the code excerpt, why it matters and how to fix it"
+      "For each problem: where it is, the code excerpt, why it matters and how to fix it",
+      "One free new check of the fixed version, within 30 days",
+      "A full refund, automatically, if the report isn't ready in 24 hours"
     ],
     "audit_not_h": "What it doesn't cover",
     "audit_not": [
@@ -317,9 +321,9 @@
     "faq_h2": "Questions",
     "faq": [
       ["Do I need to know about security to use it?", "No. Each problem is explained in plain language: what it is, where it is, why it matters and what to do. The A to F grade sums it all up."],
-      ["Does my code leave my machine?", "Not with the tool. Only package names and versions are sent, to api.osv.dev, www.cisa.gov, api.first.org and services.nvd.nist.gov, and the responses are cached for a few hours. For the paid audit, the reviewer does need to read the code."],
+      ["Does my code leave my machine?", "Not with the tool. Only package names and versions are sent, to api.osv.dev, www.cisa.gov, api.first.org and services.nvd.nist.gov, and the responses are cached for a few hours. The paid report runs on our server: the code is deleted as soon as the report is ready, and the AI sees only a few masked lines around each finding."],
       ["Does a clean report mean I'm secure?", "No. It means the most common mistakes aren't there. Stingward is a quick first check, not a penetration test."],
-      ["What does the paid audit add?", "It's the same tool, and it stays free. In the audit, a person reviews every finding, removes false alarms and delivers the PDF report with the remediation plan within 48 hours."],
+      ["What does the paid report add?", "It's the same tool, and it stays free. In the paid report, an AI reviews every finding and a second AI checks the first, removing false alarms, and in minutes you get the PDF with the remediation plan. After you fix things, one new check is free."],
       ["Does it work offline?", "Yes, with --offline. Dependencies aren't checked in that mode; the rest of the audit runs as usual."],
       ["How is it different from npm audit or Dependabot?", "Each of those covers one part. Stingward puts dependencies, secrets, code flaws and the typical mistakes in AI-built apps, agents, skills and MCP servers into a single report, and audits a skill before you install it."],
       ["Why does npx stingward need Python?", "The engine is a single pure-Python package with no dependencies. The npm package is just a launcher, so JavaScript users can run it without pip."],
@@ -347,7 +351,7 @@
     "sample_title": "Sample report.",
     "sample_text": "Real Stingward {version} output for the repository's demo app, which has deliberate mistakes and only fake keys. To save it as a PDF, print it from your browser.",
     "sample_home": "Back to the site",
-    "sample_audit": "Human-reviewed audit: $149",
+    "sample_audit": "Report with AI review: $29",
     "sample_other": "Português",
 
     "moved": "This page has a new address"
