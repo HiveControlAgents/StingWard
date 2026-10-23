@@ -317,22 +317,21 @@ class Site(unittest.TestCase):
 
     # ---------------------------------------------------------------- the paid audit and the Team waitlist
 
-    def test_buy_and_waitlist_buttons_wait_for_their_addresses(self):
-        """While text.json has no checkout, nothing can be bought: the report button goes to its waitlist, and the Team
-        plan, with no waitlist yet, says "Em breve" and is not a link."""
+    def test_the_report_button_opens_the_order_page_in_the_page_language(self):
+        """The report is on sale: its button goes to the order page in the page's language and its waitlist is no
+        longer shown. The Team plan, with no waitlist yet, says "Em breve" and is not a link."""
         text = _text()
-        self.assertEqual(text["links"], {"audit_checkout": "", "team_waitlist": "",
-                                         "audit_waitlist": {"en": "https://tally.so/r/NqpxlW",
-                                                            "pt": "https://tally.so/r/RWGQDP"}})
+        checkout = {"en": "https://app.stingward.com/buy?lang=en", "pt": "https://app.stingward.com/buy?lang=pt"}
+        self.assertEqual(text["links"]["audit_checkout"], checkout)
+        self.assertEqual(text["links"]["team_waitlist"], "")
         for lang, page in self.pages.items():
             t = text[lang]
             with self.subTest(lang=lang):
                 audit = page.split('id="audit"', 1)[1].split("</section>", 1)[0]
                 soon = re.findall(r'<span class="button[^"]*button--soon" role="link" aria-disabled="true">([^<]+)</span>', audit)
                 self.assertEqual(soon, [t["soon"]])
-                self.assertIn(f'<a class="button" href="{text["links"]["audit_waitlist"][lang]}" data-buy>'
-                              f'{t["audit_waitlist"]}</a>', audit)
-                self.assertNotRegex(page, r"<a [^>]*>" + re.escape(t["audit_buy"]) + "</a>")
+                self.assertIn(f'<a class="button" href="{checkout[lang]}" data-buy>{t["audit_buy"]}</a>', audit)
+                self.assertNotIn(text["links"]["audit_waitlist"][lang], page)
                 team = audit.split('<div class="soon"', 1)[1]
                 self.assertNotRegex(team, r"<a [^>]*>" + re.escape(t["soon_button"]) + "</a>")
                 self.assertNotIn('href=""', page)

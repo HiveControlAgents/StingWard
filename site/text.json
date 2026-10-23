@@ -1,5 +1,5 @@
 {
-  "links": {"audit_checkout": "", "audit_waitlist": {"en": "https://tally.so/r/NqpxlW", "pt": "https://tally.so/r/RWGQDP"}, "team_waitlist": ""},
+  "links": {"audit_checkout": {"en": "https://app.stingward.com/buy?lang=en", "pt": "https://app.stingward.com/buy?lang=pt"}, "audit_waitlist": {"en": "https://tally.so/r/NqpxlW", "pt": "https://tally.so/r/RWGQDP"}, "team_waitlist": ""},
 
   "pt": {
     "html_lang": "pt-BR",

@@ -4,6 +4,9 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Changed
+- The website sells the Stingward report: the US$ 29 button (R$ 99 on the Portuguese page) opens the order page at app.stingward.com in the page's language, in place of the waitlist.
+
 ## [0.1.10] - 2026-10-23
 
 ### Added
