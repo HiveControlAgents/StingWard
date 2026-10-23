@@ -4,6 +4,8 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-23
+
 ### Added
 - APP017, Supabase policy that allows any signed-in user: a policy whose whole condition only checks that someone is signed in (`using (auth.uid() is not null)`, `(select auth.uid()) is not null`, `auth.role() = 'authenticated'`, `auth.jwt() is not null`, or `to authenticated` with `using (true)`), also as `supabase db dump` writes it (`"auth"."uid"()`, `'authenticated'::text`). On Supabase anyone can sign up with the public anon key, so every account reaches every row. High for update, delete and all, medium for insert and for reads of sensitive tables, low for other reads. Not reported when the condition also looks at the row (`auth.uid() = user_id`).
 
@@ -285,7 +287,9 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 First public release: CLI (`pipx`, `uvx`, `npx`), Claude Code plugin and skill, and GitHub Action. Checks dependencies (OSV.dev, CISA KEV, EPSS, NVD), secrets, AI-built app mistakes, agent and MCP setups, and skills, with reports in text, Markdown, JSON and SARIF in English and Portuguese.
 
-[Unreleased]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.10...v0.1.11
+[0.1.10]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.6...v0.1.7
