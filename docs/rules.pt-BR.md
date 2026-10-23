@@ -20,6 +20,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [DEP003](#dep003) | Manifesto sem lockfile | 🔵 |
 | [DEP004](#dep004) | Faixa de versão aceita versões com falhas | 🔴 |
 | [DEP005](#dep005) | Versão do PHP com falhas conhecidas | 🔴 |
+| [DEP006](#dep006) | Versão do Node.js com falhas conhecidas | 🔴 |
 | [SEC001](#sec001) | Segredo no código | 🔴 |
 | [SEC002](#sec002) | `.env` no git | 🟠 |
 | [SEC003](#sec003) | `.env` fora do `.gitignore` | 🟡 |
@@ -109,6 +110,14 @@ Sem lockfile, uma faixa como `Pillow>=10` ou `"axios": "^1.6.0"` é tudo o que d
 Lê a versão do PHP em que o projeto roda e a consulta no OSV.dev, onde estão os avisos do próprio PHP: a imagem `php` (também `library/php`, um espelho conhecido do Docker Hub e `bitnami/php-fpm`) numa linha `FROM` de `Dockerfile` ou `Containerfile`, com os valores dos `ARG` declarados antes dela, ou numa linha `image:` de `docker-compose.yml` ou `compose.yaml`; `.php-version`; o `php` do `.tool-versions` (asdf); e o `php` da tabela `[tools]` do `mise.toml`. Tag sem versão (`php:latest`, `php:8-cli`), versão de teste (RC) e restrição de versão como `"php": "^8.2"` no `composer.json` ficam de fora. Uma versão exata como `php:8.3.30-apache` sai como no DEP001, com a severidade cheia. Uma tag que acompanha a série, como `php:8.3-apache` ou `8.3` no `.php-version`, roda a 8.3 mais nova do dia em que a imagem foi montada ou o PHP foi atualizado, então o achado lista o que as versões da série corrigiram nos últimos 90 dias, um nível abaixo; a falha que nenhuma versão da série corrige, como numa série sem suporte, sai com a severidade cheia. Em testes e exemplos fica baixa.
 
 **Como corrigir:** use a versão indicada, por exemplo troque `php:8.3.30-apache` por `php:8.3.36-apache`, monte a imagem de novo e publique. Numa tag que acompanha a série, monte de novo com `docker build --pull --no-cache` ou fixe a versão. Sem Docker, atualize o PHP onde o app roda e reinicie o PHP-FPM ou o Apache.
+**Padrões:** `CWE-1395`
+
+<a id="dep006"></a>
+### DEP006 · Versão do Node.js com falhas conhecidas
+
+Lê a versão do Node.js em que o app roda e a consulta no OSV.dev, onde estão os avisos do próprio Node.js, do mesmo jeito que o DEP005: a imagem `node` (também `library/node`, um espelho conhecido do Docker Hub e `bitnami/node`) numa linha `image:` de `docker-compose.yml` ou `compose.yaml`, ou na linha `FROM` da etapa que roda num `Dockerfile` ou `Containerfile`. Essa é a última etapa, ou a etapa anterior de onde ela parte (`FROM base`); uma etapa que só monta o site, como `FROM node:20 AS build` seguida de `FROM nginx`, não deixa Node.js na imagem e fica de fora. O major já é uma série (`node:24-alpine`), e o nome de uma série LTS vale pelo major dela (`node:iron` é a 20). Quando o projeto roda um servidor no Node.js (um `package.json` que depende de Express, Fastify, Koa, Hono, NestJS, Next.js, Nuxt, Remix, Socket.IO e parecidos, ou cujo script `start` roda o `node`), os arquivos de versão também contam: `.nvmrc` e `.node-version` (`v24.10.0`, `24`, `lts/iron`), o `nodejs` do `.tool-versions`, o `node` da tabela `[tools]` do `mise.toml` e o módulo `nodejs-20` em `modules` no `.replit` da Replit. Sem servidor, esses arquivos costumam só dizer com qual Node.js montar um site estático. Tags que mudam de série (`node:lts`, `node:current`, `node:latest`), versões de teste (RC), o `engines` do `package.json` e o `setup-node` da CI ficam de fora. Versão exata e série saem como no DEP005. Em testes e exemplos fica baixa.
+
+**Como corrigir:** use a versão indicada, por exemplo troque `node:24.10.0-alpine` por `node:24.22.1-alpine`, monte a imagem de novo e publique. Numa série sem correção, como o Node.js 20 depois do fim do suporte, passe para a série indicada (`node:22-alpine`, ou `nodejs-22` em `modules` no `.replit`), teste o app e publique de novo. Na Replit, publique de novo e confira com `node --version`.
 **Padrões:** `CWE-1395`
 
 ## Segredos

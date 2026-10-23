@@ -27,9 +27,9 @@ _TESTISH = TESTISH
 # Severidade máxima de cada regra em código de teste e exemplo, por modo. Numa skill, payload em tests/ costuma ser
 # exemplo, mas o autor escolhe o nome da pasta: baixa só até médio. Falha de código (injeção, XSS) em teste de skill
 # não roda na máquina de quem instala, então vai a baixo.
-# O PHP de um Dockerfile de exemplo ou de teste não é o que vai para produção.
+# O PHP e o Node.js de um Dockerfile de exemplo ou de teste não são o que vai para produção.
 _CODE_RULES = ("COD", "APP009", "APP012", "APP013", "APP014")
-_TEST_DOWNGRADE = {"project": {"low": ("APP", "SKL001", "COD", "DEP005")},
+_TEST_DOWNGRADE = {"project": {"low": ("APP", "SKL001", "COD", "DEP005", "DEP006")},
                    "skill": {"medium": ("SKL002", "SKL004", "SKL005", "SKL007", "SKL008"), "low": _CODE_RULES},
                    "agents": {}}
 
