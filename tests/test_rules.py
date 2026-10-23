@@ -1105,11 +1105,12 @@ def _adv(vid, pkg, fixed=None, **extra):
     return dict({"id": vid, "summary": f"Issue in {pkg}", "affected": [{"package": {"ecosystem": "npm", "name": pkg}, "ranges": ranges}]}, **extra)
 
 
-def _phpadv(vid, fixes, published, severity="Critical", **extra):
-    """Aviso do PHP como o OSV.dev guarda: ecossistema Bitnami, uma faixa por série (introduced 8.3.0, fixed 8.3.36)."""
+def _phpadv(vid, fixes, published, severity="Critical", pkg="php", **extra):
+    """Aviso do PHP (ou do Node.js, pkg="node") como o OSV.dev guarda: ecossistema Bitnami, uma faixa por série
+    (introduced 8.3.0, fixed 8.3.36)."""
     events = [ev for intro, fix in fixes for ev in ({"introduced": intro}, {"fixed": fix})]
     return dict({"id": vid, "summary": f"Issue {vid}", "published": f"{published}T08:08:19Z",
-                 "affected": [{"package": {"ecosystem": "Bitnami", "name": "php"}, "ranges": [{"type": "SEMVER", "events": events}]}],
+                 "affected": [{"package": {"ecosystem": "Bitnami", "name": pkg}, "ranges": [{"type": "SEMVER", "events": events}]}],
                  "database_specific": {"severity": severity}}, **extra)
 
 
@@ -1560,7 +1561,7 @@ class DepRules(RuleTest):
         cases = {
             "no version in the tag": {"Dockerfile": "FROM php:latest\nFROM php:apache\nFROM php:8-cli\n"},
             "release candidate": {"Dockerfile": "FROM php:8.5-rc-apache\nFROM php:8.5.0RC1-cli\n"},
-            "other images": {"Dockerfile": "FROM phpmyadmin:5.2\nFROM acme/php:8.3.30\nFROM node:20\n",
+            "other images": {"Dockerfile": "FROM node:20 AS assets\nFROM phpmyadmin:5.2\nFROM acme/php:8.3.30\n",
                              "docker-compose.yml": "services:\n  db:\n    image: phpmyadmin/phpmyadmin:5.2\n"},
             "ARG without a value": {"Dockerfile": "ARG PHP_VERSION\nFROM php:${PHP_VERSION}-apache\n"},
             "ARG after the first FROM": {"Dockerfile": "FROM node:20 AS assets\nARG PHP=8.3.30\nFROM php:${PHP}\n"},
@@ -1609,6 +1610,142 @@ class DepRules(RuleTest):
         self.assertEqual(why, "Every PHP 8.3 release has CVE-2026-1, and no fix is out yet.")
         self.assertTrue(fix.startswith("No PHP release fixes it yet."), fix)
         self.assertIn("nenhuma versão do PHP corrige ainda a CVE-2026-1", texts("DEP005", "pt", f.params)[0])
+
+    # ------------------------------------------------------------------ DEP006: Node.js version
+    NODE = {d["id"]: d for d in (
+        _phpadv("BIT-node-2026-111497", [("0", "22.23.4"), ("23.0.0", "24.22.1"), ("26.0.0", "26.12.1")], "2026-10-23",
+                pkg="node", aliases=["CVE-2026-111497"]),
+        _phpadv("BIT-node-2026-21710", [("0", "20.20.2"), ("21.0.0", "22.22.2"), ("23.0.0", "24.14.1"), ("25.0.0", "25.8.2")],
+                "2026-04-06", severity="High", pkg="node", aliases=["CVE-2026-21710"]),
+    )}
+    SERVER = {"package.json": '{"scripts": {"start": "NODE_ENV=production node dist/index.js"}}\n'}
+
+    def node(self, files, ids, today=datetime.date(2026, 10, 24), **kw):
+        with mock.patch.object(deps_check, "_today", return_value=today):
+            return self.deps(files, ids, self.NODE, **kw)
+
+    def test_dep006_node_version_in_the_dockerfile(self):
+        # Only the stage that runs counts: the build stages before it, and the one it starts from, are not the image.
+        files = {"Dockerfile": "ARG NODE_VERSION=24.10.0\nFROM node:${NODE_VERSION}-alpine AS deps\nRUN npm ci\n"
+                               "FROM deps AS build\nRUN npm run build\nFROM node:${NODE_VERSION}-alpine\n"
+                               "COPY --from=build /app/dist ./dist\nCMD [\"node\", \"dist/index.js\"]\n"}
+        ids = {("node", "24.10.0"): ["BIT-node-2026-111497", "BIT-node-2026-21710"]}
+        ctx, f, q = self.node(files, ids)
+        self.assertEqual(q.call_args[0][0], [("Bitnami", "node", "24.10.0")])
+        self.assertEqual(brief(f), [("DEP006", "Dockerfile", 6, "critical")])
+        d = f[0]
+        self.assertEqual((d.params["runtime"], d.params["fixed"]), ("node:24.10.0-alpine", "24.22.1"))
+        title, why, fix = texts("DEP006", "en", d.params)
+        self.assertEqual(title, "node:24.10.0-alpine: 2 known vulnerabilities; worst is CVE-2026-111497 (Issue BIT-node-2026-111497)")
+        self.assertIn("This Node.js version has public vulnerabilities.", why)
+        self.assertEqual(fix, "Use Node.js 24.22.1 or later: set ARG NODE_VERSION to 24.22.1, rebuild the image and deploy again.")
+        self.assertIn("Use o Node.js 24.22.1 ou mais novo: troque o valor do ARG NODE_VERSION para 24.22.1",
+                      texts("DEP006", "pt", d.params)[2])
+        # A stage that only builds the site, served by nginx, leaves no Node.js in the image.
+        _, f, q = self.node({"Dockerfile": "FROM node:20 AS build\nRUN npm ci && npm run build\nFROM nginx:1.27-alpine\n"
+                                           "COPY --from=build /app/dist /usr/share/nginx/html\n"}, ids)
+        self.assertSilent(f)
+        q.assert_not_called()
+        # The last stage starts from an earlier one; an LTS name stands for its major. Node.js 20 has no fix.
+        _, f, _ = self.node({"Dockerfile": "FROM node:iron-slim AS base\nWORKDIR /app\nFROM base\nCMD [\"node\", \"server.js\"]\n"},
+                            {("node", "20.0.0"): ["BIT-node-2026-111497", "BIT-node-2026-21710"]})
+        self.assertEqual(brief(f), [("DEP006", "Dockerfile", 1, "critical")])
+        d = f[0]
+        self.assertEqual([v["id"] for v in d.params["vulns"]], ["CVE-2026-111497"])
+        title, why, fix = texts("DEP006", "en", d.params)
+        self.assertEqual(title, "node:iron-slim: no Node.js 20 release fixes CVE-2026-111497 (Issue BIT-node-2026-111497)")
+        self.assertEqual(why, "Every Node.js 20 release has CVE-2026-111497: the fix only exists in newer branches.")
+        self.assertEqual(fix, "Move to Node.js 22 (22.23.4 or later): change the image to node:22-slim, test the app, "
+                              "rebuild the image and deploy again.")
+        self.assertIn("nenhuma versão 20 do Node.js corrige a CVE-2026-111497", texts("DEP006", "pt", d.params)[0])
+
+    def test_dep006_tag_that_follows_a_branch(self):
+        # node:24-alpine gets the newest 24 when the image is built: the fix from April is in any image built since,
+        # the one from this week only in an image built after it, one level lower.
+        files = {"compose.yaml": "services:\n  api:\n    image: node:24-alpine\n"}
+        ids = {("node", "24.0.0"): sorted(self.NODE)}
+        _, f, q = self.node(files, ids)
+        self.assertEqual(q.call_args[0][0], [("Bitnami", "node", "24.0.0")])
+        self.assertEqual(brief(f), [("DEP006", "compose.yaml", 3, "high")])
+        d = f[0]
+        self.assertEqual([v["id"] for v in d.params["vulns"]], ["CVE-2026-111497"])
+        title, why, fix = texts("DEP006", "en", d.params)
+        self.assertEqual(title, "node:24-alpine: an image built before Oct 23, 2026 has CVE-2026-111497 (Issue BIT-node-2026-111497)")
+        self.assertIn("follows the newest Node.js 24 release only when it is built again", why)
+        self.assertIn("change the image to node:24.22.1-alpine.", fix)
+        self.assertIn("se a imagem foi montada antes de 23/10/2026", texts("DEP006", "pt", d.params)[0])
+
+    def test_dep006_version_files_count_when_node_serves_the_app(self):
+        files = {".nvmrc": "v20.11.0\n", ".tool-versions": "python 3.12.4\nnodejs 22.12.0\n",
+                 "mise.toml": '[tools]\nnode = "22.12.0"\n', ".node-version": "lts/iron\n"}
+        ids = {("node", "20.11.0"): sorted(self.NODE), ("node", "22.12.0"): ["BIT-node-2026-111497"],
+               ("node", "20.0.0"): ["BIT-node-2026-111497"]}
+        # A site that Node.js only builds (Vite, then files on a CDN): the version files say nothing about the server.
+        static = dict(files, **{"package.json": '{"scripts": {"build": "vite build", "start": "vite preview"}}\n'})
+        _, f, q = self.node(static, ids)
+        self.assertSilent(f, "DEP006")
+        q.assert_not_called()
+        for server in (self.SERVER, {"package.json": '{"dependencies": {"express": "^4.21.2"}}\n',
+                                     "package-lock.json": '{"lockfileVersion": 3, "packages": {}}\n'}):
+            with self.subTest(server=server["package.json"]):
+                _, f, q = self.node(dict(files, **server), ids)
+                got = [x for x in f if x.rule == "DEP006"]
+                # The same version in two version files is one finding.
+                self.assertEqual(sorted(brief(got)), [("DEP006", ".node-version", 1, "critical"), ("DEP006", ".nvmrc", 1, "critical"),
+                                                      ("DEP006", ".tool-versions", 2, "critical")])
+        nvmrc = next(x for x in got if x.file == ".nvmrc")
+        self.assertEqual(nvmrc.params["runtime"], "Node.js 20.11.0")
+        self.assertEqual(texts("DEP006", "en", nvmrc.params)[2],
+                         "Install Node.js 22.23.4 or later where the app runs, update .nvmrc and restart the app.")
+        lts = next(x for x in got if x.file == ".node-version")
+        self.assertEqual(texts("DEP006", "en", lts.params)[2],
+                         "Move to Node.js 22.23.4 or later where the app runs, update .node-version, test the app and restart the app.")
+
+    def test_dep006_replit_module(self):
+        replit = 'run = "npm run dev"\nmodules = ["nodejs-20", "web", "postgresql-16"]\n\n[deployment]\nrun = ["npm", "run", "start"]\n'
+        files = dict(self.SERVER, **{".replit": replit})
+        _, f, q = self.node(files, {("node", "20.0.0"): sorted(self.NODE)})
+        self.assertEqual(q.call_args[0][0], [("Bitnami", "node", "20.0.0")])
+        self.assertEqual(brief(f), [("DEP006", ".replit", 2, "critical")])
+        title, _, fix = texts("DEP006", "en", f[0].params)
+        self.assertEqual(title, "nodejs-20: no Node.js 20 release fixes CVE-2026-111497 (Issue BIT-node-2026-111497)")
+        self.assertEqual(fix, "Move to Node.js 22 (22.23.4 or later): change nodejs-20 to nodejs-22 in modules in .replit, "
+                              "test the app and deploy again.")
+        self.assertIn("troque nodejs-20 por nodejs-22 em modules no .replit", texts("DEP006", "pt", f[0].params)[2])
+        # nodejs-24 with this week's fix: a deploy from before it has the issue.
+        files = dict(self.SERVER, **{".replit": replit.replace("nodejs-20", "nodejs-24:v12-20261001-3f2a9c1")})
+        _, f, _ = self.node(files, {("node", "24.0.0"): sorted(self.NODE)})
+        self.assertEqual(brief(f), [("DEP006", ".replit", 2, "high")])
+        title, why, fix = texts("DEP006", "en", f[0].params)
+        self.assertEqual(title, "nodejs-24: if the app was last deployed before Oct 23, 2026, it has CVE-2026-111497 "
+                                "(Issue BIT-node-2026-111497)")
+        self.assertIn(".replit asks for the nodejs-24 module", why)
+        self.assertEqual(fix, "Deploy the app again on Replit and check with node --version that it runs Node.js 24.22.1 or later.")
+
+    def test_dep006_examples_are_low(self):
+        _, f, _ = self.node({"examples/api/Dockerfile": "FROM node:24.10.0-bookworm-slim\n"},
+                            {("node", "24.10.0"): ["BIT-node-2026-111497"]})
+        self.assertEqual(brief(f), [("DEP006", "examples/api/Dockerfile", 1, "low")])
+
+    def test_dep006_near_misses(self):
+        cases = {
+            "no version in the tag": {"Dockerfile": "FROM node:lts-alpine\n", "compose.yml":
+                                      "services:\n  a:\n    image: node:current\n  b:\n    image: node:latest\n  c:\n    image: node:alpine\n"},
+            "release candidate": {"Dockerfile": "FROM node:26-rc\n"},
+            "other images": {"Dockerfile": "FROM acme/node:24.10.0\nFROM nodered/node-red:4.0\n",
+                             "compose.yaml": "services:\n  web:\n    image: gcr.io/acme/node:24\n"},
+            "constraints, not the runtime": {"package.json": '{"engines": {"node": ">=18"}, "volta": {"npm": "10.8.2"}}\n',
+                                             ".github/workflows/ci.yml": "steps:\n  - uses: actions/setup-node@v4\n"
+                                                                         "    with: { node-version: 20 }\n"},
+            "not a version": {".nvmrc": "lts/*\n", ".node-version": "node\n", ".tool-versions": "nodejs system\n",
+                              "mise.toml": '[tools]\nnode = "lts"\n'},
+            "no Node.js module": {".replit": 'modules = ["python-3.11", "web"]\n'},
+        }
+        for name, files in cases.items():
+            with self.subTest(name=name):
+                _, f, q = self.node(dict(files, **self.SERVER) if "package.json" not in files else files, {"node": sorted(self.NODE)})
+                self.assertSilent(f, "DEP006")
+                q.assert_not_called()
 
     def test_dep005_offline(self):
         ctx, f, q = self.php({"Dockerfile": "FROM php:8.3.30-apache\n"}, {"php": sorted(self.PHP)}, offline=True)
