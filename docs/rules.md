@@ -20,6 +20,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [DEP003](#dep003) | Manifest without a lockfile | 🔵 |
 | [DEP004](#dep004) | Version range allows vulnerable versions | 🔴 |
 | [DEP005](#dep005) | PHP version with known vulnerabilities | 🔴 |
+| [DEP006](#dep006) | Node.js version with known vulnerabilities | 🔴 |
 | [SEC001](#sec001) | Secret in code | 🔴 |
 | [SEC002](#sec002) | `.env` committed to git | 🟠 |
 | [SEC003](#sec003) | `.env` missing from `.gitignore` | 🟡 |
@@ -109,6 +110,14 @@ Without a lockfile, a range such as `Pillow>=10` or `"axios": "^1.6.0"` is all t
 Reads the PHP version the project runs on and looks it up in OSV.dev, where PHP's own advisories are listed: the `php` image (also `library/php`, a known Docker Hub mirror and `bitnami/php-fpm`) on a `FROM` line of a `Dockerfile` or `Containerfile`, with the `ARG` values declared before it filled in, or on an `image:` line of `docker-compose.yml` or `compose.yaml`; `.php-version`; `php` in `.tool-versions` (asdf); and `php` in the `[tools]` table of `mise.toml`. Tags without a version (`php:latest`, `php:8-cli`), release candidates and version constraints such as `"php": "^8.2"` in `composer.json` are left out. An exact version such as `php:8.3.30-apache` is reported like DEP001, with the full severity. A tag that follows a branch, such as `php:8.3-apache` or `8.3` in `.php-version`, runs the newest 8.3 of the day the image was built or PHP was updated, so it lists what the branch's releases fixed in the last 90 days, one level lower; an issue that no release of the branch fixes, as in a branch that is no longer supported, is reported with the full severity. In tests and examples it is low.
 
 **Fix:** use the version shown, for example change `php:8.3.30-apache` to `php:8.3.36-apache`, rebuild the image and deploy again. For a tag that follows a branch, rebuild with `docker build --pull --no-cache` or pin the version. Without Docker, update PHP where the app runs and restart PHP-FPM or Apache.
+**Standards:** `CWE-1395`
+
+<a id="dep006"></a>
+### DEP006 · Node.js version with known vulnerabilities
+
+Reads the Node.js version the app runs on and looks it up in OSV.dev, where Node.js's own advisories are listed, the same way as DEP005: the `node` image (also `library/node`, a known Docker Hub mirror and `bitnami/node`) on an `image:` line of `docker-compose.yml` or `compose.yaml`, or on the `FROM` line of the stage that runs in a `Dockerfile` or `Containerfile`. That is the last stage, or the earlier stage it starts from (`FROM base`); a stage that only builds the site, as in `FROM node:20 AS build` followed by `FROM nginx`, leaves no Node.js in the image and is left out. A major is a branch (`node:24-alpine`), and an LTS name stands for its major (`node:iron` is 20). When the project runs a server on Node.js (a `package.json` that depends on Express, Fastify, Koa, Hono, NestJS, Next.js, Nuxt, Remix, Socket.IO and similar, or whose `start` script runs `node`), the version files count too: `.nvmrc` and `.node-version` (`v24.10.0`, `24`, `lts/iron`), `nodejs` in `.tool-versions`, `node` in the `[tools]` table of `mise.toml`, and the `nodejs-20` module in the `modules` of a Replit `.replit` file. Without a server, those files usually only say which Node.js builds a static site. Tags that move between branches (`node:lts`, `node:current`, `node:latest`), release candidates, `engines` in `package.json` and `setup-node` in CI are left out. Exact versions and branches are reported as in DEP005. In tests and examples it is low.
+
+**Fix:** use the version shown, for example change `node:24.10.0-alpine` to `node:24.22.1-alpine`, rebuild the image and deploy again. For a branch with no fix, such as Node.js 20 after its support ended, move to the branch shown (`node:22-alpine`, or `nodejs-22` in the `modules` of `.replit`), test the app and deploy again. On Replit, deploy again and check `node --version`.
 **Standards:** `CWE-1395`
 
 ## Secrets

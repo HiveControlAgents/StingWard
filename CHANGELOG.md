@@ -4,7 +4,10 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-23
+
 ### Added
+- DEP006, Node.js version with known vulnerabilities: the Node.js version an app runs on is looked up in OSV.dev, as DEP005 does for PHP. It comes from the `node` image of the stage that runs in a `Dockerfile` (a stage that only builds the site, followed by `FROM nginx`, is left out) or in `docker-compose.yml`, and, when the project runs a server on Node.js (Express, Next.js and similar, or a `start` script that runs `node`), from `.nvmrc`, `.node-version`, `.tool-versions`, `mise.toml` and the `nodejs-20` module of a Replit `.replit` file. A project on `node:24.10.0-alpine` now gets CVE-2026-111497, the remote code execution flaw in Node.js's Brotli decoder disclosed on 2026-10-21, as critical, with the fix: Node.js 24.22.1 (22.23.4 and 26.12.1 in the other branches). Node.js 20, whose support has ended, has no fix, so `node:20` and `nodejs-20` get the full severity and the branch to move to.
 - APP015, function with the `service_role` key trusts the visitor: a Supabase Edge Function (the shape Lovable builds) or another server route that creates a client with the `service_role` key, which skips RLS, and lets a value from the request pick the record (`.eq('user_id', body.userId)`, `update`, `delete`, `rpc`, a Storage path, `auth.admin.deleteUser(id)`) without checking who is calling. Anyone changes the id and reads or deletes someone else's data. Not reported when the file reads the user from the token, checks a webhook signature or a server secret, or uses the anon key with the caller's `Authorization` header.
 - APP016, database function that runs any SQL: a migration with a `security definer` function in `public` that runs SQL built from a text parameter (`execute query`, `format('... %s', p)`). Anyone with the anon key runs any SQL through `supabase.rpc()`. Critical. Not reported for `security invoker`, `%I`/`%L` only, or when `execute` is revoked from `anon` and `authenticated`.
 
@@ -259,7 +262,8 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 First public release: CLI (`pipx`, `uvx`, `npx`), Claude Code plugin and skill, and GitHub Action. Checks dependencies (OSV.dev, CISA KEV, EPSS, NVD), secrets, AI-built app mistakes, agent and MCP setups, and skills, with reports in text, Markdown, JSON and SARIF in English and Portuguese.
 
-[Unreleased]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/HiveControlAgents/StingWard/compare/v0.1.5...v0.1.6

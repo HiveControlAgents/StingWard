@@ -53,6 +53,15 @@ RULES = {
                "{why}{exploit}",
                "{fix}"),
     },
+    "DEP006": {
+        "group": "deps",
+        "pt": ("{runtime}: {headline}",
+               "{why}{exploit}",
+               "{fix}"),
+        "en": ("{runtime}: {headline}",
+               "{why}{exploit}",
+               "{fix}"),
+    },
     # ------------------------------------------------------------------ segredos
     "SEC001": {
         "group": "secrets",
@@ -594,6 +603,7 @@ STANDARDS = {
     "DEP003": ["CWE-1395"],
     "DEP004": ["CWE-1395"],
     "DEP005": ["CWE-1395"],
+    "DEP006": ["CWE-1395"],
     "SEC001": ["CWE-798", "LLM02:2026"],
     "SEC002": ["CWE-538"],
     "SEC003": ["CWE-538"],
