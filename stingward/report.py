@@ -532,6 +532,8 @@ IMPACT = {
                "Without a lockfile, an install can stay on {pkg} {floor}, which has public flaws with ready-made attacks. Raising the range's minimum closes that door.{exploit}"),
     "DEP005": ("Uma falha do próprio PHP atinge o site inteiro, e a falha pública já tem ataque pronto: quem ataca não precisa descobrir nada sobre o seu código.{exploit}",
                "A flaw in PHP itself reaches the whole site, and a public one already has a ready-made attack: an attacker needs to know nothing about your code.{exploit}"),
+    "DEP006": ("Uma falha do próprio Node.js atinge o servidor inteiro, e a falha pública já tem ataque pronto: quem ataca não precisa descobrir nada sobre o seu código.{exploit}",
+               "A flaw in Node.js itself reaches the whole server, and a public one already has a ready-made attack: an attacker needs to know nothing about your code.{exploit}"),
 }
 
 
@@ -793,6 +795,7 @@ RULE_NAME = {
     "DEP003": ("Manifesto sem lockfile", "Manifest without a lockfile"),
     "DEP004": ("Faixa de versão aceita versões com falhas", "Version range allows vulnerable versions"),
     "DEP005": ("Versão do PHP com falhas conhecidas", "PHP version with known vulnerabilities"),
+    "DEP006": ("Versão do Node.js com falhas conhecidas", "Node.js version with known vulnerabilities"),
     "SEC001": ("Segredo no código", "Secret in code"),
     "SEC002": (".env no git", ".env committed to git"),
     "SEC003": (".env fora do .gitignore", ".env missing from .gitignore"),

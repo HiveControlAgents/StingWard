@@ -1,4 +1,4 @@
-"""Dependências e versão do PHP com falha conhecida (OSV.dev), priorizadas por CISA KEV e EPSS."""
+"""Dependências e versão do PHP e do Node.js com falha conhecida (OSV.dev), priorizadas por CISA KEV e EPSS."""
 from __future__ import annotations
 
 import datetime
@@ -158,9 +158,9 @@ def check(ctx):
     if not (pkgs or floors or rts) or ctx.offline:
         return out
     try:
-        # Versões fixadas, pisos das faixas e versões do PHP vão no mesmo lote.
+        # Versões fixadas, pisos das faixas e versões do PHP e do Node.js vão no mesmo lote.
         found = vulndb.osv_query([(e, n, v) for e, n, v, _, _ in pkgs] + list(floors.values())
-                                 + [(runtimes.ECOSYSTEM, runtimes.NAME, rt.query) for rt in rts])
+                                 + [(runtimes.ECOSYSTEM, rt.lang, rt.query) for rt in rts])
     except NetError as e:
         ctx.sources["osv_error"] = str(e)
         return out
@@ -277,7 +277,7 @@ def check(ctx):
                      for x in vulns]
             out.append(_range_finding(r, vulns, kev))
     for rt, ids in zip(rts, ids_per_runtime):
-        vulns, _ = assess(ids, runtimes.ECOSYSTEM, runtimes.NAME, rt.query)
+        vulns, _ = assess(ids, runtimes.ECOSYSTEM, rt.lang, rt.query)
         vulns = [dict(x, published=str((docs.get(x["osv"]) or {}).get("published") or "")[:10]) for x in vulns]
         found_rt = _runtime_finding(rt, vulns, kev)
         if found_rt:
@@ -458,15 +458,21 @@ def _range_finding(r, vulns, kev):
     }, _refs(lead), tags)
 
 
-# DEP005. Uma tag que acompanha a série (php:8.3-apache) só pega a correção quando a imagem é montada de novo: contam
-# as falhas corrigidas nesta janela, o tempo em que uma imagem que ninguém montou de novo ainda roda a versão antiga.
+# DEP005 (PHP) e DEP006 (Node.js). Uma tag que acompanha a série (php:8.3-apache, node:24-alpine) só pega a correção
+# quando a imagem é montada de novo: contam as falhas corrigidas nesta janela, o tempo em que uma imagem que ninguém
+# montou de novo ainda roda a versão antiga.
 RECENT_DAYS = 90
 _MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
-_RESTART = ("reinicie o PHP (PHP-FPM ou Apache)", "restart PHP (PHP-FPM or Apache)")
-_PHP_UNFIXED = (" {n} falha(s) ainda sem correção: veja a mitigação nos avisos.",
-                " {n} issue(s) still unfixed: see the advisories for a mitigation.")
-_PHP_NO_FIX = ("Ainda não saiu versão do PHP que corrija. Aplique a mitigação do aviso e atualize assim que a correção sair.",
-               "No PHP release fixes it yet. Apply the advisory's mitigation and update as soon as a fix is out.")
+# Por linguagem: a regra, o nome, como reiniciar, e o "da série" depois do número (versão 8.3; versão 24 do Node.js).
+_LANG = {
+    "php": ("DEP005", "PHP", ("reinicie o PHP (PHP-FPM ou Apache)", "restart PHP (PHP-FPM or Apache)"), ("", "")),
+    "node": ("DEP006", "Node.js", ("reinicie o app", "restart the app"), (" do Node.js", "Node.js ")),
+}
+_RUNTIME_UNFIXED = (" {n} falha(s) ainda sem correção: veja a mitigação nos avisos.",
+                    " {n} issue(s) still unfixed: see the advisories for a mitigation.")
+_RUNTIME_NO_FIX = ("Ainda não saiu versão do {label} que corrija. Aplique a mitigação do aviso e atualize assim que a "
+                   "correção sair.",
+                   "No {label} release fixes it yet. Apply the advisory's mitigation and update as soon as a fix is out.")
 
 
 def _today():
@@ -493,10 +499,12 @@ def _use(rt, version, arg_value=None):
 
 
 def _runtime_finding(rt, vulns, kev):
-    """DEP005, um por lugar que define a versão do PHP. Versão exata: como o DEP001, com a severidade cheia. Série
-    (php:8.3-apache, .php-version com 8.3): a versão instalada é a última da série de quando a imagem foi montada ou o
-    PHP atualizado. Contam a falha que nenhuma versão da série corrige (série sem suporte), com a severidade cheia, e
-    as corrigidas nos últimos RECENT_DAYS dias, um nível abaixo: só uma instalação de antes da correção as tem."""
+    """DEP005 (PHP) e DEP006 (Node.js), um por lugar que define a versão. Versão exata: como o DEP001, com a severidade
+    cheia. Série (php:8.3-apache, node:24-alpine, .php-version com 8.3): a versão instalada é a última da série de quando
+    a imagem foi montada ou o PHP ou o Node.js atualizado. Contam a falha que nenhuma versão da série corrige (série sem
+    suporte), com a severidade cheia, e as corrigidas nos últimos RECENT_DAYS dias, um nível abaixo: só uma instalação
+    de antes da correção as tem."""
+    rule, label, restart, (of_pt, of_en) = _LANG[rt.lang]
     recent = False
     if rt.floating:
         known = [x for x in vulns if x.get("details", True)]
@@ -511,6 +519,7 @@ def _runtime_finding(rt, vulns, kev):
     tags, exploit_pt, exploit_en = _exploit(vulns, kev)
     target, unfixed = _target(vulns, runtimes.ECOSYSTEM)
     n, branch, where = len(vulns), rt.branch, rt.file.rsplit("/", 1)[-1]
+    replit = where == ".replit" and rt.lang == "node"
     others_pt, others_en = _others(vulns)
     severity = worst["severity"]
     if recent:
@@ -519,75 +528,93 @@ def _runtime_finding(rt, vulns, kev):
         if rt.image:
             head_pt = f"se a imagem foi montada antes de {day_pt}, ela tem a {_named(worst)}"
             head_en = f"an image built before {day_en} has {_named(worst)}"
-            why_pt = (f"A imagem {rt.image} só acompanha a última versão {branch} do PHP quando é montada de novo: a "
-                      f"montada antes de sair o PHP {target} continua com uma {branch} antiga.")
-            why_en = (f"The {rt.image} image follows the newest PHP {branch} release only when it is built again: an "
-                      f"image built before PHP {target} came out still runs an older {branch}.")
+            why_pt = (f"A imagem {rt.image} só acompanha a última versão {branch} do {label} quando é montada de novo: a "
+                      f"montada antes de sair o {label} {target} continua com uma {branch} antiga.")
+            why_en = (f"The {rt.image} image follows the newest {label} {branch} release only when it is built again: an "
+                      f"image built before {label} {target} came out still runs an older {branch}.")
             pin_pt, pin_en = _use(rt, target)
             fix_pt = (f"Monte a imagem de novo com a base mais recente (docker build --pull --no-cache) e publique, "
                       f"ou fixe a versão: {pin_pt}.")
             fix_en = f"Rebuild the image with the newest base (docker build --pull --no-cache) and deploy again, or pin the version: {pin_en}."
+        elif replit:
+            head_pt = f"se o app foi publicado antes de {day_pt}, ele tem a {_named(worst)}"
+            head_en = f"if the app was last deployed before {day_en}, it has {_named(worst)}"
+            why_pt = (f"O .replit pede o módulo nodejs-{branch}, então o app publicado roda o Node.js que o módulo tinha na "
+                      f"última publicação: o publicado antes de sair o Node.js {target} tem essas falhas.")
+            why_en = (f".replit asks for the nodejs-{branch} module, so the deployed app runs the Node.js the module had at "
+                      f"the last deploy: one deployed before Node.js {target} came out has these issues.")
+            fix_pt = (f"Publique o app de novo na Replit (Deploy) e confira com node --version que ele roda o Node.js "
+                      f"{target} ou mais novo.")
+            fix_en = f"Deploy the app again on Replit and check with node --version that it runs Node.js {target} or later."
         else:
-            head_pt = f"se o PHP foi atualizado pela última vez antes de {day_pt}, ele tem a {_named(worst)}"
-            head_en = f"if PHP was last updated before {day_en}, it has {_named(worst)}"
-            why_pt = (f"{where} pede o PHP {branch}, então a versão que roda depende de quando o PHP foi atualizado no "
-                      f"servidor: o atualizado antes de sair o PHP {target} tem essas falhas.")
-            why_en = (f"{where} asks for PHP {branch}, so the version that runs depends on when PHP was last updated on "
-                      f"the server: one updated before PHP {target} came out has these issues.")
-            fix_pt = f"Atualize o PHP {branch} para {target} ou mais nova onde o app roda e {_RESTART[0]}."
-            fix_en = f"Update PHP {branch} to {target} or later where the app runs and {_RESTART[1]}."
+            head_pt = f"se o {label} foi atualizado pela última vez antes de {day_pt}, ele tem a {_named(worst)}"
+            head_en = f"if {label} was last updated before {day_en}, it has {_named(worst)}"
+            why_pt = (f"{where} pede o {label} {branch}, então a versão que roda depende de quando o {label} foi atualizado no "
+                      f"servidor: o atualizado antes de sair o {label} {target} tem essas falhas.")
+            why_en = (f"{where} asks for {label} {branch}, so the version that runs depends on when {label} was last updated on "
+                      f"the server: one updated before {label} {target} came out has these issues.")
+            fix_pt = f"Atualize o {label} {branch} para {target} ou mais nova onde o app roda e {restart[0]}."
+            fix_en = f"Update {label} {branch} to {target} or later where the app runs and {restart[1]}."
         if n > 1:
-            why_pt += f" As versões {branch} dos últimos {RECENT_DAYS} dias corrigiram {n} falhas. Outras: {others_pt}."
-            why_en += f" The last {RECENT_DAYS} days of {branch} releases fixed {n} issues. Others: {others_en}."
+            why_pt += f" As versões {branch}{of_pt} dos últimos {RECENT_DAYS} dias corrigiram {n} falhas. Outras: {others_pt}."
+            why_en += f" The last {RECENT_DAYS} days of {of_en}{branch} releases fixed {n} issues. Others: {others_en}."
     elif rt.floating:
         if target:
-            head_pt, head_en = f"nenhuma versão {branch} corrige a {_named(worst)}", f"no {branch} release fixes {_named(worst)}"
-            why_pt = f"Toda versão {branch} do PHP tem a {worst['id']}: a correção só saiu em séries mais novas."
-            why_en = f"Every PHP {branch} release has {worst['id']}: the fix only exists in newer branches."
+            head_pt = f"nenhuma versão {branch}{of_pt} corrige a {_named(worst)}"
+            head_en = f"no {of_en}{branch} release fixes {_named(worst)}"
+            why_pt = f"Toda versão {branch} do {label} tem a {worst['id']}: a correção só saiu em séries mais novas."
+            why_en = f"Every {label} {branch} release has {worst['id']}: the fix only exists in newer branches."
         else:
-            head_pt, head_en = f"nenhuma versão do PHP corrige ainda a {_named(worst)}", f"no PHP release fixes {_named(worst)} yet"
-            why_pt = f"Toda versão {branch} do PHP tem a {worst['id']}, e a correção ainda não saiu."
-            why_en = f"Every PHP {branch} release has {worst['id']}, and no fix is out yet."
+            head_pt = f"nenhuma versão do {label} corrige ainda a {_named(worst)}"
+            head_en = f"no {label} release fixes {_named(worst)} yet"
+            why_pt = f"Toda versão {branch} do {label} tem a {worst['id']}, e a correção ainda não saiu."
+            why_en = f"Every {label} {branch} release has {worst['id']}, and no fix is out yet."
         if n > 1:
             why_pt += f" Outras: {others_pt}."
             why_en += f" Others: {others_en}."
         if target:
-            new_branch = ".".join(target.split(".")[:2])
+            new_branch = ".".join(target.split(".")[:1 if rt.lang == "node" else 2])
             if rt.image:
                 use_pt, use_en = _use(rt, target, new_branch)
-                fix_pt = (f"Passe para o PHP {new_branch} ({target} ou mais nova): {use_pt}, teste o app, monte a "
+                fix_pt = (f"Passe para o {label} {new_branch} ({target} ou mais nova): {use_pt}, teste o app, monte a "
                           "imagem de novo e publique.")
-                fix_en = f"Move to PHP {new_branch} ({target} or later): {use_en}, test the app, rebuild the image and deploy again."
+                fix_en = f"Move to {label} {new_branch} ({target} or later): {use_en}, test the app, rebuild the image and deploy again."
+            elif replit:
+                fix_pt = (f"Passe para o Node.js {new_branch} ({target} ou mais nova): troque nodejs-{branch} por "
+                          f"nodejs-{new_branch} em modules no .replit, teste o app e publique de novo.")
+                fix_en = (f"Move to Node.js {new_branch} ({target} or later): change nodejs-{branch} to nodejs-{new_branch} "
+                          "in modules in .replit, test the app and deploy again.")
             else:
-                fix_pt = (f"Passe para o PHP {target} ou mais novo onde o app roda, troque a versão em {where}, teste o "
-                          f"app e {_RESTART[0]}.")
-                fix_en = f"Move to PHP {target} or later where the app runs, update {where}, test the app and {_RESTART[1]}."
+                fix_pt = (f"Passe para o {label} {target} ou mais novo onde o app roda, troque a versão em {where}, teste o "
+                          f"app e {restart[0]}.")
+                fix_en = f"Move to {label} {target} or later where the app runs, update {where}, test the app and {restart[1]}."
         else:
-            fix_pt, fix_en = _PHP_NO_FIX
+            fix_pt, fix_en = (t.format(label=label) for t in _RUNTIME_NO_FIX)
     else:
         if n == 1:
             head_pt = head_en = _named(worst)
-            why_pt, why_en = "Esta versão do PHP tem uma falha pública conhecida.", "This PHP version has a publicly known vulnerability."
+            why_pt = f"Esta versão do {label} tem uma falha pública conhecida."
+            why_en = f"This {label} version has a publicly known vulnerability."
         else:
             head_pt = f"{n} falhas conhecidas; a pior é {_named(worst)}"
             head_en = f"{n} known vulnerabilities; worst is {_named(worst)}"
-            why_pt = f"Esta versão do PHP tem falhas públicas. Outras: {others_pt}."
-            why_en = f"This PHP version has public vulnerabilities. Others: {others_en}."
+            why_pt = f"Esta versão do {label} tem falhas públicas. Outras: {others_pt}."
+            why_en = f"This {label} version has public vulnerabilities. Others: {others_en}."
         if target and rt.image:
             use_pt, use_en = _use(rt, target)
-            fix_pt = f"Use o PHP {target} ou mais novo: {use_pt}, monte a imagem de novo e publique."
-            fix_en = f"Use PHP {target} or later: {use_en}, rebuild the image and deploy again."
+            fix_pt = f"Use o {label} {target} ou mais novo: {use_pt}, monte a imagem de novo e publique."
+            fix_en = f"Use {label} {target} or later: {use_en}, rebuild the image and deploy again."
         elif target:
-            fix_pt = f"Instale o PHP {target} ou mais novo onde o app roda, troque a versão em {where} e {_RESTART[0]}."
-            fix_en = f"Install PHP {target} or later where the app runs, update {where} and {_RESTART[1]}."
+            fix_pt = f"Instale o {label} {target} ou mais novo onde o app roda, troque a versão em {where} e {restart[0]}."
+            fix_en = f"Install {label} {target} or later where the app runs, update {where} and {restart[1]}."
         else:
-            fix_pt, fix_en = _PHP_NO_FIX
+            fix_pt, fix_en = (t.format(label=label) for t in _RUNTIME_NO_FIX)
     if target and unfixed:
-        fix_pt += _PHP_UNFIXED[0].format(n=unfixed)
-        fix_en += _PHP_UNFIXED[1].format(n=unfixed)
+        fix_pt += _RUNTIME_UNFIXED[0].format(n=unfixed)
+        fix_en += _RUNTIME_UNFIXED[1].format(n=unfixed)
     fix_pt, fix_en = _with_missing(vulns, fix_pt, fix_en, alone=not target and not unfixed)
-    return Finding("DEP005", severity, rt.file, rt.line, {
-        "runtime": rt.image or f"PHP {rt.version}", "version": rt.version, "image": rt.image, "floating": rt.floating,
+    return Finding(rule, severity, rt.file, rt.line, {
+        "runtime": rt.image or (f"nodejs-{rt.version}" if replit else f"{label} {rt.version}"), "version": rt.version, "image": rt.image, "floating": rt.floating,
         "fixed": target or "", "vulns": vulns,
         "headline_pt": head_pt, "headline_en": head_en, "why_pt": why_pt, "why_en": why_en,
         "exploit_pt": exploit_pt, "exploit_en": exploit_en, "fix_pt": fix_pt, "fix_en": fix_en,

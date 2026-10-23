@@ -769,7 +769,7 @@ def _evidence_html(ctx, entry, t):
 
 
 def _vulns_html(entry, t):
-    vulns = entry.params.get("vulns") if entry.rule in ("DEP001", "DEP004", "DEP005") else None
+    vulns = entry.params.get("vulns") if entry.rule in ("DEP001", "DEP004", "DEP005", "DEP006") else None
     if not isinstance(vulns, list) or not vulns:
         return ""
     rows = []
