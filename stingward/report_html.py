@@ -686,7 +686,7 @@ def _summary(valid, shown, numbers, lang, t, audit, findings, today, nothing="")
     if top:
         items = "".join(
             f'<li class="first-item sev-line-{e.severity}"><div class="first-head">{_badge(e.severity, t)}'
-            f'<a class="first-title" href="#f{numbers[id(e)]}">{_h(e.title)}</a></div>'
+            f'<a class="first-title" href="#f{numbers[id(e.anchor)]}">{_h(e.title)}</a></div>'
             f'<p class="first-impact">{_h(report.impact(e, lang))}</p>'
             f'<p class="first-where"><span>{_html.escape(t["first_where"])}</span>{_where_short(e, t, 2)}</p></li>' for e in top)
         first = f'<h3>{_html.escape(t["first"])}</h3><ol class="first">{items}</ol>'
@@ -1235,6 +1235,8 @@ body{background:#fff;font-size:10pt;line-height:1.45}
 .doc{max-width:none;margin:0;box-shadow:none}
 section{padding:0;break-before:page}
 section+section{border-top:0}
+#plan{break-before:auto;padding-top:22pt}
+#plan>.lead,#plan>.legend{break-after:avoid}
 .cover{break-before:auto;height:262mm;min-height:0;padding-top:0}
 .cover-gap{flex-basis:60mm;min-height:6mm}
 .end{display:none}
