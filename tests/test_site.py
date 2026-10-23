@@ -318,35 +318,57 @@ class Site(unittest.TestCase):
     # ---------------------------------------------------------------- the paid audit and the Team waitlist
 
     def test_buy_and_waitlist_buttons_wait_for_their_addresses(self):
-        """While text.json has no address, the buttons say "Em breve" and are not links; nothing can be bought yet."""
+        """While text.json has no checkout, nothing can be bought: the report button goes to its waitlist, and the Team
+        plan, with no waitlist yet, says "Em breve" and is not a link."""
         text = _text()
-        self.assertEqual(text["links"], {"audit_checkout": "", "team_waitlist": ""})
+        self.assertEqual(text["links"], {"audit_checkout": "", "team_waitlist": "",
+                                         "audit_waitlist": {"en": "https://tally.so/r/NqpxlW",
+                                                            "pt": "https://tally.so/r/RWGQDP"}})
         for lang, page in self.pages.items():
             t = text[lang]
             with self.subTest(lang=lang):
                 audit = page.split('id="audit"', 1)[1].split("</section>", 1)[0]
                 soon = re.findall(r'<span class="button[^"]*button--soon" role="link" aria-disabled="true">([^<]+)</span>', audit)
-                self.assertEqual(soon, [t["soon"], t["soon"]])
-                for label in (t["audit_buy"], t["soon_button"]):
-                    self.assertNotRegex(page, r"<a [^>]*>" + re.escape(label) + "</a>")
+                self.assertEqual(soon, [t["soon"]])
+                self.assertIn(f'<a class="button" href="{text["links"]["audit_waitlist"][lang]}" data-buy>'
+                              f'{t["audit_waitlist"]}</a>', audit)
+                self.assertNotRegex(page, r"<a [^>]*>" + re.escape(t["audit_buy"]) + "</a>")
+                team = audit.split('<div class="soon"', 1)[1]
+                self.assertNotRegex(team, r"<a [^>]*>" + re.escape(t["soon_button"]) + "</a>")
                 self.assertNotIn('href=""', page)
 
     def test_buttons_link_once_an_address_is_set(self):
         text = _text()
-        urls = {"audit_checkout": "https://pay.example.com/audit", "team_waitlist": "https://forms.example.com/team"}
+        urls = {"audit_checkout": "https://pay.example.com/audit", "audit_waitlist": "https://forms.example.com/audit",
+                "team_waitlist": "https://forms.example.com/team"}
         for lang in PAGES:
             with self.subTest(lang=lang):
                 offers = self.build.Page(lang, text[lang], None, False, 0, urls).offers()
+                # once the checkout exists, the report button sells and its waitlist is no longer shown
                 self.assertEqual(offers["audit_button"], f'<a class="button" href="{urls["audit_checkout"]}" data-buy>'
                                                          f'{text[lang]["audit_buy"]}</a>')
                 self.assertEqual(offers["soon_button"], f'<a class="button" href="{urls["team_waitlist"]}">'
                                                         f'{text[lang]["soon_button"]}</a>')
 
+    def test_the_report_waitlist_can_have_a_form_per_language(self):
+        text = _text()
+        forms = {"en": "https://forms.example.com/en", "pt": "https://forms.example.com/pt"}
+        urls = {"audit_checkout": "", "audit_waitlist": forms, "team_waitlist": ""}
+        for lang in PAGES:
+            with self.subTest(lang=lang):
+                offers = self.build.Page(lang, text[lang], None, False, 0, urls).offers()
+                # data-buy: app.js passes on the label of the ad the visitor came from, so the form can keep it
+                self.assertEqual(offers["audit_button"], f'<a class="button" href="{forms[lang]}" data-buy>'
+                                                         f'{text[lang]["audit_waitlist"]}</a>')
+
     def test_only_https_addresses_are_accepted(self):
-        self.assertEqual(self.build.links({}), {"audit_checkout": "", "team_waitlist": ""})
+        self.assertEqual(self.build.links({}), {"audit_checkout": "", "audit_waitlist": "", "team_waitlist": ""})
+        both = {"en": "https://forms.example.com/en", "pt": ""}
+        self.assertEqual(self.build.links({"links": {"audit_waitlist": both}})["audit_waitlist"], both)
         self.assertEqual(self.build.links({"links": {"audit_checkout": "https://pay.example.com/a?b=1"}})["audit_checkout"],
                          "https://pay.example.com/a?b=1")
-        for bad in ("http://pay.example.com", "javascript:alert(1)", "//pay.example.com", "https://a.example/\" onclick=\"x", 149):
+        for bad in ("http://pay.example.com", "javascript:alert(1)", "//pay.example.com", "https://a.example/\" onclick=\"x", 149,
+                    {"fr": "https://forms.example.com"}, {"en": "http://forms.example.com"}, {"pt": None}):
             with self.subTest(url=bad), self.assertRaises(SystemExit):
                 self.build.links({"links": {"team_waitlist": bad}})
 
