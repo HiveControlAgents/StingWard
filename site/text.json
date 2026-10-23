@@ -39,7 +39,7 @@
     "copy": "Copiar",
     "copied": "Copiado",
     "copy_failed": "Selecione e copie",
-    "hero_more": "Também roda com npx stingward, como plugin do Claude Code e como GitHub Action.",
+    "hero_more": "Também roda com npx stingward, como plugin do Claude Code e do Codex e como GitHub Action.",
     "hero_source": "Ver o código",
     "hero_alt": "Não usa terminal? O relatório de R$ 99 explica tudo em palavras simples.",
 
@@ -107,7 +107,7 @@
     "where": [
       {"name": "No terminal", "cmd": "pipx install stingward", "alt": "Terminal rodando stingward ./my-saas: chave da OpenAI exposta, resposta da IA executada no shell, next 14.1.0 com falhas conhecidas, injeção de SQL, SSRF e Supabase sem RLS. Nota F."},
       {"name": "Antes de instalar uma skill", "cmd": "stingward skill dono/repo", "alt": "Terminal rodando stingward skill ./pdf-helper: instrução invisível decodificada e roubo de credenciais. Nota F."},
-      {"name": "No Claude Code", "cmd": "/plugin install stingward@stingward", "ask1": "meu projeto está seguro?", "ask2": "posso instalar github.com/x/y?"},
+      {"name": "No Claude Code e no Codex", "cmd": "/plugin install stingward@stingward", "ask1": "meu projeto está seguro?", "ask2": "posso instalar github.com/x/y?"},
       {"name": "Em cada pull request", "cmd": "uses: HiveControlAgents/StingWard@v0", "comment_title": "Auditoria de segurança"}
     ],
 
@@ -123,12 +123,12 @@
     ],
 
     "price_h2": "Confira grátis antes de mandar o link",
-    "price_p": "A linha de comando, o plugin do Claude Code e a GitHub Action são software livre, com licença Apache 2.0. Sem cadastro e sem telemetria.",
+    "price_p": "A linha de comando, o plugin do Claude Code e do Codex e a GitHub Action são software livre, com licença Apache 2.0. Sem cadastro e sem telemetria.",
     "currency": "R$",
     "price_period": "sem cadastro",
     "price_lines": [
       "Linha de comando para Linux, macOS e Windows",
-      "Plugin e skill do Claude Code",
+      "Plugin e skill do Claude Code e do Codex",
       "GitHub Action com comentário no PR e SARIF",
       "Todas as {rules} regras, sem limite de uso",
       "Relatório em HTML, pronto para imprimir em PDF"
@@ -185,7 +185,7 @@
 
     "footer_cols": [
       ["Projeto", [["GitHub", "{repo}"], ["Lançamentos", "{repo}/releases"], ["Changelog", "{repo}/blob/main/CHANGELOG.md"], ["Licença Apache 2.0", "{repo}/blob/main/LICENSE"]]],
-      ["Instalar", [["PyPI", "https://pypi.org/project/stingward/"], ["npm", "https://www.npmjs.com/package/stingward"], ["GitHub Action", "{repo}/blob/main/README.pt-BR.md#github-action"], ["Plugin do Claude Code", "{repo}/blob/main/README.pt-BR.md#começo-rápido"]]],
+      ["Instalar", [["PyPI", "https://pypi.org/project/stingward/"], ["npm", "https://www.npmjs.com/package/stingward"], ["GitHub Action", "{repo}/blob/main/README.pt-BR.md#github-action"], ["Plugin do Claude Code e do Codex", "{repo}/blob/main/README.pt-BR.md#começo-rápido"]]],
       ["Documentação", [["Relatório de exemplo", "{sample}"], ["As {rules} regras", "{repo}/blob/main/docs/rules.pt-BR.md"], ["Segurança", "{repo}/blob/main/SECURITY.md"], ["Contribuir", "{repo}/blob/main/CONTRIBUTING.pt-BR.md"], ["Relatar alarme falso", "{repo}/issues/new?template=false-positive.yml"]]]
     ],
     "footer_contact_1": "Achou uma falha no próprio Stingward?",
@@ -247,7 +247,7 @@
     "copy": "Copy",
     "copied": "Copied",
     "copy_failed": "Select and copy",
-    "hero_more": "It also runs via npx stingward, as a Claude Code plugin and as a GitHub Action.",
+    "hero_more": "It also runs via npx stingward, as a Claude Code or Codex plugin and as a GitHub Action.",
     "hero_source": "See the code",
     "hero_alt": "Don't use a terminal? The $29 report explains it all in plain words.",
 
@@ -315,7 +315,7 @@
     "where": [
       {"name": "In the terminal", "cmd": "pipx install stingward", "alt": "Terminal running stingward ./my-saas: OpenAI key exposed, AI output run in a shell, next 14.1.0 with known vulnerabilities, SQL injection, SSRF and Supabase without RLS. Grade F."},
       {"name": "Before you install a skill", "cmd": "stingward skill owner/repo", "alt": "Terminal running stingward skill ./pdf-helper: decoded invisible instruction and credential theft. Grade F."},
-      {"name": "In Claude Code", "cmd": "/plugin install stingward@stingward", "ask1": "is my project secure?", "ask2": "can I install github.com/x/y?"},
+      {"name": "In Claude Code and Codex", "cmd": "/plugin install stingward@stingward", "ask1": "is my project secure?", "ask2": "can I install github.com/x/y?"},
       {"name": "On every pull request", "cmd": "uses: HiveControlAgents/StingWard@v0", "comment_title": "Security audit"}
     ],
 
@@ -331,12 +331,12 @@
     ],
 
     "price_h2": "Free check before you share the link",
-    "price_p": "The command-line tool, the Claude Code plugin and the GitHub Action are open source under the Apache 2.0 license. No sign-up, no telemetry.",
+    "price_p": "The command-line tool, the plugin for Claude Code and Codex, and the GitHub Action are open source under the Apache 2.0 license. No sign-up, no telemetry.",
     "currency": "$",
     "price_period": "no sign-up",
     "price_lines": [
       "Command-line tool for Linux, macOS and Windows",
-      "Claude Code plugin and skill",
+      "Plugin and skill for Claude Code and Codex",
       "GitHub Action with PR comments and SARIF",
       "All {rules} rules, no usage limits",
       "HTML report, ready to print to PDF"
@@ -393,7 +393,7 @@
 
     "footer_cols": [
       ["Project", [["GitHub", "{repo}"], ["Releases", "{repo}/releases"], ["Changelog", "{repo}/blob/main/CHANGELOG.md"], ["Apache 2.0 license", "{repo}/blob/main/LICENSE"]]],
-      ["Install", [["PyPI", "https://pypi.org/project/stingward/"], ["npm", "https://www.npmjs.com/package/stingward"], ["GitHub Action", "{repo}#github-action"], ["Claude Code plugin", "{repo}#quick-start"]]],
+      ["Install", [["PyPI", "https://pypi.org/project/stingward/"], ["npm", "https://www.npmjs.com/package/stingward"], ["GitHub Action", "{repo}#github-action"], ["Claude Code and Codex plugin", "{repo}#quick-start"]]],
       ["Docs", [["Sample report", "{sample}"], ["All {rules} rules", "{repo}/blob/main/docs/rules.md"], ["Security", "{repo}/blob/main/SECURITY.md"], ["Contributing", "{repo}/blob/main/CONTRIBUTING.md"], ["Report a false positive", "{repo}/issues/new?template=false-positive.yml"]]]
     ],
     "footer_contact_1": "Found a vulnerability in Stingward itself?",

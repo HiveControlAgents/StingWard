@@ -9,7 +9,7 @@
         "name": "Terms",
         "title": "Terms of service",
         "description": "The terms of the Stingward report: what you buy, what it covers, time limits, refunds and liability.",
-        "intro": "These terms cover the Stingward report, a paid security check of one software project. The free Stingward tool (the command line, the Claude Code plugin and the GitHub Action) is covered by its Apache 2.0 license, not by these terms.",
+        "intro": "These terms cover the Stingward report, a paid security check of one software project. The free Stingward tool (the command line, the plugin for Claude Code and Codex, and the GitHub Action) is covered by its Apache 2.0 license, not by these terms.",
         "sections": [
           [
             "Who we are",
@@ -249,7 +249,7 @@
         "name": "Termos",
         "title": "Termos de uso",
         "description": "Os termos do relatório do Stingward: o que você compra, o que ele cobre, prazos, reembolsos e responsabilidade.",
-        "intro": "Estes termos valem para o relatório do Stingward, uma verificação de segurança paga de um projeto de software. A ferramenta gratuita do Stingward (a linha de comando, o plugin do Claude Code e a GitHub Action) segue a licença Apache 2.0, não estes termos.",
+        "intro": "Estes termos valem para o relatório do Stingward, uma verificação de segurança paga de um projeto de software. A ferramenta gratuita do Stingward (a linha de comando, o plugin do Claude Code e do Codex e a GitHub Action) segue a licença Apache 2.0, não estes termos.",
         "sections": [
           [
             "Quem somos",
