@@ -135,8 +135,8 @@
     ],
     "price_button": "Instalar",
 
-    "audit_h2": "Ache os vazamentos antes dos clientes",
-    "audit_p": "Mande um zip ou um repositório do GitHub. O Stingward verifica o código, uma revisão automática confere cada achado, e em minutos você recebe um PDF em palavras simples.",
+    "audit_h2": "Corrija antes de mandar o link",
+    "audit_p": "Em minutos, você recebe um PDF em palavras simples com cada problema do seu app e como corrigir, sem precisar entender código. Mande um zip ou um repositório do GitHub: o Stingward verifica o código e uma revisão automática confere cada achado.",
     "audit_currency": "R$",
     "audit_price": "99",
     "audit_per": "pagamento único",
@@ -343,8 +343,8 @@
     ],
     "price_button": "Install",
 
-    "audit_h2": "Find the leaks before your users do",
-    "audit_p": "Send a zip or one GitHub repository. Stingward checks the code, an automatic review goes over every finding, and in minutes you get a PDF in plain language.",
+    "audit_h2": "Fix it before you share the link",
+    "audit_p": "In minutes, you get a PDF in plain English with every problem in your app and how to fix it, and you don't need to read code. Send a zip or one GitHub repository: Stingward checks the code and an automatic review goes over every finding.",
     "audit_currency": "$",
     "audit_price": "29",
     "audit_per": "one payment",
