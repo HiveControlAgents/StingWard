@@ -119,8 +119,9 @@ class Links(unittest.TestCase):
         self.assertIn("confira essa linha de novo", review.__doc__)
 
     def test_readme_anchors(self):
-        for doc, anchors in (("README.md", ["quality", "github-action"]), ("README.pt-BR.md", ["qualidade", "github-action"]),
-                             ("README.es.md", ["calidad", "github-action"])):
+        for doc, anchors in (("README.md", ["quality", "github-action", "quick-start"]),
+                             ("README.pt-BR.md", ["qualidade", "github-action", "começo-rápido"]),
+                             ("README.es.md", ["calidad", "github-action", "inicio-rápido"])):
             text = _read(doc)
             headings = {re.sub(r"[^\w\- ]", "", h).strip().lower().replace(" ", "-") for h in re.findall(r"^#+ (.+)$", text, re.M)}
             for a in anchors:

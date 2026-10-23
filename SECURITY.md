@@ -10,7 +10,7 @@ Please include the Stingward version (`stingward --version`), the command you ra
 
 ## Supported versions
 
-Security fixes go into the latest release. Upgrade with `pipx upgrade stingward`, `npx stingward@latest`, `/plugin update` in Claude Code, or by keeping the Action on `@v0`.
+Security fixes go into the latest release. Upgrade with `pipx upgrade stingward`, `npx stingward@latest`, `/plugin update` in Claude Code, `codex plugin marketplace upgrade` followed by `codex plugin add stingward@stingward` in Codex, or by keeping the Action on `@v0`.
 
 ## Scope
 

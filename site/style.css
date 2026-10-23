@@ -374,6 +374,9 @@ mark { background: none; color: inherit; }
 [data-ui].cc { display: grid; gap: 6px; }
 [data-ui].cc code { font-size: 14px; color: var(--term-ink); overflow-wrap: anywhere; }
 [data-ui].cc p:not(.cc__ask) code::before { content: "> "; color: var(--accent); }
+[data-ui].cc p.cc__sh:not(.cc__ask) code::before { content: "$ "; }
+[data-ui] .cc__tool { font-size: 13px; color: var(--term-dim); }
+[data-ui] .cc__tool ~ .cc__tool { margin-top: 10px; }
 [data-ui] .cc__ask { margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: var(--term-2); }
 [data-ui] .cc__ask code { color: var(--accent); }
 [data-ui] .pr__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; font-weight: 600; }

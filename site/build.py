@@ -465,7 +465,7 @@ class Page:
     # ---------------------------------------------------------------- where it runs
 
     def where(self):
-        """Four places Stingward runs, as tabs beside one view: the two terminal recordings, the Claude Code commands and
+        """Four places Stingward runs, as tabs beside one view: the two terminal recordings, the Claude Code and Codex commands and
         the first rows of the real pull request comment."""
         t, lang, root = self.t, self.lang, self.root
         rows = t["where"]
@@ -479,8 +479,12 @@ class Page:
         previews = [
             ("video", video(root, f"demo-app-{lang}", rows[0]["alt"])),
             ("video", video(root, f"demo-skill-{lang}", rows[1]["alt"])),
-            ("cc", '<div class="cc" data-ui><p><code>/plugin marketplace add HiveControlAgents/StingWard</code></p>'
+            ("cc", '<div class="cc" data-ui><p class="cc__tool">Claude Code</p>'
+                   '<p><code>/plugin marketplace add HiveControlAgents/StingWard</code></p>'
                    '<p><code>/plugin install stingward@stingward</code></p>'
+                   '<p class="cc__tool">Codex</p>'
+                   '<p class="cc__sh"><code>codex plugin marketplace add HiveControlAgents/StingWard</code></p>'
+                   '<p class="cc__sh"><code>codex plugin add stingward@stingward</code></p>'
                    f'<p class="cc__ask"><code>&gt; {e(rows[2]["ask1"])}</code></p><p class="cc__ask"><code>&gt; {e(rows[2]["ask2"])}</code></p></div>'),
             ("pr", f'<div class="pr" data-ui><p class="pr__head"><span class="pr__grade">stingward {e(app_text["grade"])}</span> '
                    f'{e(rows[3]["comment_title"])}</p><ul class="pr__rows">{comment_rows}</ul></div>'),
