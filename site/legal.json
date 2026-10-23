@@ -51,6 +51,7 @@
             "Your part",
             [
               "Send only code that is yours or that you have permission to check, and confirm it when you order. Do not use the service to check someone else's project without permission, to send malicious code or to try to break the service. We may refuse or end an order that does, and refund it.",
+              "Leave real personal data, such as database files or customer lists, out of what you send. If some is there, we treat it as the privacy policy says.",
               "Keep your own copy of the report: it is deleted after 30 days."
             ]
           ],
@@ -106,7 +107,7 @@
           [
             "Who is responsible",
             [
-              "Isaque Moutta, in Brazil, runs Stingward and is responsible for your data (the controller, under Brazil's LGPD and the EU and UK GDPR). Write to support@stingward.com. Hotmart, which takes the payment, is responsible for the payment data it collects, as its [privacy policy](https://hotmart.com/en/legal/data-privacy-policy) says."
+              "Isaque Moutta, in Brazil, runs Stingward and is responsible for your data (the controller, under Brazil's LGPD and the EU and UK GDPR). Write to support@stingward.com. Hotmart, which takes the payment, is responsible for the payment data it collects, as its [privacy policy](https://hotmart.com/en/legal/data-privacy-policy) says. Stingward is a small data controller under Brazil's ANPD Resolution 2/2022, so instead of a data protection officer, support@stingward.com is the channel for anything about your data."
             ]
           ],
           [
@@ -128,9 +129,10 @@
             [
               [
                 "Stingward reads it on our server, in a folder that is deleted when the check ends.",
-                "For the automatic review, we send Claude, Anthropic's AI model, a few lines around each finding, with secrets masked, and the rule that found it. We never send the whole project. Under its [commercial terms](https://www.anthropic.com/legal/commercial-terms), Anthropic does not train its models on this data.",
+                "For the automatic review, we send Claude, Anthropic's AI model, a few lines around each finding, with secrets masked, and the rule that found it. We never send the whole project. Under its [commercial terms](https://www.anthropic.com/legal/commercial-terms), Anthropic does not train its models on this data, and as a rule it deletes it within 30 days.",
                 "To look up known vulnerabilities, package names and versions go to OSV.dev, the US National Vulnerability Database, CISA and FIRST.",
                 "If you connect GitHub, you install our GitHub App on one repository, with read-only access. We download that repository once and remove the access right after.",
+                "If your project holds other people's personal data, such as a database file or a list of users, we handle it only to make your report, on your behalf, and delete it with the code. Leave real data out of the project when you can.",
                 "The zip or the download is deleted as soon as the report is ready or the order fails, and always within 48 hours."
               ]
             ]
@@ -148,7 +150,7 @@
                 "Cloudflare: the stingward.com domain and the emails you send to support@stingward.com.",
                 "Tally: the waitlist form, in the European Union."
               ],
-              "Most of these servers are in the United States. Where the law asks for it, the transfer relies on the standard contractual clauses these companies offer. We do not sell your data or use it for advertising."
+              "Most of these servers are in the United States. Where the law asks for it, the transfer relies on the standard contractual clauses these companies offer, and under the LGPD it is needed to deliver the report you asked for (article 33, IX). We do not sell your data or use it for advertising."
             ]
           ],
           [
@@ -180,6 +182,12 @@
             "Your rights",
             [
               "You can ask to see, correct, export or delete your data, to know who we shared it with and to object to how we use it. Write to support@stingward.com from the email you ordered with, and we answer within 15 days. Deleting an order's data also ends the order. You can also complain to Brazil's data protection authority, the [ANPD](https://www.gov.br/anpd/pt-br), or to the authority where you live."
+            ]
+          ],
+          [
+            "Security",
+            [
+              "Everything travels over HTTPS and is encrypted where it is stored, and only the service and we can open the orders and files. If an incident puts your data at risk, we tell you and the data protection authorities as the law requires."
             ]
           ],
           [
@@ -294,6 +302,7 @@
             "Sua parte",
             [
               "Mande só código que é seu ou que você tem permissão para verificar, e confirme isso no pedido. Não use o serviço para verificar o projeto de outra pessoa sem permissão, para mandar código malicioso nem para tentar quebrar o serviço. Podemos recusar ou encerrar um pedido assim, com reembolso.",
+              "Deixe dados pessoais reais, como arquivos de banco de dados ou listas de clientes, fora do que você envia. Se houver algum, tratamos como diz a política de privacidade.",
               "Guarde sua cópia do relatório: ele é apagado depois de 30 dias."
             ]
           ],
@@ -349,7 +358,7 @@
           [
             "Quem é o responsável",
             [
-              "Isaque Moutta, no Brasil, mantém o Stingward e é o responsável pelos seus dados (o controlador, pela LGPD e pelo GDPR da União Europeia e do Reino Unido). Escreva para support@stingward.com. A Hotmart, que recebe o pagamento, é responsável pelos dados de pagamento que coleta, como diz a [política de privacidade dela](https://hotmart.com/pt-br/legal/privacidade-de-dados)."
+              "Isaque Moutta, no Brasil, mantém o Stingward e é o responsável pelos seus dados (o controlador, pela LGPD e pelo GDPR da União Europeia e do Reino Unido). Escreva para support@stingward.com. A Hotmart, que recebe o pagamento, é responsável pelos dados de pagamento que coleta, como diz a [política de privacidade dela](https://hotmart.com/pt-br/legal/privacidade-de-dados). O Stingward é um agente de tratamento de pequeno porte (Resolução CD/ANPD nº 2/2022): em vez de um encarregado, o canal para tudo sobre os seus dados é o support@stingward.com."
             ]
           ],
           [
@@ -371,9 +380,10 @@
             [
               [
                 "O Stingward lê o código no nosso servidor, numa pasta que é apagada quando a verificação termina.",
-                "Para a revisão automática, enviamos ao Claude, o modelo de IA da Anthropic, algumas linhas em volta de cada achado, com os segredos mascarados, e a regra que o encontrou. Nunca enviamos o projeto inteiro. Pelos [termos comerciais](https://www.anthropic.com/legal/commercial-terms) dela, a Anthropic não treina seus modelos com esses dados.",
+                "Para a revisão automática, enviamos ao Claude, o modelo de IA da Anthropic, algumas linhas em volta de cada achado, com os segredos mascarados, e a regra que o encontrou. Nunca enviamos o projeto inteiro. Pelos [termos comerciais](https://www.anthropic.com/legal/commercial-terms) dela, a Anthropic não treina seus modelos com esses dados e, em regra, os apaga em até 30 dias.",
                 "Para consultar falhas conhecidas, o nome e a versão dos pacotes vão para o OSV.dev, a base nacional de vulnerabilidades dos EUA (NVD), a CISA e o FIRST.",
                 "Se você conecta o GitHub, instala o nosso app do GitHub em um repositório, só com permissão de leitura. Baixamos esse repositório uma vez e tiramos o acesso logo depois.",
+                "Se o seu projeto tem dados pessoais de outras pessoas, como um arquivo de banco de dados ou uma lista de usuários, tratamos esses dados só para fazer o seu relatório, em seu nome, e os apagamos junto com o código. Quando puder, deixe dados reais fora do projeto.",
                 "O zip ou o download é apagado assim que o relatório fica pronto ou o pedido falha, e sempre em até 48 horas."
               ]
             ]
@@ -391,7 +401,7 @@
                 "Cloudflare: o domínio stingward.com e os e-mails enviados para support@stingward.com.",
                 "Tally: o formulário da lista de espera, na União Europeia."
               ],
-              "A maioria desses servidores fica nos Estados Unidos. Quando a lei pede, a transferência se apoia nas cláusulas contratuais padrão que essas empresas oferecem. Não vendemos seus dados nem os usamos para publicidade."
+              "A maioria desses servidores fica nos Estados Unidos. Quando a lei pede, a transferência se apoia nas cláusulas contratuais padrão que essas empresas oferecem e, pela LGPD, é necessária para entregar o relatório que você pediu (art. 33, IX). Não vendemos seus dados nem os usamos para publicidade."
             ]
           ],
           [
@@ -423,6 +433,12 @@
             "Seus direitos",
             [
               "Você pode pedir para ver, corrigir, exportar ou apagar seus dados, saber com quem os compartilhamos e se opor ao uso que fazemos deles. Escreva para support@stingward.com do e-mail usado no pedido, e respondemos em até 15 dias. Apagar os dados de um pedido também encerra o pedido. Você também pode reclamar à Autoridade Nacional de Proteção de Dados, a [ANPD](https://www.gov.br/anpd/pt-br), ou à autoridade do lugar onde mora."
+            ]
+          ],
+          [
+            "Segurança",
+            [
+              "Tudo trafega por HTTPS e fica criptografado onde é guardado, e só o serviço e nós temos acesso aos pedidos e aos arquivos. Se um incidente puser seus dados em risco, avisamos você e as autoridades de proteção de dados como a lei exige."
             ]
           ],
           [
