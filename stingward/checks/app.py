@@ -39,6 +39,44 @@ _ENABLE_RLS = re.compile(
 _POLICY = re.compile(
     r"\bcreate\s+policy\s+(?P<pname>\"[^\"]+\"|\w+)\s+on\s+(?P<table>[\w.\"]+)(?P<body>[^;]*);", re.I)
 
+# Função do banco: o corpo entre $tag$ e o que vem antes e depois dele (security definer pode estar dos dois lados).
+_FUNC = re.compile(r"\bcreate\s+(?:or\s+replace\s+)?function\s+(?P<name>(?:\"?\w+\"?\.)?\"?\w+\"?)\s*\((?P<params>[^()]*)\)"
+                   r"(?P<head>[^;$]{0,800}?)(?P<q>\$\w*\$)(?P<body>.*?)(?P=q)(?P<tail>[^;]{0,800});", re.I | re.S)
+_DEFINER = re.compile(r"\bsecurity\s+definer\b", re.I)
+_TEXT_TYPE = re.compile(r"(?i)^(?:text|varchar|character\s+varying|char|character)\b")
+_EXECUTE = re.compile(r"\bexecute\s+(?!procedure\b|function\b)([^;]+)", re.I)
+_SQL_LIT = re.compile(r"'(?:[^']|'')*'")
+_REVOKE_FN = re.compile(r"\brevoke\s+(?:all|execute)(?:\s+privileges)?\s+on\s+function\s+(?P<name>[\w.\"]+)\s*(?:\([^)]*\))?"
+                        r"\s+from\s+(?P<who>[^;]+);", re.I)
+
+
+def _text_params(params: str) -> list:
+    """Nomes dos parâmetros de texto da função ($1, $2... para os sem nome)."""
+    out = []
+    for i, part in enumerate(params.split(","), 1):
+        words = re.sub(r"(?i)\b(?:in|inout|variadic)\s+", "", part.strip(), count=1).split(None, 1)
+        if not words:
+            continue
+        if _TEXT_TYPE.match(part.strip()) and len(words) == 1 or _TEXT_TYPE.match(words[0]):
+            out.append(f"${i}")
+        elif len(words) == 2 and _TEXT_TYPE.match(words[1]):
+            out.append(words[0].strip('"'))
+    return out
+
+
+def _runs_param(body: str, params: list) -> bool:
+    """O corpo executa SQL montado com um parâmetro de texto (sem format com só %I e %L)."""
+    for m in _EXECUTE.finditer(body):
+        expr = m.group(1).strip()
+        lits = _SQL_LIT.findall(expr)
+        rest = re.split(r"(?i)\b(?:into|using)\b", _SQL_LIT.sub("''", expr), maxsplit=1)[0]
+        if re.match(r"(?i)format\s*\(", expr) and not any("%s" in x for x in lits[:1]):
+            continue
+        if any(re.search(r"(?<![\w$])" + re.escape(p) + r"(?![\w$])", rest) for p in params):
+            return True
+    return False
+
+
 _FIREBASE_OPEN = re.compile(r"allow\s+[\w\s,]+:\s*if\s+(?:true\s*;|request\.time\s*<\s*timestamp\.date)")
 _RTDB_OPEN = re.compile(r"""["']\.(?:read|write)["']\s*:\s*(?:true|["']true["'])""")
 
@@ -80,6 +118,7 @@ def check(ctx):
     out = []
     supabase = None
     sql_tables, sql_rls = {}, set()
+    sql_funcs, revoked = [], set()
     for rel in ctx.files:
         if not is_text_source(rel):
             continue
@@ -153,6 +192,18 @@ def check(ctx):
                     op = op.group(1) if op else "all"
                     out.append(Finding("APP005", _policy_sev(op, m["table"]), rel,
                                        line_of(clean, m.start()), {"policy": f"{m['pname'].strip(chr(34))} ({op})"}))
+            for m in _FUNC.finditer(clean):
+                params = _text_params(m["params"])
+                if params and _DEFINER.search(m["head"] + " " + m["tail"]) and _runs_param(m["body"], params):
+                    sql_funcs.append((rel, line_of(clean, m.start()), m["name"].replace('"', "")))
+            for m in _REVOKE_FN.finditer(clean):
+                who = m["who"].lower()
+                if "anon" in who and "authenticated" in who:
+                    revoked.add(_table(m["name"]))
+    for rel, ln, name in sql_funcs:
+        # Só o esquema public sai pela API do Supabase; revoke para anon e authenticated fecha a porta.
+        if _table(name).startswith("public.") and _table(name) not in revoked:
+            out.append(Finding("APP016", "critical", rel, ln, {"func": name}))
     for t, (rel, ln) in sql_tables.items():
         if t not in sql_rls:
             out.append(Finding("APP004", "high", rel, ln, {"table": t.split(".", 1)[1]}))

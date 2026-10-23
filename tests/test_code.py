@@ -33,7 +33,7 @@ def run(files, mode="project", only=("app", "code")):
     return scan.run(d.name, mode=mode, offline=True, only=set(only) if only else None)[1]
 
 
-NEW = ("COD", "APP009", "APP010", "APP011", "APP012", "APP013", "APP014")
+NEW = ("COD", "APP009", "APP010", "APP011", "APP012", "APP013", "APP014", "APP015")
 
 
 def got(findings):
@@ -1049,6 +1049,122 @@ class CodeRules(Checks):
                                     "def ask(q: str, user=Depends(get_current_user)):\n"
                                     "    return client.chat.completions.create(model='m', messages=[])\n")
         self.silent({"main.py": py})
+
+    def test_app011_edge_function_that_calls_the_ai_with_fetch(self):
+        """Função do Supabase (o formato do Lovable) que chama o modelo com fetch, sem SDK. O "authorization" da lista de
+        headers do CORS não é login."""
+        fn = ("const corsHeaders = { 'Access-Control-Allow-Origin': '*',\n"
+              "  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }\n"
+              "Deno.serve(async (req) => {\n"
+              "  const { messages } = await req.json()\n"
+              "  const r = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {\n"
+              "    method: 'POST', headers: { Authorization: `Bearer ${Deno.env.get('LOVABLE_API_KEY')}` },\n"
+              "    body: JSON.stringify({ model: 'google/gemini-2.5-flash', messages }) })\n"
+              "  return new Response(r.body, { headers: corsHeaders })\n})\n")
+        openai = fn.replace("https://ai.gateway.lovable.dev/v1/chat/completions", "https://api.openai.com/v1/chat/completions")
+        self.check({"supabase/functions/chat/index.ts": fn, "supabase/functions/ask/index.ts": openai},
+                   [("APP011", "supabase/functions/ask/index.ts", 5, "medium"),
+                    ("APP011", "supabase/functions/chat/index.ts", 5, "medium")])
+        signed_in = fn.replace("  const { messages } = await req.json()\n",
+                               "  const { data: { user } } = await supabase.auth.getUser(token)\n"
+                               "  if (!user) return new Response('no', { status: 401 })\n"
+                               "  const { messages } = await req.json()\n")
+        docs = "const DOCS = 'https://api.openai.com/v1/chat/completions is the endpoint'\nexport default DOCS\n"
+        self.silent({"supabase/functions/chat/index.ts": signed_in, "src/lib/docs.ts": docs})
+
+    # ------------------------------------------------------------------ APP015 função com a chave service_role
+
+    def test_app015_function_with_service_role_trusts_the_id_the_visitor_sends(self):
+        invoices = ("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'\n"
+                    "const corsHeaders = { 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }\n"
+                    "Deno.serve(async (req) => {\n"
+                    "  const { userId } = await req.json()\n"
+                    "  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)\n"
+                    "  const { data } = await supabase\n"
+                    "    .from('invoices')\n"
+                    "    .select('*')\n"
+                    "    .eq('user_id', userId)\n"
+                    "  return new Response(JSON.stringify(data), { headers: corsHeaders })\n})\n")
+        delete = ("import { createClient } from 'npm:@supabase/supabase-js@2'\n"
+                  "const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')\n"
+                  "const admin = createClient(Deno.env.get('SUPABASE_URL'), serviceKey)\n"
+                  "Deno.serve(async (req) => {\n"
+                  "  const body = await req.json()\n"
+                  "  await admin.auth.admin.deleteUser(body.userId)\n"
+                  "  return new Response('ok')\n})\n")
+        route = ("import { createClient } from '@supabase/supabase-js'\n"
+                 "const supabaseAdmin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)\n"
+                 "export async function POST(req: Request) {\n"
+                 "  const { orderId, status } = await req.json()\n"
+                 "  await supabaseAdmin.from('orders').update({ status }).eq('id', orderId)\n"
+                 "  return Response.json({ ok: true })\n}\n")
+        self.check({"supabase/functions/get-invoices/index.ts": invoices, "supabase/functions/delete-account/index.ts": delete,
+                    "app/api/orders/route.ts": route},
+                   [("APP015", "app/api/orders/route.ts", 5, "high"),
+                    ("APP015", "supabase/functions/delete-account/index.ts", 6, "high"),
+                    ("APP015", "supabase/functions/get-invoices/index.ts", 9, "high")])
+        f = next(x for x in run({"supabase/functions/get-invoices/index.ts": invoices}) if x.rule == "APP015")
+        for lang in ("pt", "en"):
+            title, why, fix = texts("APP015", lang, f.params)
+            self.assertIn("service_role", title)
+            self.assertIn("verify_jwt", why)
+            self.assertIn("getUser", fix)
+
+    def test_app015_checked_caller_webhook_or_fixed_query_stays_silent(self):
+        head = ("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'\n"
+                "const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)\n")
+        checked = head + ("Deno.serve(async (req) => {\n"
+                          "  const token = req.headers.get('Authorization')!.replace('Bearer ', '')\n"
+                          "  const { data: { user } } = await admin.auth.getUser(token)\n"
+                          "  if (!user) return new Response('no', { status: 401 })\n"
+                          "  const { invoiceId } = await req.json()\n"
+                          "  const { data } = await admin.from('invoices').select('*').eq('id', invoiceId).eq('user_id', user.id)\n"
+                          "  return new Response(JSON.stringify(data))\n})\n")
+        webhook = head + ("import Stripe from 'https://esm.sh/stripe@14'\n"
+                          "const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!)\n"
+                          "Deno.serve(async (req) => {\n"
+                          "  const sig = req.headers.get('stripe-signature')!\n"
+                          "  const event = await stripe.webhooks.constructEventAsync(await req.text(), sig, Deno.env.get('STRIPE_WEBHOOK_SECRET')!)\n"
+                          "  const s = event.data.object\n"
+                          "  await admin.from('orders').update({ paid: true }).eq('id', s.metadata.order_id)\n"
+                          "  return new Response('ok')\n})\n")
+        user_client = ("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'\n"
+                       "Deno.serve(async (req) => {\n"
+                       "  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!,\n"
+                       "    { global: { headers: { Authorization: req.headers.get('Authorization')! } } })\n"
+                       "  const { invoiceId } = await req.json()\n"
+                       "  const { data } = await supabase.from('invoices').select('*').eq('id', invoiceId)\n"
+                       "  return new Response(JSON.stringify(data))\n})\n")
+        contact = head + ("Deno.serve(async (req) => {\n"
+                          "  const { name, email, message } = await req.json()\n"
+                          "  await admin.from('messages').insert({ name, email, message })\n"
+                          "  return new Response('ok')\n})\n")
+        cron = head + ("Deno.serve(async () => {\n"
+                       "  await admin.from('sessions').delete().lt('expires_at', new Date().toISOString())\n"
+                       "  return new Response('ok')\n})\n")
+        self.silent({"supabase/functions/a/index.ts": checked, "supabase/functions/b/index.ts": webhook,
+                     "supabase/functions/c/index.ts": user_client, "supabase/functions/d/index.ts": contact,
+                     "supabase/functions/e/index.ts": cron})
+        self.silent({"supabase/functions/get-invoices/index.ts": head + (
+            "Deno.serve(async (req) => {\n  const { userId } = await req.json()\n"
+            "  await admin.from('invoices').select('*').eq('user_id', userId)\n})\n")}, mode="skill")
+
+    def test_app009_and_cod001_sql_through_a_supabase_rpc(self):
+        agent = ("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'\n"
+                 "Deno.serve(async (req) => {\n"
+                 "  const { question, sql: raw } = await req.json()\n"
+                 "  const r = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: question })\n"
+                 "  const out = await r.json()\n"
+                 "  const sql = out.choices[0].message.content\n"
+                 "  const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!)\n"
+                 "  await db.rpc('exec_sql', { query: sql })\n"
+                 "  await db.rpc('execute_sql', { sql_query: raw })\n"
+                 "  await db.rpc('get_invoices', { owner: raw })\n"
+                 "  return new Response('ok')\n})\n")
+        self.check({"supabase/functions/agent/index.ts": agent},
+                   [("APP009", "supabase/functions/agent/index.ts", 8, "high"),
+                    ("APP011", "supabase/functions/agent/index.ts", 4, "medium"),
+                    ("COD001", "supabase/functions/agent/index.ts", 9, "high")])
 
     # ------------------------------------------------------------------ APP012 carregar modelo
 

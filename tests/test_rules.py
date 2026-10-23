@@ -372,6 +372,40 @@ class AppRules(RuleTest):
                "-- create policy \"old\" on posts using (true);\n")
         self.assertSilent(self.scan({"supabase/migrations/3.sql": sql}), "APP005")
 
+    def test_app016_database_function_runs_any_sql_it_receives(self):
+        sql = ("create table notes (id int);\nalter table notes enable row level security;\n"
+               "create or replace function public.exec_sql(query text)\nreturns json\nlanguage plpgsql\nsecurity definer\nas $$\n"
+               "declare result json;\nbegin\n  execute 'select json_agg(t) from (' || query || ') t' into result;\n"
+               "  return result;\nend;\n$$;\n"
+               "CREATE FUNCTION run_query(sql_text varchar) RETURNS void AS $fn$\nBEGIN\n  EXECUTE sql_text;\nEND;\n"
+               "$fn$ LANGUAGE plpgsql SECURITY DEFINER;\n"
+               "create function report(p_where text) returns setof notes language plpgsql security definer as $$\n"
+               "begin return query execute format('select * from notes where %s', p_where); end; $$;\n")
+        f = self.scan({"supabase/migrations/4.sql": sql})
+        self.assertEqual(sorted((x.line, x.severity, x.params["func"]) for x in f if x.rule == "APP016"),
+                         [(3, "critical", "public.exec_sql"), (14, "critical", "run_query"), (19, "critical", "report")])
+        title, why, fix = texts("APP016", "en", next(x for x in f if x.rule == "APP016").params)
+        self.assertIn("public.exec_sql", fix)
+
+    def test_app016_near_misses(self):
+        sql = ("-- create function public.exec_sql(query text) returns void security definer as $$ begin execute query; end; $$;\n"
+               "create function public.invoker_sql(query text) returns void language plpgsql as $$\n"
+               "begin execute query; end; $$;\n"
+               "create function public.by_table(tbl text) returns setof record language plpgsql security definer as $$\n"
+               "begin return query execute format('select * from %I', tbl); end; $$;\n"
+               "create function public.fixed() returns void language plpgsql security definer as $$\n"
+               "begin execute 'refresh materialized view stats'; end; $$;\n"
+               "create function public.owned(query text) returns void language plpgsql security definer as $$\n"
+               "begin execute query; end; $$;\n"
+               "revoke execute on function public.owned(text) from public, anon, authenticated;\n"
+               "create function private.admin_sql(query text) returns void language plpgsql security definer as $$\n"
+               "begin execute query; end; $$;\n"
+               "create function public.ids(n int) returns void language plpgsql security definer as $$\n"
+               "begin execute 'select ' || n; end; $$;\n")
+        self.assertSilent(self.scan({"supabase/migrations/5.sql": sql}), "APP016")
+        self.assertSilent(self.scan({"db/schema.sql": "create function exec_sql(query text) returns void security definer "
+                                                      "as $$ begin execute query; end; $$ language plpgsql;\n"}), "APP016")
+
     def test_app006_open_firebase_rules(self):
         fs = ("rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n"
               "    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}\n")
