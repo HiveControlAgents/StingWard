@@ -34,6 +34,7 @@ Cada vez más gente publica apps, skills de Claude Code y servidores MCP escrito
 | Dónde | Cómo |
 |---|---|
 | **Claude Code** | `/plugin marketplace add HiveControlAgents/StingWard` y luego `/plugin install stingward@stingward`. Después pregunta *"is my project secure?"* o *"can I install github.com/x/y?"* |
+| **Codex** | `codex plugin marketplace add HiveControlAgents/StingWard` y luego `codex plugin add stingward@stingward`. Las preguntas son las mismas. Codex te pide permiso antes de que la revisión de dependencias salga a internet |
 | **Terminal** | `pipx install stingward` (o `uvx stingward`, o `npx stingward` con Python 3.9+ instalado) y ejecuta `stingward` en tu proyecto |
 | **GitHub** | Agrega la [Action](#github-action): comenta en cada PR, llena la pestaña Security y vuelve a revisar todos los días |
 
@@ -166,6 +167,8 @@ STINGWARD_ONLINE=1 python -m unittest discover -s tests -t .    # también consu
 **¿En qué se diferencia de `npm audit`, Dependabot o un escáner de secretos?** Cada uno cubre una parte. Stingward junta dependencias, secretos y los errores propios de apps hechas con IA, agentes, skills y servidores MCP en un solo informe, escrito para quien construyó el proyecto, y puede auditar una skill antes de que la instales.
 
 **¿Por qué `npx stingward` necesita Python?** El motor es un único paquete de Python puro sin dependencias; el paquete de npm solo lo lanza, para que quien usa JavaScript lo ejecute sin `pip`. En Windows, `npx` no encuentra los atajos `.bat` de pyenv-win: instala Python desde python.org o usa `pip install stingward`.
+
+**¿Funciona en Codex o en otros agentes?** Sí. En Codex, instala el plugin como en el [Inicio rápido](#inicio-rápido). Codex bloquea internet por defecto, así que te pide permiso una vez antes de que la revisión de dependencias llegue a OSV.dev; di que sí, o las dependencias quedan sin revisar. En otro agente que lea skills en `SKILL.md`, copia la carpeta `skills/stingward` a su carpeta de skills e instala la línea de comandos con `pipx install stingward`, que la skill usa cuando el motor no está a su lado.
 
 **¿Puede revisar un repositorio privado o una skill en mi disco?** Sí. Apúntalo a una carpeta, o a `dueno/repo` con tus credenciales de git de siempre.
 

@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import argparse
+import filecmp
+import json
 import os
 import re
 import shutil
@@ -204,6 +206,60 @@ def _fetch(target):
         raise
 
 
+# Uma cópia do próprio Stingward instalada como plugin (no Claude Code ou no Codex) traz o repositório inteiro: os
+# testes e as demos, vulneráveis de propósito, e o motor, cujos padrões descrevem os ataques que ele procura. Nada disso
+# roda; o agente carrega a skill, e ela roda o motor. Saem da auditoria o motor, quando é idêntico a este que está
+# rodando, e o que nenhum agente carrega. A skill e os manifestos continuam nela, e qualquer outro arquivo (um hook, um
+# servidor MCP, outra skill, um .py na raiz, que entraria no sys.path do lançador) faz a cópia inteira ser auditada.
+_SELF_INERT = re.compile(r"(?:tests|docs|site|scripts|examples|npm|\.github)/.+|(?:README[\w.-]*|CHANGELOG|CODE_OF_CONDUCT"
+                         r"|CONTRIBUTING[\w.-]*|SECURITY)\.md|LICENSE|NOTICE|MANIFEST\.in|pyproject\.toml|action\.yml"
+                         r"|\.gitignore|\.stingwardignore")
+_SELF_KEYS = {"plugin.json": {"name", "description", "version", "author", "repository", "license", "keywords", "homepage"},
+              "marketplace.json": {"name", "owner", "metadata", "plugins", "$schema", "description"}}
+
+
+def _self_manifest(path, name):
+    """O plugin.json e o marketplace.json do Stingward: só os campos que ele usa, nenhum que declare hooks, servidores
+    MCP ou outros componentes, e o plugin vindo da raiz da cópia."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(d, dict) or d.get("name") != "stingward" or not set(d) <= _SELF_KEYS[name]:
+        return False
+    if name == "plugin.json":
+        return True
+    plugins = d.get("plugins")
+    return isinstance(plugins, list) and all(
+        isinstance(p, dict) and set(p) <= {"name", "source", "description"} and p.get("source") == "./" for p in plugins)
+
+
+def _self_copies(home, files):
+    """files sem o que não roda de cada cópia exata deste Stingward instalada como plugin."""
+    engine = os.path.dirname(os.path.abspath(__file__))
+    drop = set()
+    for root in {f[:-len("stingward/cli.py")] for f in files if f.endswith("/stingward/cli.py")}:
+        skip = []
+        for f in (f for f in files if f.startswith(root)):
+            rel, path = f[len(root):], os.path.join(home, f)
+            if rel.startswith("stingward/"):
+                ours = os.path.join(engine, *rel.split("/")[1:])
+                if not (os.path.isfile(ours) and filecmp.cmp(path, ours, shallow=False)):
+                    break
+                skip.append(f)
+            elif rel.startswith(".claude-plugin/") and rel.count("/") == 1 and rel[15:] in _SELF_KEYS:
+                if not _self_manifest(path, rel[15:]):
+                    break
+            elif _SELF_INERT.fullmatch(rel):
+                skip.append(f)
+            elif not rel.startswith("skills/stingward/"):
+                break
+        else:
+            drop.update(skip)
+    return [f for f in files if f not in drop]
+
+
 def agent_files(home):
     """Configurações de agentes conhecidas, relativas à home."""
     candidates = [
@@ -215,11 +271,12 @@ def agent_files(home):
         "Library/Application Support/Code/User/mcp.json", ".config/Code/User/mcp.json",
     ]
     files = [c for c in candidates if os.path.isfile(os.path.join(home, c))]
-    for d in (".claude/skills", ".claude/agents", ".claude/commands", ".claude/hooks", ".claude/plugins", ".codex/skills"):
+    for d in (".claude/skills", ".claude/agents", ".claude/commands", ".claude/hooks", ".claude/plugins", ".codex/skills",
+              ".codex/plugins", ".agents/skills"):
         base = os.path.join(home, d)
         if os.path.isdir(base):
             files += [f"{d}/{p}" for p in scan.list_files(base, max_files=5000)]
-    return files
+    return _self_copies(home, files)
 
 
 def _utf8_output():
