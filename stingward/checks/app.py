@@ -108,6 +108,54 @@ def _policy_sev(op: str, table: str) -> str:
     return "medium" if _SENSITIVE_TABLE.search(_table(table).split(".", 1)[1]) else "low"
 
 
+def _norm_cond(c: str) -> str:
+    """Condição da política sem aspas de identificador, casts, espaços e parênteses de fora, que não mudam o sentido."""
+    c = re.sub(r"::\s*\w+(?:\s+varying)?", "", c.replace('"', "").lower())
+    c = re.sub(r"\s*([()=]|->>)\s*", r"\1", re.sub(r"\s+", " ", c)).strip()
+    while c.startswith("(") and c.endswith(")"):
+        depth = 0
+        for i, ch in enumerate(c):
+            depth += (ch == "(") - (ch == ")")
+            if depth == 0:
+                break
+        if i != len(c) - 1:
+            break
+        c = c[1:-1].strip()
+    return c
+
+
+def _policy_conditions(body: str) -> list:
+    """O que vem dentro de using (...) e de with check (...)."""
+    out = []
+    for m in re.finditer(r"\b(?:using|with\s+check)\s*\(", body):
+        depth, quote = 0, False
+        for j in range(m.end() - 1, len(body)):
+            ch = body[j]
+            if ch == "'":
+                quote = not quote
+            elif not quote and ch in "()":
+                depth += 1 if ch == "(" else -1
+                if depth == 0:
+                    out.append(_norm_cond(body[m.end():j]))
+                    break
+    return out
+
+
+def _only_signed_in_role(body: str) -> bool:
+    """A política vale só para o papel authenticated (to authenticated)."""
+    m = re.search(r"\bto\s+(.+)$", re.split(r"\busing\b|\bwith\s+check\b", body, maxsplit=1)[0], re.S)
+    return bool(m) and {r.strip(' "\n\t') for r in m.group(1).split(",")} == {"authenticated"}
+
+
+# Condição que só confere se há alguém logado. No Supabase qualquer pessoa cria conta, então isso não protege linha nenhuma.
+_SIGNED_IN = {_norm_cond(c) for c in (
+    *(f"{who} is not null" for who in ("auth.uid()", "(select auth.uid())", "auth.jwt()", "(select auth.jwt())")),
+    *(form.format(role) for role in ("auth.role()", "(select auth.role())", "auth.jwt()->>'role'", "(auth.jwt()->>'role')",
+                                     "(select auth.jwt()->>'role')", "(select auth.jwt())->>'role'")
+      for form in ("{} = 'authenticated'", "'authenticated' = {}")),
+)}
+
+
 def _uses_supabase(ctx) -> bool:
     if any(r.startswith("supabase/") or "/supabase/" in r for r in ctx.files):
         return True
@@ -187,11 +235,17 @@ def check(ctx):
                 sql_rls.add(_table(m["name"]))
             for m in _POLICY.finditer(clean):
                 body = m["body"].lower()
-                if re.search(r"\b(using|with\s+check)\s*\(\s*true\s*\)", body):
-                    op = re.search(r"\bfor\s+(all|select|insert|update|delete)\b", body)
-                    op = op.group(1) if op else "all"
-                    out.append(Finding("APP005", _policy_sev(op, m["table"]), rel,
-                                       line_of(clean, m.start()), {"policy": f"{m['pname'].strip(chr(34))} ({op})"}))
+                if re.search(r"\bas\s+restrictive\b", body):
+                    continue  # restrictive só estreita o que as outras políticas liberam
+                conds = _policy_conditions(body)
+                op = re.search(r"\bfor\s+(all|select|insert|update|delete)\b", body)
+                op = op.group(1) if op else "all"
+                params = {"policy": f"{m['pname'].strip(chr(34))} ({op})"}
+                if "true" in conds and not _only_signed_in_role(body):
+                    out.append(Finding("APP005", _policy_sev(op, m["table"]), rel, line_of(clean, m.start()), params))
+                elif any(c == "true" or c in _SIGNED_IN for c in conds):
+                    sev = "medium" if op == "insert" else _policy_sev(op, m["table"])
+                    out.append(Finding("APP017", sev, rel, line_of(clean, m.start()), params))
             for m in _FUNC.finditer(clean):
                 params = _text_params(m["params"])
                 if params and _DEFINER.search(m["head"] + " " + m["tail"]) and _runs_param(m["body"], params):

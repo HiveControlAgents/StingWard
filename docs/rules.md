@@ -41,6 +41,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [APP014](#app014) | Tool argument written by the model reaches a shell, code, SQL, a path or a URL | 🔴 |
 | [APP015](#app015) | Function with the `service_role` key trusts the visitor | 🟠 |
 | [APP016](#app016) | Database function that runs any SQL | 🔴 |
+| [APP017](#app017) | Supabase policy that allows any signed-in user | 🟠 |
 | [COD001](#cod001) | SQL query built from outside input | 🟠 |
 | [COD002](#cod002) | Shell command built from outside input | 🔴 |
 | [COD003](#cod003) | Code built from outside input is executed | 🔴 |
@@ -191,7 +192,7 @@ A table created in a migration without `enable row level security`. With the pub
 <a id="app005"></a>
 ### APP005 · Supabase policy that allows everyone
 
-A policy with `using (true)` or `with check (true)`. High for writes, medium for reads of sensitive tables, low for other reads.
+A policy with `using (true)` or `with check (true)` for everyone, signed in or not (`to authenticated` is [APP017](#app017)). High for writes, medium for reads of sensitive tables, low for other reads. Not reported for `as restrictive` policies, which only narrow what the other policies allow.
 
 **Fix:** use a real condition, such as `auth.uid() = user_id`.
 **Standards:** `CWE-284`
@@ -289,6 +290,14 @@ A migration creates a `security definer` function in the `public` schema that ru
 
 **Fix:** drop the function. If you really need it, write one function per query that takes parameters, use `security invoker`, or run `revoke execute on function name(text) from public, anon, authenticated;`.
 **Standards:** `CWE-89` · `CWE-250`
+
+<a id="app017"></a>
+### APP017 · Supabase policy that allows any signed-in user
+
+A policy whose whole condition only checks that someone is signed in: `using (auth.uid() is not null)`, `(select auth.uid()) is not null`, `auth.role() = 'authenticated'`, `auth.jwt() is not null`, or `to authenticated` with `using (true)`. On Supabase anyone can sign up with the public anon key (with anonymous sign-ins on, without even an email), so every account can do what the policy allows on every row, other users' rows included. High for update, delete and all, medium for insert and for reads of sensitive tables, low for other reads. Not reported for `as restrictive` policies, or when the condition also looks at the row (`auth.uid() = user_id`, `auth.uid() is not null and is_public`).
+
+**Fix:** check whose row it is, with a condition such as `auth.uid() = user_id`. If every member really shares the table, allow only reads and turn off new sign-ups in Supabase's Auth settings.
+**Standards:** `CWE-862` · `CWE-639`
 
 ## Code
 
