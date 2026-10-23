@@ -41,6 +41,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [APP014](#app014) | Argumento que o modelo escreve na ferramenta chega a shell, código, SQL, caminho ou URL | 🔴 |
 | [APP015](#app015) | Função com a chave service_role confia no visitante | 🟠 |
 | [APP016](#app016) | Função do banco que roda qualquer SQL | 🔴 |
+| [APP017](#app017) | Política do Supabase que libera para qualquer pessoa logada | 🟠 |
 | [COD001](#cod001) | Consulta SQL montada com dado de fora | 🟠 |
 | [COD002](#cod002) | Comando de shell montado com dado de fora | 🔴 |
 | [COD003](#cod003) | Código montado com dado de fora é executado | 🔴 |
@@ -191,7 +192,7 @@ Tabela criada numa migration sem `enable row level security`. Com a chave anon, 
 <a id="app005"></a>
 ### APP005 · Política do Supabase que libera para todos
 
-Política com `using (true)` ou `with check (true)`. Alta para escrita, média para leitura de tabela sensível, baixa para outras leituras.
+Política com `using (true)` ou `with check (true)` para todo mundo, logado ou não (`to authenticated` é a [APP017](#app017)). Alta para escrita, média para leitura de tabela sensível, baixa para outras leituras. Não entram políticas `as restrictive`, que só estreitam o que as outras liberam.
 
 **Como corrigir:** use uma condição de verdade, como `auth.uid() = user_id`.
 **Padrões:** `CWE-284`
@@ -289,6 +290,14 @@ Uma migração cria uma função `security definer` no esquema `public` que roda
 
 **Como corrigir:** apague a função. Se ela for mesmo necessária, escreva uma função com parâmetros para cada consulta, use `security invoker` ou rode `revoke execute on function nome(text) from public, anon, authenticated;`.
 **Padrões:** `CWE-89` · `CWE-250`
+
+<a id="app017"></a>
+### APP017 · Política do Supabase que libera para qualquer pessoa logada
+
+Política cuja condição inteira só confere se há alguém logado: `using (auth.uid() is not null)`, `(select auth.uid()) is not null`, `auth.role() = 'authenticated'`, `auth.jwt() is not null`, ou `to authenticated` com `using (true)`. No Supabase qualquer pessoa cria conta com a chave anon, que é pública (com o login anônimo ligado, nem precisa de e-mail), então qualquer conta faz o que a política permite em todas as linhas, inclusive nas de outros usuários. Alta para update, delete e all, média para insert e para leitura de tabela sensível, baixa para outras leituras. Não entram políticas `as restrictive` nem condições que também olham a linha (`auth.uid() = user_id`, `auth.uid() is not null and is_public`).
+
+**Como corrigir:** confira de quem é a linha, com uma condição como `auth.uid() = user_id`. Se a tabela é mesmo compartilhada por todos os membros, deixe só a leitura liberada e desligue os cadastros novos nas configurações de Auth do Supabase.
+**Padrões:** `CWE-862` · `CWE-639`
 
 ## Código
 

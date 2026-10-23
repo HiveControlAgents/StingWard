@@ -264,6 +264,21 @@ RULES = {
                "parameters, use security invoker, or remove access: revoke execute on function {func} from public, anon, "
                "authenticated;"),
     },
+    "APP017": {
+        "group": "app",
+        "pt": ("Política do Supabase liberada para qualquer pessoa logada: {policy}",
+               "A política só confere se a pessoa está logada. No Supabase qualquer pessoa cria uma conta com a chave anon, que é "
+               "pública (com o login anônimo ligado, nem precisa de e-mail), então qualquer conta faz o que essa política permite "
+               "em todas as linhas, inclusive nas de outros usuários.",
+               "Confira de quem é a linha, com uma condição como auth.uid() = user_id. Se a tabela é mesmo compartilhada por todos "
+               "os membros, deixe só a leitura liberada e desligue os cadastros novos nas configurações de Auth do Supabase."),
+        "en": ("Supabase policy open to any signed-in user: {policy}",
+               "The policy only checks that someone is signed in. On Supabase anyone can create an account with the anon key, "
+               "which is public (with anonymous sign-ins on, without even an email), so any account can do what this policy "
+               "allows on every row, other users' rows included.",
+               "Check whose row it is, with a condition such as auth.uid() = user_id. If every member really shares the table, "
+               "allow only reads and turn off new sign-ups in Supabase's Auth settings."),
+    },
     # ------------------------------------------------------------------ falhas no código
     "COD001": {
         "group": "code",
@@ -624,6 +639,7 @@ STANDARDS = {
     "APP014": ["LLM03:2026"],
     "APP015": ["CWE-639", "CWE-862"],
     "APP016": ["CWE-89", "CWE-250"],
+    "APP017": ["CWE-862", "CWE-639"],
     "COD001": ["CWE-89"],
     "COD002": ["CWE-78"],
     "COD003": ["CWE-94", "CWE-95"],

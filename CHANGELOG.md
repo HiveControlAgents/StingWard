@@ -4,6 +4,12 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+- APP017, Supabase policy that allows any signed-in user: a policy whose whole condition only checks that someone is signed in (`using (auth.uid() is not null)`, `(select auth.uid()) is not null`, `auth.role() = 'authenticated'`, `auth.jwt() is not null`, or `to authenticated` with `using (true)`), also as `supabase db dump` writes it (`"auth"."uid"()`, `'authenticated'::text`). On Supabase anyone can sign up with the public anon key, so every account reaches every row. High for update, delete and all, medium for insert and for reads of sensitive tables, low for other reads. Not reported when the condition also looks at the row (`auth.uid() = user_id`).
+
+### Changed
+- APP005 no longer reports `to authenticated using (true)`, which is now APP017 with a message that fits it, or `as restrictive` policies, which only narrow what the other policies allow.
+
 ## [0.1.10] - 2026-10-23
 
 ### Added

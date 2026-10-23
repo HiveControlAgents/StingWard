@@ -372,6 +372,32 @@ class AppRules(RuleTest):
                "-- create policy \"old\" on posts using (true);\n")
         self.assertSilent(self.scan({"supabase/migrations/3.sql": sql}), "APP005")
 
+    def test_app017_policy_open_to_any_signed_in_user(self):
+        sql = ("create table posts (id int, user_id uuid);\nalter table posts enable row level security;\n"
+               'create policy "members read" on posts for select using (auth.uid() is not null);\n'
+               'create policy "members post" on posts for insert to authenticated with check (true);\n'
+               "create policy edit on posts for update using ( (select auth.uid()) IS NOT NULL );\n"
+               'CREATE POLICY "drop" ON "public"."posts" FOR DELETE USING (("auth"."role"() = \'authenticated\'::"text"));\n'
+               "create policy anything on profiles to authenticated using (true);\n"
+               "create policy jwt on profiles for select using ((auth.jwt() ->> 'role') = 'authenticated');\n"
+               'create policy "everyone" on posts for select to anon, authenticated using (true);\n')
+        f = self.scan({"supabase/migrations/4.sql": sql})
+        self.assertEqual(sorted((x.line, x.severity, x.params["policy"]) for x in f if x.rule == "APP017"),
+                         [(3, "low", "members read (select)"), (4, "medium", "members post (insert)"), (5, "high", "edit (update)"),
+                          (6, "high", "drop (delete)"), (7, "high", "anything (all)"), (8, "medium", "jwt (select)")])
+        self.assertEqual([(x.line, x.severity) for x in f if x.rule == "APP005"], [(9, "low")])
+
+    def test_app017_condition_that_looks_at_the_row_is_fine(self):
+        sql = ("create table posts (id int, user_id uuid, is_public bool);\nalter table posts enable row level security;\n"
+               'create policy "own" on posts for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);\n'
+               'create policy "public ones" on posts for select using (auth.uid() is not null and is_public);\n'
+               'create policy "members only" on posts as restrictive for all to authenticated using (auth.uid() is not null);\n'
+               'create policy "noop" on posts as restrictive using (true);\n'
+               "-- create policy \"old\" on posts using (auth.uid() is not null);\n")
+        f = self.scan({"supabase/migrations/5.sql": sql})
+        self.assertSilent(f, "APP017")
+        self.assertSilent(f, "APP005")
+
     def test_app016_database_function_runs_any_sql_it_receives(self):
         sql = ("create table notes (id int);\nalter table notes enable row level security;\n"
                "create or replace function public.exec_sql(query text)\nreturns json\nlanguage plpgsql\nsecurity definer\nas $$\n"

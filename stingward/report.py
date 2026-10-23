@@ -336,7 +336,7 @@ class Entry:
 PRIORITY = {
     "SEC": 1, "APP001": 1, "APP002": 1,
     "COD002": 2, "COD003": 2, "COD004": 2, "APP012": 2, "APP013": 2, "AGT002": 2, "SKL002": 2, "SKL009": 2, "SKL011": 2,
-    "APP004": 3, "APP005": 3, "APP006": 3, "APP008": 3, "APP015": 3, "APP016": 3, "COD001": 3,
+    "APP004": 3, "APP005": 3, "APP006": 3, "APP008": 3, "APP015": 3, "APP016": 3, "APP017": 3, "COD001": 3,
 }
 # APP009 e APP014 dependem de onde chega o que o modelo escreveu.
 PRIORITY_BY_SINK = {
@@ -528,6 +528,8 @@ IMPACT = {
                "Anyone with your site's public key changes the id in the request and reads, changes or deletes other users' data."),
     "APP016": ("Qualquer pessoa com a chave pública do seu site roda o SQL que quiser no seu banco: copia todos os dados, muda ou apaga tudo.",
                "Anyone with your site's public key runs any SQL on your database: copies all the data, changes or deletes everything."),
+    "APP017": ("Qualquer pessoa cria uma conta no seu app e, logada, faz o que essa política permite ({policy}) nas linhas de todos os usuários.",
+               "Anyone can create an account in your app and, once signed in, do what this policy allows ({policy}) on every user's rows."),
     "DEP004": ("Sem lockfile, uma instalação pode ficar com {pkg} {floor}, que tem falhas públicas com ataque pronto. Subir o mínimo da faixa fecha essa porta.{exploit}",
                "Without a lockfile, an install can stay on {pkg} {floor}, which has public flaws with ready-made attacks. Raising the range's minimum closes that door.{exploit}"),
     "DEP005": ("Uma falha do próprio PHP atinge o site inteiro, e a falha pública já tem ataque pronto: quem ataca não precisa descobrir nada sobre o seu código.{exploit}",
@@ -818,6 +820,7 @@ RULE_NAME = {
                "Tool argument written by the model reaches a shell, code, SQL, a path or a URL"),
     "APP015": ("Função com a chave service_role confia no visitante", "Function with the service_role key trusts the visitor"),
     "APP016": ("Função do banco que roda qualquer SQL", "Database function that runs any SQL"),
+    "APP017": ("Política do Supabase que libera para qualquer pessoa logada", "Supabase policy that allows any signed-in user"),
     "COD001": ("Consulta SQL montada com dado de fora", "SQL query built from outside input"),
     "COD002": ("Comando de shell montado com dado de fora", "Shell command built from outside input"),
     "COD003": ("Código montado com dado de fora é executado", "Code built from outside input is executed"),
