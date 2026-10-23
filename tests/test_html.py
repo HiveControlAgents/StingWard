@@ -554,6 +554,23 @@ class TextAndMarkdown(unittest.TestCase):
         pt = report.text(self.ctx, f, "pt")
         self.assertIn("Corrija primeiro:", pt)
 
+    def test_one_problem_the_review_commented_twice_takes_one_place(self):
+        class Review:  # a revisão comenta cada lugar, e o mesmo problema vira dois itens
+            def get(self, f):
+                return "confirmed", f"Seen in {f.file}."
+        f = [Finding("SEC001", "critical", "a.py", 1, {"kind_en": "GitHub token"}),
+             Finding("SEC001", "critical", "b.py", 2, {"kind_en": "GitHub token"}),
+             Finding("COD001", "high", "db.py", 4, {}), Finding("APP003", "high", "api.js", 3, {}),
+             Finding("APP011", "medium", "x.js", 5, {})]
+        entries = report.merge(f, "en", Review())
+        self.assertEqual(len(entries), 5)  # no plano e nos detalhes, um item por comentário
+        top = report.urgent(entries)
+        self.assertEqual([e.places for e in top], [["a.py:1", "b.py:2"], ["db.py:4"], ["api.js:3"]])
+        self.assertIs(top[0].anchor, entries[0])  # o link vai para o primeiro item
+        self.assertEqual(entries[0].places, ["a.py:1"])  # o item do relatório não muda
+        self.assertEqual([e.places for e in report._fix_first(entries)], [e.places for e in top])
+        self.assertEqual(report._fix_first(entries[:2]), [])  # só o mesmo problema: o bloco repetiria a lista
+
     def test_no_block_when_nothing_is_urgent_or_it_would_repeat_the_list(self):
         medium = [Finding("APP003", "medium", "api.js", 3, {})]
         one = [Finding("SEC001", "critical", "a.py", 1, {"kind_en": "GitHub token"})]
