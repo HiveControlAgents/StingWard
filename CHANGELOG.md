@@ -9,6 +9,11 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ### Changed
 - APP005 no longer reports `to authenticated using (true)`, which is now APP017 with a message that fits it, or `as restrictive` policies, which only narrow what the other policies allow.
+- The website sells the Stingward report: the US$ 29 button (R$ 99 on the Portuguese page) opens the order page at app.stingward.com in the page's language, in place of the waitlist.
+
+### Fixed
+- "Fix these first" in the report listed the same problem twice when the review commented each place on its own (an exposed key in `.env` and again in the code), which pushed a different critical problem out of the list. The places of one problem now share one slot, and the next slot goes to the next problem. The plan and the detailed findings still have one item per comment.
+- The printed report no longer leaves a nearly blank page when the summary runs past its page: the plan starts right below it instead of on a new page.
 
 ## [0.1.10] - 2026-10-23
 

@@ -5,6 +5,7 @@ abrem com o que corrigir primeiro. JSON e SARIF continuam com um registro por ac
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 import string
@@ -307,6 +308,7 @@ class Entry:
         self.title, self.why, self.fix = title, why, fix
         self.status, self.comment = status, comment  # da revisão humana; vazio sem revisão
         self.findings = [finding]
+        self.anchor = self  # o item que o relatório numera; em "corrija primeiro", o item junto aponta para o primeiro
 
     @property
     def params(self):
@@ -396,14 +398,28 @@ def _first_place(entry):
 
 
 def urgent(entries, n=3):
-    """Os primeiros itens críticos ou altos que ainda são para fazer: o que corrigir antes de tudo."""
-    return [e for e in entries if e.status in TODO and SEV_RANK[e.severity] >= SEV_RANK["high"]][:n]
+    """Os primeiros itens críticos ou altos que ainda são para fazer: o que corrigir antes de tudo.
+
+    Com revisão, o mesmo problema em dois lugares pode virar dois itens, um por comentário. Aqui eles ocupam um
+    lugar só, com os lugares juntos, para a vaga seguinte ir para outro problema."""
+    out, alike = [], {}
+    for e in entries:
+        if e.status not in TODO or SEV_RANK[e.severity] < SEV_RANK["high"]:
+            continue
+        key = (e.rule, e.severity, e.title)
+        if key in alike:
+            alike[key].findings += e.findings
+        elif len(out) < n:
+            alike[key] = copy.copy(e)
+            alike[key].findings = list(e.findings)
+            out.append(alike[key])
+    return out
 
 
 def _fix_first(entries):
     # Se a lista inteira cabe no bloco, ele só repetiria os itens logo abaixo.
     top = urgent(entries)
-    return top if len(entries) > len(top) else []
+    return top if sum(len(e.findings) for e in entries) > sum(len(e.findings) for e in top) else []
 
 
 # Esforço aproximado para corrigir, por regra ou pelo prefixo dela. Regra nova sem entrada cai no padrão.
