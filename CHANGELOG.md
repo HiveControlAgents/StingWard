@@ -4,6 +4,18 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-23
+
+### Added
+- The plugin installs in Codex too, from the same marketplace: `codex plugin marketplace add HiveControlAgents/StingWard` then `codex plugin add stingward@stingward`. The READMEs, the website and SECURITY.md say how to install and update it there, and the README FAQ says how to use the skill in another agent that reads `SKILL.md` skills.
+- `stingward agents` also reads the plugins Codex installed (`~/.codex/plugins`) and the skills in `~/.agents/skills`, the folder Codex and other agents load skills from.
+
+### Changed
+- The skill's instructions work in agents other than Claude Code: where `${CLAUDE_SKILL_DIR}` is left as written, the agent uses the folder the skill was loaded from, and when the agent's sandbox blocks the dependency check (Codex blocks the network by default), it runs the same command once more with network access, which the user approves, instead of reporting the dependencies as checked.
+
+### Fixed
+- `stingward agents` gave Stingward's own installed plugin an F: the copy in the plugin cache comes with the tests and demo projects, full of fake keys and vulnerable code on purpose. When the copy's engine matches the running Stingward file for file and its plugin manifests are the published ones, its engine, tests and demos are skipped; its skill and manifests are still audited. Any other file in it (a hook, an MCP server, another skill, a changed engine file) means the whole copy is audited as before.
+
 ## [0.1.9] - 2026-10-23
 
 ### Added

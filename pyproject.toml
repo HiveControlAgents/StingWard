@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stingward"
-version = "0.1.9"
+version = "0.1.10"
 description = "Security check for AI-built projects, Claude Code skills and MCP servers"
 readme = "README.md"
 license = "Apache-2.0"

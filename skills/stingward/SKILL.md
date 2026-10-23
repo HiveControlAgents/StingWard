@@ -10,7 +10,7 @@ Audits the user's own project, or a skill/plugin/MCP server they are about to in
 
 ## Run it
 
-Use the launcher next to this file (it falls back to a `stingward` install on PATH). Type each command exactly as written: only these forms are pre-approved (any other command needs the user's approval), and `-I` keeps Python from importing anything from the folder being checked.
+Use the launcher next to this file (it falls back to a `stingward` install on PATH). Type each command exactly as written: in Claude Code only these forms are pre-approved (any other command needs the user's approval; agents such as Codex ask for every command), and `-I` keeps Python from importing anything from the folder being checked.
 
 | User wants | Command |
 |---|---|
@@ -18,7 +18,7 @@ Use the launcher next to this file (it falls back to a `stingward` install on PA
 | Check a skill or MCP server before installing | `python3 -I ${CLAUDE_SKILL_DIR}/scripts/run.py --format json --fail-on never skill -- <path-or-github-url>` |
 | Check the agent setup on this machine | `python3 -I ${CLAUDE_SKILL_DIR}/scripts/run.py agents --format json --fail-on never` |
 
-`${CLAUDE_SKILL_DIR}` is the folder this file is in; if it was not replaced by a path, use the base directory this skill was loaded from. Keep `skill --` right before the skill's path or URL, so nothing in it is read as an option, and put any other option right after `run.py` (after `--` it would be read as the path). If `python3` is not found (common on Windows), use `py -3` or `python` in its place. Add `--offline` only if the network is unavailable; then dependencies are not checked and you must say so. If the user wants a report to keep or hand over, add `--html stingward-report.html`: one file with the summary, a fix plan and the code excerpt of each finding, secrets masked, that prints to PDF. Only package names and versions leave the machine (to api.osv.dev, api.first.org, www.cisa.gov and services.nvd.nist.gov); source code never does.
+`${CLAUDE_SKILL_DIR}` is the folder this file is in: Claude Code replaces it with the path, and in Codex or any agent that leaves it as is, use the folder this SKILL.md was loaded from. Keep `skill --` right before the skill's path or URL, so nothing in it is read as an option, and put any other option right after `run.py` (after `--` it would be read as the path). If `python3` is not found (common on Windows), use `py -3` or `python` in its place. Add `--offline` only if the network is unavailable; then dependencies are not checked and you must say so. If the user wants a report to keep or hand over, add `--html stingward-report.html`: one file with the summary, a fix plan and the code excerpt of each finding, secrets masked, that prints to PDF. Only package names and versions leave the machine (to api.osv.dev, api.first.org, www.cisa.gov and services.nvd.nist.gov); source code never does.
 
 ## Report back
 
@@ -27,7 +27,7 @@ Use the launcher next to this file (it falls back to a `stingward` install on PA
    - medium at worst: "Install only after reading the items below."
    - otherwise: "Nothing serious found. Still read the code: no tool catches everything."
    - but if files were left unread (`not_read.too_big` is not empty or `not_read.truncated` is `true`) and nothing is critical or high, say instead "Incomplete audit: ..., so this does not show the skill is safe. Read what was left out before you install it.", naming the files in `not_read.too_big` (they were over the size limit) or saying that reading stopped at the file limit. The grade stays the same.
-2. Dependencies were checked only when `sources.osv` is `true`. If `sources.packages` is above 0 and `sources.osv` is missing, say that dependencies were not checked: `sources.osv_error` means OSV.dev did not answer (run it again later), and no error means it ran offline. If both `sources.osv` and `sources.osv_error` are set, OSV.dev answered only in part: say the dependency check is incomplete and give the message in `sources.osv_error`.
+2. Dependencies were checked only when `sources.osv` is `true`. If `sources.packages` is above 0 and `sources.osv` is missing, say that dependencies were not checked: `sources.osv_error` means OSV.dev did not answer (run it again later), and no error means it ran offline. If `sources.osv_error` says the connection was not permitted or the network is blocked, the agent's sandbox stopped it (Codex blocks the network by default): run the same command once more with network access, which the user approves, and report from that run. If both `sources.osv` and `sources.osv_error` are set, OSV.dev answered only in part: say the dependency check is incomplete and give the message in `sources.osv_error`.
 3. Group findings by what the user has to do, worst first. For each, give where it is (`file:line`), why it matters in one sentence and the fix in one sentence. Skip `low` items unless the user asks, but say how many there are.
 4. Never print, quote or paste a secret value, even partially. Refer to it by type and location only. If the user asks to see it, point them to the file and line.
 5. For leaked keys, the fix always includes revoking the key with the provider. Removing it from the code is not enough once it was committed.

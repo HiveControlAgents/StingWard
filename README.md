@@ -32,6 +32,7 @@ Lots of people now ship apps, Claude Code skills and MCP servers written with AI
 | Where | How |
 |---|---|
 | **Claude Code** | `/plugin marketplace add HiveControlAgents/StingWard` then `/plugin install stingward@stingward`, and ask *"is my project secure?"* or *"can I install github.com/x/y?"* |
+| **Codex** | `codex plugin marketplace add HiveControlAgents/StingWard` then `codex plugin add stingward@stingward`, and ask the same questions. Codex asks you before the dependency check goes online |
 | **Terminal** | `pipx install stingward` (or `uvx stingward`, or `npx stingward` with Python 3.9+ installed), then run `stingward` in your project |
 | **GitHub** | Add the [Action](#github-action): it comments on every PR, fills the Security tab and re-checks daily |
 
@@ -164,6 +165,8 @@ STINGWARD_ONLINE=1 python -m unittest discover -s tests -t .    # also hits the 
 **How is it different from `npm audit`, Dependabot or a secret scanner?** Those each cover one piece. Stingward puts dependencies, secrets and the mistakes specific to AI-built apps, agents, skills and MCP servers in one report, written for the person who built the project, and can audit a skill before you install it.
 
 **Why does `npx stingward` need Python?** The engine is a single pure-Python package with no dependencies; the npm package is a thin launcher so JavaScript users can run it without `pip`. On Windows, `npx` does not find the `.bat` shims of pyenv-win: install Python from python.org, or use `pip install stingward`.
+
+**Does it work in Codex or other agents?** Yes. In Codex, install the plugin as in the [Quick start](#quick-start). Codex blocks the network by default, so it asks you once before the dependency check reaches OSV.dev; say yes, or the dependencies go unchecked. For another agent that reads `SKILL.md` skills, copy the `skills/stingward` folder into its skills folder and install the command line with `pipx install stingward`, which the skill uses when the engine is not next to it.
 
 **Can it check a private repository or a skill on my disk?** Yes. Point it at a folder, or at `owner/repo` with your usual git credentials.
 
