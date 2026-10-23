@@ -1,5 +1,5 @@
 {
-  "links": {"audit_checkout": "", "team_waitlist": ""},
+  "links": {"audit_checkout": "", "audit_waitlist": {"en": "https://tally.so/r/NqpxlW", "pt": "https://tally.so/r/RWGQDP"}, "team_waitlist": ""},
 
   "pt": {
     "html_lang": "pt-BR",
@@ -142,6 +142,7 @@
     "audit_per": "pagamento único",
     "audit_note": "No Brasil, em reais. Fora do Brasil, US$ 29. A Hotmart mostra o valor certo antes de você pagar.",
     "audit_buy": "Pedir o relatório",
+    "audit_waitlist": "Entrar na lista de espera",
     "audit_gets_h": "O que você recebe",
     "audit_gets": [
       "Relatório em PDF com nota de A a F e um resumo para quem não é da área",
@@ -350,6 +351,7 @@
     "audit_per": "one payment",
     "audit_note": "",
     "audit_buy": "Get the report",
+    "audit_waitlist": "Join the waitlist",
     "audit_gets_h": "What you get",
     "audit_gets": [
       "A PDF report with an A to F grade and a summary for non-experts",

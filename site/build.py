@@ -49,7 +49,7 @@ HREFLANG = {"en": "en", "pt": "pt-BR"}
 # The addresses the site had before English moved to the root, already shared, as old folder: (language, new folder).
 # Pages cannot redirect, so each old folder gets a page that sends the visitor on (see moved()).
 MOVED = {"en": ("en", "."), "en/example": ("en", "example"), "exemplo": ("pt", "pt/exemplo")}
-LINKS = ("audit_checkout", "team_waitlist")
+LINKS = ("audit_checkout", "audit_waitlist", "team_waitlist")
 LEGAL = ("terms", "privacy", "refund")  # folder names in each language's folder; the report service links to them
 SUPPORT = "support@stingward.com"
 HTTPS = re.compile(r"https://[^\s\"'<>\\]+")
@@ -172,18 +172,27 @@ def copy_button(t, command, cls="button"):
 
 
 def links(text):
-    """The checkout and waitlist addresses from text.json. Empty means not open yet; anything else must be https."""
+    """The checkout and waitlist addresses from text.json. Empty means not open yet; anything else must be https.
+    An address can also be given per language, as {"en": ..., "pt": ...}, for a form written in each language."""
     given = text.get("links", {})
     for key in LINKS:
         url = given.get(key, "")
-        if not isinstance(url, str) or url and not HTTPS.fullmatch(url):
-            raise SystemExit(f"site/text.json: links.{key} must be empty or an https:// address, not {url!r}")
+        urls = url.items() if isinstance(url, dict) else [(None, url)]
+        for lang, one in urls:
+            if lang is not None and lang not in PAGE_DIR or not isinstance(one, str) or one and not HTTPS.fullmatch(one):
+                raise SystemExit(f"site/text.json: links.{key} must be empty, an https:// address or one per language,"
+                                 f" not {url!r}")
     return {key: given.get(key, "") for key in LINKS}
+
+
+def link_for(url, lang):
+    """The address of one language's page, from a value of links()."""
+    return url.get(lang, "") if isinstance(url, dict) else url
 
 
 def offer(url, label, soon, cls="button", buy=False):
     """A buy or sign-up button. Until its address exists it is a plain label, so nothing on the page takes payment.
-    buy: the button to the buy page, which app.js gives the label of the ad the visitor came from."""
+    buy: the button to the buy page or its waitlist, which app.js gives the label of the ad the visitor came from."""
     if url:
         return f'<a class="{cls}" href="{e(url)}"{" data-buy" if buy else ""}>{e(label)}</a>'
     return f'<span class="{cls} button--soon" role="link" aria-disabled="true">{e(soon)}</span>'
@@ -312,7 +321,7 @@ class Page:
 
     def __init__(self, lang, t, demo, online, tests, urls=None):
         self.lang, self.t, self.demo, self.online, self.tests = lang, t, demo, online, tests
-        self.urls = urls or dict.fromkeys(LINKS, "")
+        self.urls = {key: link_for(url, lang) for key, url in (urls or dict.fromkeys(LINKS, "")).items()}
         self.root = "" if PAGE_DIR[lang] == "." else link_to(".", PAGE_DIR[lang])
         self.sample_href = link_to(SAMPLE[lang], PAGE_DIR[lang])
         self.sample_ai_href = link_to(SAMPLE_AI[lang], PAGE_DIR[lang])
@@ -522,7 +531,11 @@ class Page:
 
     def offers(self):
         t, urls = self.t, self.urls
-        return {"audit_button": offer(urls["audit_checkout"], t["audit_buy"], t["soon"], buy=True),
+        if urls["audit_checkout"] or not urls["audit_waitlist"]:
+            audit = offer(urls["audit_checkout"], t["audit_buy"], t["soon"], buy=True)
+        else:  # not on sale yet: the button takes the visitor to the waitlist instead
+            audit = offer(urls["audit_waitlist"], t["audit_waitlist"], t["soon"], buy=True)
+        return {"audit_button": audit,
                 "soon_button": offer(urls["team_waitlist"], t["soon_button"], t["soon"]),
                 "audit_gets": "\n".join(f"<li>{e(x)}</li>" for x in t["audit_gets"]),
                 "audit_not": "\n".join(f"<li>{e(x)}</li>" for x in t["audit_not"])}

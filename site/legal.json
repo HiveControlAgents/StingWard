@@ -2,7 +2,7 @@
   "en": {
     "label": "Legal",
     "home": "Back to Stingward",
-    "updated": "Last updated: October 22, 2026.",
+    "updated": "Last updated: October 23, 2026.",
     "copy": "© 2026 Isaque Moutta.",
     "pages": {
       "terms": {
@@ -117,7 +117,8 @@
                 "The order: when it was made and paid, its status, the report language, the grade, Hotmart's code for the payment with the offer, the amount and the country chosen at checkout, when you confirmed that the app is yours and that you accept the terms, and the label of the ad or post you came from, if any, which also goes to Hotmart with the payment.",
                 "The project you send, as a zip file or one GitHub repository.",
                 "The report and the findings it is built from, with secrets masked.",
-                "Technical logs of errors and order events. They name the order, not your code, your email or your link."
+                "Technical logs of errors and order events. They name the order, not your code, your email or your link.",
+                "If you join the waitlist: your email, the tool you built your app with if you say, and the label of the ad or post you came from, if any, to email you the day the report opens."
               ],
               "We never see your card or bank details: they go to Hotmart."
             ]
@@ -144,7 +145,8 @@
                 "Anthropic: the automatic review of masked excerpts, with its AI model, in the United States.",
                 "Resend: sending the emails, in the United States.",
                 "GitHub: the repository download, only if you connect one. GitHub also hosts this website and may log visitors' IP addresses for security.",
-                "Cloudflare: the stingward.com domain and the emails you send to support@stingward.com."
+                "Cloudflare: the stingward.com domain and the emails you send to support@stingward.com.",
+                "Tally: the waitlist form, in the European Union."
               ],
               "Most of these servers are in the United States. Where the law asks for it, the transfer relies on the standard contractual clauses these companies offer. We do not sell your data or use it for advertising."
             ]
@@ -163,6 +165,7 @@
                 "The report, the findings, your email address and the order link: 30 days after the report or the refund. Then they are deleted.",
                 "An order that was never paid: 2 days.",
                 "Technical logs: 30 days.",
+                "The waitlist: until we email you that the report is open, then it is deleted within 30 days.",
                 "After that, a record of the order stays without your email (dates, status, grade, Hotmart's code for the payment and the ad label), for as long as tax and accounting rules require."
               ]
             ]
@@ -170,7 +173,7 @@
           [
             "Why we use it",
             [
-              "To make and deliver the report you bought (performing the contract), to keep the records that tax law requires (legal obligation), and to keep the service secure and fix errors (legitimate interest)."
+              "To make and deliver the report you bought (performing the contract), to email you when the report opens if you joined the waitlist (your consent, which you can withdraw by writing to us), to keep the records that tax law requires (legal obligation), and to keep the service secure and fix errors (legitimate interest)."
             ]
           ],
           [
@@ -242,7 +245,7 @@
   "pt": {
     "label": "Informações legais",
     "home": "Voltar ao Stingward",
-    "updated": "Última atualização: 22 de outubro de 2026.",
+    "updated": "Última atualização: 23 de outubro de 2026.",
     "copy": "© 2026 Isaque Moutta.",
     "pages": {
       "terms": {
@@ -357,7 +360,8 @@
                 "O pedido: quando foi feito e pago, a situação, o idioma do relatório, a nota, o código da Hotmart para o pagamento com a oferta, o valor e o país escolhido no pagamento, quando você confirmou que o app é seu e que aceita os termos, e a etiqueta do anúncio ou post de onde você veio, se houver, que também vai para a Hotmart com o pagamento.",
                 "O projeto que você envia, em zip ou como um repositório do GitHub.",
                 "O relatório e os achados que o formam, com os segredos mascarados.",
-                "Registros técnicos de erros e de eventos do pedido. Eles citam o pedido, não o seu código, o seu e-mail nem o seu link."
+                "Registros técnicos de erros e de eventos do pedido. Eles citam o pedido, não o seu código, o seu e-mail nem o seu link.",
+                "Se você entra na lista de espera: seu e-mail, a ferramenta com que criou o app, se você disser, e a etiqueta do anúncio ou post de onde veio, se houver, para avisar por e-mail no dia em que o relatório abrir."
               ],
               "Nunca vemos os dados do seu cartão ou do seu banco: eles vão para a Hotmart."
             ]
@@ -384,7 +388,8 @@
                 "Anthropic: a revisão automática dos trechos mascarados, com o modelo de IA dela, nos Estados Unidos.",
                 "Resend: o envio dos e-mails, nos Estados Unidos.",
                 "GitHub: o download do repositório, só se você conectar um. O GitHub também hospeda este site e pode registrar o IP de quem visita, por segurança.",
-                "Cloudflare: o domínio stingward.com e os e-mails enviados para support@stingward.com."
+                "Cloudflare: o domínio stingward.com e os e-mails enviados para support@stingward.com.",
+                "Tally: o formulário da lista de espera, na União Europeia."
               ],
               "A maioria desses servidores fica nos Estados Unidos. Quando a lei pede, a transferência se apoia nas cláusulas contratuais padrão que essas empresas oferecem. Não vendemos seus dados nem os usamos para publicidade."
             ]
@@ -403,6 +408,7 @@
                 "O relatório, os achados, seu e-mail e o link do pedido: 30 dias depois do relatório ou do reembolso. Depois são apagados.",
                 "Um pedido que nunca foi pago: 2 dias.",
                 "Registros técnicos: 30 dias.",
+                "A lista de espera: até avisarmos por e-mail que o relatório abriu. Depois ela é apagada em até 30 dias.",
                 "Depois disso, fica um registro do pedido sem o seu e-mail (datas, situação, nota, código da Hotmart para o pagamento e a etiqueta do anúncio), pelo tempo que as regras fiscais e contábeis exigem."
               ]
             ]
@@ -410,7 +416,7 @@
           [
             "Por que usamos",
             [
-              "Para fazer e entregar o relatório que você comprou (execução do contrato), para guardar os registros que a lei fiscal exige (obrigação legal) e para manter o serviço seguro e corrigir erros (legítimo interesse)."
+              "Para fazer e entregar o relatório que você comprou (execução do contrato), para avisar por e-mail quando o relatório abrir, se você entrou na lista de espera (seu consentimento, que você pode retirar escrevendo para nós), para guardar os registros que a lei fiscal exige (obrigação legal) e para manter o serviço seguro e corrigir erros (legítimo interesse)."
             ]
           ],
           [
