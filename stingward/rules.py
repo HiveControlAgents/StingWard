@@ -222,6 +222,39 @@ RULES = {
                "page, a file, an issue, an email) can hide instructions that change what it writes here. {detail}",
                "{fix}"),
     },
+    "APP015": {
+        "group": "app",
+        "pt": ("Função usa a chave service_role e confia no que o visitante manda",
+               "Com a chave service_role a função passa por cima do RLS. Ela usa um valor que veio da requisição para escolher o "
+               "registro e não confere quem está chamando, então qualquer pessoa troca o id e lê, muda ou apaga os dados de outra "
+               "pessoa. Deixar o verify_jwt ligado não resolve: a chave anon que está no seu site já é um token válido.",
+               "Leia o usuário do token antes de tudo: const {{ data: {{ user }} }} = await supabase.auth.getUser(token), com o token "
+               "do header Authorization. Recuse o pedido se não houver usuário e use user.id no lugar do id que veio na "
+               "requisição. Ou crie o cliente com a chave anon e o header Authorization, para o RLS valer."),
+        "en": ("Function uses the service_role key and trusts what the visitor sends",
+               "With the service_role key the function skips RLS. It uses a value from the request to pick the record and never "
+               "checks who is calling, so anyone can change the id and read, change or delete someone else's data. Keeping "
+               "verify_jwt on does not help: the anon key in your site is already a valid token.",
+               "Read the user from the token first: const {{ data: {{ user }} }} = await supabase.auth.getUser(token), with the token "
+               "from the Authorization header. Reject the request when there is no user and use user.id instead of the id the "
+               "request sent. Or create the client with the anon key and the Authorization header, so RLS applies."),
+    },
+    "APP016": {
+        "group": "app",
+        "pt": ("Função do banco roda qualquer SQL que recebe: {func}",
+               "A função é security definer: roda com os poderes do dono do banco e passa por cima do RLS. No Supabase, função "
+               "no esquema public pode ser chamada com supabase.rpc() por qualquer pessoa que tenha a chave anon, que está no "
+               "seu site. Quem chamar roda o SQL que quiser: lê, muda ou apaga o banco inteiro.",
+               "Apague a função. Se ela for mesmo necessária, troque o SQL livre por uma função com parâmetros para cada consulta, "
+               "use security invoker ou tire o acesso: revoke execute on function {func} from public, anon, authenticated;"),
+        "en": ("Database function runs any SQL it receives: {func}",
+               "The function is security definer: it runs with the database owner's rights and skips RLS. In Supabase, a function "
+               "in the public schema can be called with supabase.rpc() by anyone who has the anon key, which is in your site. "
+               "Whoever calls it runs any SQL they want: read, change or delete the whole database.",
+               "Drop the function. If you really need it, replace the free-form SQL with one function per query that takes "
+               "parameters, use security invoker, or remove access: revoke execute on function {func} from public, anon, "
+               "authenticated;"),
+    },
     # ------------------------------------------------------------------ falhas no código
     "COD001": {
         "group": "code",
@@ -579,6 +612,8 @@ STANDARDS = {
     "APP012": ["CWE-502", "CWE-829", "LLM04:2026"],
     "APP013": ["CWE-94", "LLM03:2026", "ASI05"],
     "APP014": ["LLM03:2026"],
+    "APP015": ["CWE-639", "CWE-862"],
+    "APP016": ["CWE-89", "CWE-250"],
     "COD001": ["CWE-89"],
     "COD002": ["CWE-78"],
     "COD003": ["CWE-94", "CWE-95"],

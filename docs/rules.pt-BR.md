@@ -38,6 +38,8 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [APP012](#app012) | Carregar o modelo pode executar código | 🟠 |
 | [APP013](#app013) | Agente pode executar o que o modelo escrever | 🟠 |
 | [APP014](#app014) | Argumento que o modelo escreve na ferramenta chega a shell, código, SQL, caminho ou URL | 🔴 |
+| [APP015](#app015) | Função com a chave service_role confia no visitante | 🟠 |
+| [APP016](#app016) | Função do banco que roda qualquer SQL | 🔴 |
 | [COD001](#cod001) | Consulta SQL montada com dado de fora | 🟠 |
 | [COD002](#cod002) | Comando de shell montado com dado de fora | 🔴 |
 | [COD003](#cod003) | Código montado com dado de fora é executado | 🔴 |
@@ -212,7 +214,7 @@ Regras do Firestore ou Storage com `allow read, write: if true` (ou a data do mo
 <a id="app009"></a>
 ### APP009 · Saída do modelo chega a código, shell, SQL ou HTML
 
-A resposta de uma chamada de LLM (OpenAI, Anthropic, Gemini, LangChain, AI SDK...) chega a `eval`/`exec`, um comando de shell, um template, uma consulta SQL, ou `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. Uma injeção de prompt em qualquer coisa que o modelo leu vira código no seu servidor ou script no navegador de quem usa o app. Crítico quando a resposta é executada, alto para SQL, médio para HTML. `JSON.parse`, `json.loads` e DOMPurify cortam a cadeia. Os argumentos que o modelo escreve numa ferramenta ficam com a [APP014](#app014).
+A resposta de uma chamada de LLM (OpenAI, Anthropic, Gemini, LangChain, AI SDK...) chega a `eval`/`exec`, um comando de shell, um template, uma consulta SQL (também por `supabase.rpc('exec_sql', ...)`), ou `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `unsafe_allow_html`. Uma injeção de prompt em qualquer coisa que o modelo leu vira código no seu servidor ou script no navegador de quem usa o app. Crítico quando a resposta é executada, alto para SQL, médio para HTML. `JSON.parse`, `json.loads` e DOMPurify cortam a cadeia. Os argumentos que o modelo escreve numa ferramenta ficam com a [APP014](#app014).
 
 **Como corrigir:** trate a saída do modelo como entrada de usuário: peça JSON e valide, mapeie para uma lista fixa de ações, passe os argumentos do shell em lista, rode o SQL com um usuário só de leitura e limpe o HTML com DOMPurify.
 **Padrões:** `CWE-1426` · `LLM10:2026`
@@ -228,7 +230,7 @@ Um valor da requisição escrito no meio das instruções: `{"role": "system", "
 <a id="app011"></a>
 ### APP011 · Rota de IA sem login e sem limite de uso
 
-Uma rota do servidor que chama um modelo (`app/api/**/route.ts` do Next.js, server action, handler do Express ou Hono, rota do FastAPI ou Flask) sem sinal de login nem limite de pedidos no arquivo, no `middleware.ts`, num `app.use(...)` global ou nas dependências do router. Qualquer pessoa chama em loop na sua conta. Não entra em skills, testes e exemplos.
+Uma rota do servidor que chama um modelo (`app/api/**/route.ts` do Next.js, server action, handler do Express ou Hono, Edge Function do Supabase, rota do FastAPI ou Flask), com SDK ou com `fetch` na API do provedor (OpenAI, Anthropic, Gemini, o AI Gateway do Lovable, OpenRouter...), sem sinal de login nem limite de pedidos no arquivo, no `middleware.ts`, num `app.use(...)` global ou nas dependências do router. Qualquer pessoa chama em loop na sua conta. Não entra em skills, testes e exemplos.
 
 **Como corrigir:** exija usuário logado, limite pedidos por usuário ou IP (`@upstash/ratelimit`, `express-rate-limit`, `slowapi`), defina `max_tokens` e ponha um limite de gasto no painel do provedor.
 **Padrões:** `CWE-306` · `CWE-770` · `LLM06:2026`
@@ -262,6 +264,22 @@ O CWE e o item do OWASP Top 10 for Agentic Applications dependem do sink: CWE-78
 
 **Como corrigir:** trate todo argumento de ferramenta como entrada não confiável: rode programas com lista de argumentos e sem shell, passe valores de SQL como parâmetro, mantenha caminhos dentro de uma pasta (resolva e confira o prefixo), aceite só os hosts de que a ferramenta precisa e tipe os argumentos do jeito mais estreito possível (número, enum, padrão). Se a ferramenta precisa rodar comandos, peça confirmação a quem usa antes de cada um.
 **Padrões:** `LLM03:2026`
+
+<a id="app015"></a>
+### APP015 · Função com a chave service_role confia no visitante
+
+Uma Edge Function do Supabase (`supabase/functions/*/index.ts`, o formato que o Lovable gera) ou outra rota do servidor cria um cliente com a chave `service_role`, que passa por cima do RLS, e deixa um valor da requisição escolher o registro: um filtro como `.eq('user_id', userId)`, um `update`, `delete`, `upsert` ou `rpc`, um caminho do Storage, ou uma chamada de `auth.admin` como `deleteUser(body.userId)`. Nada no arquivo confere quem está chamando, então qualquer pessoa troca o id e lê, muda ou apaga os dados de outra pessoa. `verify_jwt = true` não resolve: a chave anon do site já é um token válido. Não entra quando o arquivo lê o usuário do token (`auth.getUser`, `getClaims`, `getServerSession`, `auth()`...), confere a assinatura de um webhook (`constructEvent`, `stripe-signature`, `svix`...) ou um segredo do servidor (`CRON_SECRET`, `x-api-key`), quando o cliente usa a chave anon e o header `Authorization` de quem chama, para insert e para consulta com valores fixos. Não entra em skills.
+
+**Como corrigir:** leia o usuário do token antes de tudo (`const { data: { user } } = await supabase.auth.getUser(token)`, com o token do header `Authorization`), recuse o pedido se não houver usuário e use `user.id` no lugar do id que veio na requisição. Ou crie o cliente com a chave anon e o header `Authorization`, para o RLS valer.
+**Padrões:** `CWE-639` · `CWE-862`
+
+<a id="app016"></a>
+### APP016 · Função do banco que roda qualquer SQL
+
+Uma migração cria uma função `security definer` no esquema `public` que roda SQL montado com um dos seus parâmetros de texto: `execute query`, `execute 'select ... (' || query || ')'` ou `execute format('... %s', p_where)`. Ela roda com os poderes do dono e passa por cima do RLS, e no Supabase qualquer pessoa com a chave anon chama a função por `supabase.rpc()`, então quem chama roda o SQL que quiser no banco. Crítico. Não entram funções `security invoker`, `format()` só com `%I` e `%L`, parâmetros que não são texto, funções fora do `public` e funções com `execute` revogado de `anon` e de `authenticated`.
+
+**Como corrigir:** apague a função. Se ela for mesmo necessária, escreva uma função com parâmetros para cada consulta, use `security invoker` ou rode `revoke execute on function nome(text) from public, anon, authenticated;`.
+**Padrões:** `CWE-89` · `CWE-250`
 
 ## Código
 
