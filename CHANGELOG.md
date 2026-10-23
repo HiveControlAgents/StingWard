@@ -4,7 +4,13 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+- APP015, function with the `service_role` key trusts the visitor: a Supabase Edge Function (the shape Lovable builds) or another server route that creates a client with the `service_role` key, which skips RLS, and lets a value from the request pick the record (`.eq('user_id', body.userId)`, `update`, `delete`, `rpc`, a Storage path, `auth.admin.deleteUser(id)`) without checking who is calling. Anyone changes the id and reads or deletes someone else's data. Not reported when the file reads the user from the token, checks a webhook signature or a server secret, or uses the anon key with the caller's `Authorization` header.
+- APP016, database function that runs any SQL: a migration with a `security definer` function in `public` that runs SQL built from a text parameter (`execute query`, `format('... %s', p)`). Anyone with the anon key runs any SQL through `supabase.rpc()`. Critical. Not reported for `security invoker`, `%I`/`%L` only, or when `execute` is revoked from `anon` and `authenticated`.
+
 ### Changed
+- APP011 now sees AI routes that call the provider with `fetch` instead of an SDK (OpenAI, Anthropic, Gemini, the Lovable AI Gateway, OpenRouter, Groq, Mistral and others), as Lovable's Edge Functions do. A CORS header list (`'authorization, x-client-info, apikey, content-type'`) and the `Authorization` header sent to the provider no longer count as a login check.
+- APP009 and COD001 follow model output and request data into `supabase.rpc('exec_sql', ...)` and other RPC calls whose name says they run SQL.
 - The website's terms, privacy policy and refund policy, in both languages, say how the paid report is now sold: we sell it and Hotmart takes the payment, sends the receipt and sends refunds, with links to Hotmart's purchase terms and privacy policy. The refund policy adds that Hotmart's terms let a buyer ask for a refund at refund.hotmart.com within 15 days, and its own window for a report that is not as described is 15 days too. The Portuguese offer says Hotmart shows the right amount before paying.
 
 ## [0.1.8] - 2026-10-22

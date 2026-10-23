@@ -2703,6 +2703,34 @@ _JS_AUTH = re.compile(r"(?i)\b(?:getServerSession|getSession|currentUser|getUser
                       r"\b(?:ctx|context)\s*\.\s*(?:user|session|auth)\b|@clerk/|next-auth|@auth/|firebase-admin|better-auth")
 _JS_LIMIT = re.compile(r"(?i)rate.?limit|ratelimit|limiter|throttl|@upstash/ratelimit|express-rate-limit|rate-limiter-flexible|"
                        r"arcjet|@unkey/|botid|checkBotId|turnstile|recaptcha|hcaptcha|captcha|quota|credits?\s*[<>]=?|usage\s*[<>]=?")
+# Endereço da API de um provedor de IA: a função que chama o modelo com fetch, sem SDK (como as que o Lovable gera).
+_LLM_HOST = re.compile(r"https://(?:api\.openai\.com|api\.anthropic\.com|generativelanguage\.googleapis\.com|"
+                       r"ai\.gateway\.lovable\.dev|openrouter\.ai/api|api\.groq\.com|api\.mistral\.ai|api\.deepseek\.com|"
+                       r"api\.x\.ai|api\.together\.xyz|api\.perplexity\.ai|api\.cohere\.(?:ai|com)|api\.fireworks\.ai)/")
+# Lista de headers do CORS ('authorization, x-client-info, apikey, content-type') e header que a rota manda para outro
+# serviço ({ Authorization: `Bearer ${KEY}` }, { 'x-api-key': KEY }): nenhum dos dois confere quem chama a rota.
+_NOT_LOGIN = re.compile(r"""(['"`])[^'"`\n]*\b(?:x-client-info|content-type|apikey)\b[^'"`\n]*\1|"""
+                        r"""(?<![\w$.-])['"]?(?:authorization|x-api-key)['"]?\s*:\s*[^,}\n]*""", re.I)
+# Supabase: o cliente criado com a chave service_role ignora o RLS. Quem chama a função só é conhecido se o código
+# conferir o token (auth.getUser), a assinatura de um webhook ou um segredo do servidor.
+_SB_SERVICE = re.compile(r"(?i)service_?role|SERVICE_KEY")
+_SB_CLIENT = re.compile(r"(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;\n]{1,80})?=\s*createClient\s*"
+                        r"(?:<[^<>()]*>\s*)?\(")
+_SB_ADMIN_NAME = re.compile(r"(?i)admin|service")
+_SB_CALLER = re.compile(r"\.\s*auth\s*\.\s*(?:getUser|getClaims|getSession)\s*\(|(?<![\w$.])(?:jwtVerify|verifyJwt|"
+                        r"verifyToken|verifyIdToken|getServerSession|getSession|currentUser|getAuth|requireAuth|withAuth|"
+                        r"requireUser|getCurrentUser|getUserFromRequest|validateRequest|auth)\s*\(|\bjwt\s*\.\s*verify\s*\(|"
+                        r"constructEvent(?:Async)?\s*\(|verifyWebhook|verifySignature|timingSafeEqual|createHmac\s*\(|"
+                        r"\bsubtle\s*\.\s*verify\s*\(")
+_SB_CALLER_TEXT = re.compile(r"(?i)stripe-signature|x-hub-signature|svix-signature|webhook-signature|x-signature|"
+                             r"x-webhook-secret|x-api-key|CRON_SECRET|WEBHOOK_SECRET|@clerk/|next-auth|@auth/|better-auth")
+# Onde o valor escolhe o registro: filtro, update, delete, upsert, rpc, arquivo do Storage e as funções de admin do Auth.
+_SB_SINK = re.compile(r"\.\s*(?:eq|neq|match|in|filter|or|contains|like|ilike|is|gt|gte|lt|lte|update|upsert|delete|rpc|"
+                      r"download|remove|createSignedUrls?|move|copy|upload)\s*\(|"
+                      r"\.\s*auth\s*\.\s*admin\s*\.\s*[A-Za-z_$][\w$]*\s*\(")
+_JS_RPC = re.compile(r"\.\s*rpc\s*\(")
+# supabase.rpc('exec_sql', { query }): função do banco que roda o SQL que recebe.
+_SB_RPC_SQL = re.compile(r"(?i)(?:exec|execute|run|raw)_?(?:sql|query)|sql|query|exec")
 
 
 class _OutOfBudget(Exception):
@@ -2741,6 +2769,8 @@ class _Js:
         self.ext = ext or {}
         self.seeds.update((k, set(v)) for k, v in self.ext.items())
         self.ximports = {}
+        self.sb_admins = None    # clientes do Supabase criados com a chave service_role (APP015)
+        self.sb_done = False
 
     def line(self, pos):
         return line_of(self.text, pos)
@@ -2753,7 +2783,7 @@ class _Js:
 
     def llm_file(self):
         if self._llm_file is None:
-            self._llm_file = bool(_JS_LLM_IMPORT.search(self.code))
+            self._llm_file = bool(_JS_LLM_IMPORT.search(self.code) or _LLM_HOST.search(self.code))
         return self._llm_file
 
     # ------------------------------------------------------------------ texto
@@ -3112,6 +3142,10 @@ class _Js:
         if any(t in mask for t in ("fetch", "got", "ky", "needle", "axios", "superagent", "http")) and \
                 (req and self.server or tool and not self.use_client):
             rules.append((_JS_FETCH, self.fetch))
+        if src and "rpc" in mask:
+            rules.append((_JS_RPC, self.rpc))
+        if req and self.server and self.sb_trusting():
+            rules.append((_SB_SINK, self.sb_trust))
         if req:
             if any(t in mask for t in ("redirect", "Redirect", "location", "router")):
                 rules.append((_JS_REDIRECT, self.redirect))
@@ -3567,6 +3601,84 @@ class _Js:
             else:
                 self.out.add("COD001", sev, self.line(m.start(1)), _src(origin))
 
+    def rpc(self, m):
+        """supabase.rpc('exec_sql', { query }): o SQL inteiro vai para uma função do banco que o executa."""
+        args = self.args(m.end())
+        if len(args) < 2:
+            return
+        name = self.code[args[0][0]:args[0][1]].strip()
+        if len(name) < 3 or name[0] not in "'\"`" or name[-1] != name[0] or not _SB_RPC_SQL.fullmatch(name[1:-1]):
+            return
+        o = self.origins(*args[1])
+        ln = self.line(m.start())
+        if LLM in o:
+            self.out.add("APP009", "high", ln, _llm_params("sql"))
+        elif TOOL in o:
+            self.out.tool("sql", True, ln, "high")
+        elif REQ in o:
+            self.out.add("COD001", "high", ln, _src(REQ))
+
+    def sb_trusting(self):
+        """O arquivo usa um cliente com a chave service_role e não confere quem chama (APP015)."""
+        code, mask = self.code, self.mask
+        if self.sb_admins is None:
+            keys = {m.group(1) for m in re.finditer(r"(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=([^;\n]{0,300})",
+                                                    code) if _SB_SERVICE.search(m.group(2))}
+            self.sb_admins = set()
+            for m in _SB_CLIENT.finditer(mask):
+                args = self.args(m.end())
+                key = self.code[args[1][0]:args[1][1]] if len(args) > 1 else ""
+                if _SB_SERVICE.search(key) or any(w in keys for w in _IDENT.findall(key)):
+                    self.sb_admins.add(m.group(1))
+        if not self.sb_admins and not _SB_ADMIN_NAME.search(mask):
+            return False
+        if _JS_ROUTE_PATH.search(self.rel) and "supabase/functions/" not in self.rel and self.project.get("next_auth"):
+            return False
+        return not (_SB_CALLER.search(mask) or _SB_CALLER_TEXT.search(code))
+
+    def chain_root(self, pos):
+        """O nome que começa a cadeia de métodos antes de pos: supabase em supabase.from('t').select().eq(...)."""
+        mask, j, root = self.mask, pos - 1, None
+        lo, depth = max(0, pos - 3000), 0
+        while j >= lo:
+            c = mask[j]
+            if c in ")]}":
+                depth += 1
+            elif c in "([{":
+                if not depth:
+                    break
+                depth -= 1
+            elif not depth and c in ";=,:?":
+                break
+            elif not depth and c in _WORDCH:
+                k = j
+                while k > lo and mask[k - 1] in _WORDCH:
+                    k -= 1
+                after = mask[j + 1:j + 40].lstrip()
+                before = mask[max(0, k - 40):k].rstrip()
+                if after[:1] == "." or after[:2] == "?.":
+                    if before[-1:] != ".":
+                        root = mask[k:j + 1]
+                elif mask[k:j + 1] in ("await", "return", "yield", "const", "let", "var"):
+                    break
+                j = k - 1
+                continue
+            j -= 1
+        return root
+
+    def sb_trust(self, m):
+        """Valor da requisição escolhe o registro numa consulta do cliente service_role (APP015)."""
+        if self.sb_done:
+            return
+        root = self.chain_root(m.start())
+        if not root or not (root in self.sb_admins or _SB_ADMIN_NAME.search(root)):
+            return
+        for a, b in self.args(m.end()):
+            if REQ in self.origins(a, b):
+                self.sb_done = True
+                self.out.add("APP015", "high", self.line(m.start()))
+                return
+
     def command(self, m):
         recv, fn = m.group(1), m.group(2)
         if recv:
@@ -4013,7 +4125,8 @@ class _Js:
                 self.out.add("COD011", "medium", self.line(m.start()), {"algo": algo})
 
     def unbounded(self):
-        if not self.llm_file() or _JS_AUTH.search(self.code) or _JS_LIMIT.search(self.code):
+        code = _NOT_LOGIN.sub(" ", self.code) if "uthorization" in self.code or "-api-key" in self.code else self.code
+        if not self.llm_file() or _JS_AUTH.search(code) or _JS_LIMIT.search(code):
             return
         route = _JS_ROUTE_PATH.search(self.rel)
         express = _JS_SERVER_ROUTE.search(self.code)
@@ -4023,7 +4136,8 @@ class _Js:
         if route and self.project.get("next_auth") or (express and self.project.get("js_global_auth")) or \
                 (action and self.project.get("next_auth")):
             return
-        call = _JS_LLM_CALL.search(self.mask) or (re.search(r"""['"]@?langchain""", self.code) and _JS_LC_CALL.search(self.mask))
+        call = _JS_LLM_CALL.search(self.mask) or (re.search(r"""['"]@?langchain""", self.code) and _JS_LC_CALL.search(self.mask)) or \
+            (_JS_FETCH.search(self.mask) and _LLM_HOST.search(self.code))
         if not call:
             return
         h = _JS_ROUTE_FN.search(self.mask) if route else express if express else None
@@ -4225,7 +4339,7 @@ def analyze(ctx):
                     out.append(Finding("COD006", "medium", rel, line_of(text, m.start()), {"what": m.group(1) + "=0"}))
         if ctx.mode == "skill":
             # Numa skill, o que importa é o que roda na máquina de quem instala; rota pública e prompt de sistema não.
-            out = [f for f in out if f.rule not in ("APP010", "APP011")]
+            out = [f for f in out if f.rule not in ("APP010", "APP011", "APP015")]
         # Rota de exemplo não fica no ar, e token de teste não protege nada.
         out = [f for f in out if not (f.rule in ("APP011", "COD010") and TESTISH.search(f.file))]
     ctx._cache[_CACHE_KEY] = out
