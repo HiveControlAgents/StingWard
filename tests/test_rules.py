@@ -387,6 +387,37 @@ class AppRules(RuleTest):
                           (6, "high", "drop (delete)"), (7, "high", "anything (all)"), (8, "medium", "jwt (select)")])
         self.assertEqual([(x.line, x.severity) for x in f if x.rule == "APP005"], [(9, "low")])
 
+    def test_reads_of_a_table_with_email_or_phone_are_high(self):
+        files = {
+            "supabase/migrations/1.sql": (
+                "create table profiles (\n  id uuid primary key references auth.users(id),\n  full_name text,\n"
+                "  email text not null,\n  email_confirmed_at timestamptz,\n  constraint email_ok check (email like '%@%')\n);\n"
+                "alter table profiles enable row level security;\n"
+                "create table leads (id int, phone_number varchar(20), whatsapp_verified boolean);\n"
+                "alter table leads enable row level security;\n"
+                "create table teams (id int, name text);\nalter table teams enable row level security;\n"
+                "create table posts (id int, title text, author_email_verified boolean);\nalter table posts enable row level security;\n"),
+            "supabase/migrations/2.sql": ("alter table if exists public.teams add column if not exists name_slug text, add column "
+                                          '"Celular" text;\n'),
+            "supabase/migrations/3.sql": (
+                'create policy "members read" on profiles for select using (auth.uid() is not null);\n'
+                'create policy "public read" on leads for select using (true);\n'
+                'create policy "team read" on teams for select to authenticated using (true);\n'
+                'create policy "post read" on posts for select using (auth.uid() is not null);\n'
+                'create policy "members post" on profiles for insert to authenticated with check (true);\n'),
+        }
+        f = self.scan(files)
+        got = sorted((x.rule, x.params["policy"], x.severity) for x in f if x.rule in ("APP005", "APP017"))
+        self.assertEqual(got, [("APP005", "public read (select)", "high"), ("APP017", "members post (insert)", "medium"),
+                               ("APP017", "members read (select)", "high"), ("APP017", "post read (select)", "low"),
+                               ("APP017", "team read (select)", "high")])
+        by = {x.params["policy"]: x for x in f if x.rule in ("APP005", "APP017")}
+        self.assertEqual(texts("APP017", "en", by["members read (select)"].params)[1].rsplit(". ", 1)[1],
+                         "The table has email: contact data, the first thing people copy.")
+        self.assertIn("A tabela tem celular: dado de contato", texts("APP017", "pt", by["team read (select)"].params)[1])
+        self.assertIn("A tabela tem phone_number:", texts("APP005", "pt", by["public read (select)"].params)[1])
+        self.assertTrue(texts("APP017", "en", by["post read (select)"].params)[1].endswith("rows included."))
+
     def test_app017_condition_that_looks_at_the_row_is_fine(self):
         sql = ("create table posts (id int, user_id uuid, is_public bool);\nalter table posts enable row level security;\n"
                'create policy "own" on posts for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);\n'

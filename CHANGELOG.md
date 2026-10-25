@@ -4,6 +4,9 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Changed
+- APP005 and APP017 rate a read as high when the table has a text column for an email or a phone number (`email`, `phone_number`, `whatsapp`, `celular`...), in `create table` or `alter table ... add column`: anyone who can read the whole table can copy everyone's contact data, usually the first thing people scrape. The finding names the columns. Other reads stay medium for sensitive tables and low for the rest.
+
 ## [0.1.11] - 2026-10-23
 
 ### Added

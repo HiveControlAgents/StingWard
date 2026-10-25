@@ -192,7 +192,7 @@ A table created in a migration without `enable row level security`. With the pub
 <a id="app005"></a>
 ### APP005 · Supabase policy that allows everyone
 
-A policy with `using (true)` or `with check (true)` for everyone, signed in or not (`to authenticated` is [APP017](#app017)). High for writes, medium for reads of sensitive tables, low for other reads. Not reported for `as restrictive` policies, which only narrow what the other policies allow.
+A policy with `using (true)` or `with check (true)` for everyone, signed in or not (`to authenticated` is [APP017](#app017)). High for writes and for reads of a table with an email or phone column, medium for reads of other sensitive tables, low for other reads. Not reported for `as restrictive` policies, which only narrow what the other policies allow.
 
 **Fix:** use a real condition, such as `auth.uid() = user_id`.
 **Standards:** `CWE-284`
@@ -294,7 +294,7 @@ A migration creates a `security definer` function in the `public` schema that ru
 <a id="app017"></a>
 ### APP017 · Supabase policy that allows any signed-in user
 
-A policy whose whole condition only checks that someone is signed in: `using (auth.uid() is not null)`, `(select auth.uid()) is not null`, `auth.role() = 'authenticated'`, `auth.jwt() is not null`, or `to authenticated` with `using (true)`. On Supabase anyone can sign up with the public anon key (with anonymous sign-ins on, without even an email), so every account can do what the policy allows on every row, other users' rows included. High for update, delete and all, medium for insert and for reads of sensitive tables, low for other reads. Not reported for `as restrictive` policies, or when the condition also looks at the row (`auth.uid() = user_id`, `auth.uid() is not null and is_public`).
+A policy whose whole condition only checks that someone is signed in: `using (auth.uid() is not null)`, `(select auth.uid()) is not null`, `auth.role() = 'authenticated'`, `auth.jwt() is not null`, or `to authenticated` with `using (true)`. On Supabase anyone can sign up with the public anon key (with anonymous sign-ins on, without even an email), so every account can do what the policy allows on every row, other users' rows included. High for update, delete and all, and for reads of a table with an email or phone column (in `create table` or `alter table ... add column`), medium for insert and for reads of other sensitive tables, low for other reads. Not reported for `as restrictive` policies, or when the condition also looks at the row (`auth.uid() = user_id`, `auth.uid() is not null and is_public`).
 
 **Fix:** check whose row it is, with a condition such as `auth.uid() = user_id`. If every member really shares the table, allow only reads and turn off new sign-ups in Supabase's Auth settings.
 **Standards:** `CWE-862` · `CWE-639`

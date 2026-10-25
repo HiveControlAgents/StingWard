@@ -192,7 +192,7 @@ Tabela criada numa migration sem `enable row level security`. Com a chave anon, 
 <a id="app005"></a>
 ### APP005 · Política do Supabase que libera para todos
 
-Política com `using (true)` ou `with check (true)` para todo mundo, logado ou não (`to authenticated` é a [APP017](#app017)). Alta para escrita, média para leitura de tabela sensível, baixa para outras leituras. Não entram políticas `as restrictive`, que só estreitam o que as outras liberam.
+Política com `using (true)` ou `with check (true)` para todo mundo, logado ou não (`to authenticated` é a [APP017](#app017)). Alta para escrita e para leitura de tabela com coluna de e-mail ou telefone, média para leitura de outra tabela sensível, baixa para outras leituras. Não entram políticas `as restrictive`, que só estreitam o que as outras liberam.
 
 **Como corrigir:** use uma condição de verdade, como `auth.uid() = user_id`.
 **Padrões:** `CWE-284`
@@ -294,7 +294,7 @@ Uma migração cria uma função `security definer` no esquema `public` que roda
 <a id="app017"></a>
 ### APP017 · Política do Supabase que libera para qualquer pessoa logada
 
-Política cuja condição inteira só confere se há alguém logado: `using (auth.uid() is not null)`, `(select auth.uid()) is not null`, `auth.role() = 'authenticated'`, `auth.jwt() is not null`, ou `to authenticated` com `using (true)`. No Supabase qualquer pessoa cria conta com a chave anon, que é pública (com o login anônimo ligado, nem precisa de e-mail), então qualquer conta faz o que a política permite em todas as linhas, inclusive nas de outros usuários. Alta para update, delete e all, média para insert e para leitura de tabela sensível, baixa para outras leituras. Não entram políticas `as restrictive` nem condições que também olham a linha (`auth.uid() = user_id`, `auth.uid() is not null and is_public`).
+Política cuja condição inteira só confere se há alguém logado: `using (auth.uid() is not null)`, `(select auth.uid()) is not null`, `auth.role() = 'authenticated'`, `auth.jwt() is not null`, ou `to authenticated` com `using (true)`. No Supabase qualquer pessoa cria conta com a chave anon, que é pública (com o login anônimo ligado, nem precisa de e-mail), então qualquer conta faz o que a política permite em todas as linhas, inclusive nas de outros usuários. Alta para update, delete e all, e para leitura de tabela com coluna de e-mail ou telefone (no `create table` ou em `alter table ... add column`), média para insert e para leitura de outra tabela sensível, baixa para outras leituras. Não entram políticas `as restrictive` nem condições que também olham a linha (`auth.uid() = user_id`, `auth.uid() is not null and is_public`).
 
 **Como corrigir:** confira de quem é a linha, com uma condição como `auth.uid() = user_id`. Se a tabela é mesmo compartilhada por todos os membros, deixe só a leitura liberada e desligue os cadastros novos nas configurações de Auth do Supabase.
 **Padrões:** `CWE-862` · `CWE-639`
