@@ -36,6 +36,9 @@ _SQL_COMMENT = re.compile(r"--[^\n]*|/\*.*?\*/", re.S)
 _CREATE_TABLE = re.compile(r"\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(?P<name>(?:\"?\w+\"?\.)?\"?\w+\"?)", re.I)
 _ENABLE_RLS = re.compile(
     r"\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?P<name>(?:\"?\w+\"?\.)?\"?\w+\"?)\s+enable\s+row\s+level\s+security", re.I)
+_ADD_COLUMNS = re.compile(
+    r"\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?P<name>(?:\"?\w+\"?\.)?\"?\w+\"?)\s+(?P<body>add\b[^;]*);", re.I)
+_ADD_COLUMN = re.compile(r"\badd\s+(?:column\s+)?(?:if\s+not\s+exists\s+)?(?P<col>\"?\w+\"?\s+\w+)", re.I)
 _POLICY = re.compile(
     r"\bcreate\s+policy\s+(?P<pname>\"[^\"]+\"|\w+)\s+on\s+(?P<table>[\w.\"]+)(?P<body>[^;]*);", re.I)
 
@@ -93,6 +96,47 @@ _SENSITIVE_TABLE = re.compile(
     r"user|profile|account|order|payment|message|customer|subscription|invoice|billing|card|address|email|phone|"
     r"session|token|secret|key|credential|password|auth|private|admin|member|employee|patient|medical|health|"
     r"transaction|wallet|chat|conversation|contact|lead|salar|payroll|bank|document|upload|file|note")
+
+# Coluna de texto com e-mail ou telefone: é o que se copia primeiro de uma tabela que qualquer um lê.
+_CONTACT_COL = re.compile(r"(?:^|_)(?:e_?mail|phone|mobile|telephone|whatsapp|telefone|celular)(?:_|$)")
+_TEXT_COL = re.compile(r"text|varchar|character|char|citext")
+_COL_SKIP = {"constraint", "primary", "foreign", "unique", "check", "exclude", "like"}
+
+
+def _contact_cols(cols) -> list:
+    """Nomes das colunas de texto com e-mail ou telefone, de pedaços como 'email text not null'."""
+    out = []
+    for col in cols:
+        words = col.split()
+        if len(words) < 2 or words[0].lower() in _COL_SKIP:
+            continue
+        name = words[0].strip('"').lower()
+        if _CONTACT_COL.search(name) and _TEXT_COL.match(words[1].lower().rsplit(".", 1)[-1].strip('"')) and name not in out:
+            out.append(name)
+    return out
+
+
+def _table_cols(text: str, start: int) -> list:
+    """As definições de coluna entre os parênteses do create table que começa em start."""
+    i = text.find("(", start)
+    if i < 0 or text[start:i].strip():
+        return []
+    depth, part, parts = 0, [], []
+    for ch in text[i + 1:]:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth == 0:
+                break
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(part))
+            part = []
+        else:
+            part.append(ch)
+    parts.append("".join(part))
+    return parts
+
 
 _CODE_EXT = (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".svelte", ".astro", ".py", ".go", ".rb", ".php", ".cs", ".java", ".kt")
 
@@ -167,6 +211,7 @@ def check(ctx):
     supabase = None
     sql_tables, sql_rls = {}, set()
     sql_funcs, revoked = [], set()
+    contact, reads = {}, []  # tabela -> colunas de contato; leituras liberadas, que sobem se a tabela tem contato
     for rel in ctx.files:
         if not is_text_source(rel):
             continue
@@ -231,6 +276,12 @@ def check(ctx):
                 t = _table(m["name"])
                 if t.startswith("public.") and t not in sql_tables:
                     sql_tables[t] = (rel, line_of(clean, m.start()))
+                for c in _contact_cols(_table_cols(clean, m.end())):
+                    contact.setdefault(t, []).append(c)
+            for m in _ADD_COLUMNS.finditer(clean):
+                t = _table(m["name"])
+                for c in _contact_cols(x["col"] for x in _ADD_COLUMN.finditer(m["body"])):
+                    contact.setdefault(t, []).append(c)
             for m in _ENABLE_RLS.finditer(clean):
                 sql_rls.add(_table(m["name"]))
             for m in _POLICY.finditer(clean):
@@ -242,10 +293,15 @@ def check(ctx):
                 op = op.group(1) if op else "all"
                 params = {"policy": f"{m['pname'].strip(chr(34))} ({op})"}
                 if "true" in conds and not _only_signed_in_role(body):
-                    out.append(Finding("APP005", _policy_sev(op, m["table"]), rel, line_of(clean, m.start()), params))
+                    f = Finding("APP005", _policy_sev(op, m["table"]), rel, line_of(clean, m.start()), params)
                 elif any(c == "true" or c in _SIGNED_IN for c in conds):
                     sev = "medium" if op == "insert" else _policy_sev(op, m["table"])
-                    out.append(Finding("APP017", sev, rel, line_of(clean, m.start()), params))
+                    f = Finding("APP017", sev, rel, line_of(clean, m.start()), params)
+                else:
+                    continue
+                out.append(f)
+                if op == "select":
+                    reads.append((f, _table(m["table"])))
             for m in _FUNC.finditer(clean):
                 params = _text_params(m["params"])
                 if params and _DEFINER.search(m["head"] + " " + m["tail"]) and _runs_param(m["body"], params):
@@ -258,6 +314,15 @@ def check(ctx):
         # Só o esquema public sai pela API do Supabase; revoke para anon e authenticated fecha a porta.
         if _table(name).startswith("public.") and _table(name) not in revoked:
             out.append(Finding("APP016", "critical", rel, ln, {"func": name}))
+    for f, t in reads:
+        cols = sorted(set(contact.get(t, [])))
+        if cols:
+            # E-mail e telefone são o que se copia primeiro: ler a tabela inteira já é vazamento de dado pessoal.
+            f.severity = "high"
+            pt = " e ".join([", ".join(cols[:-1]), cols[-1]] if len(cols) > 1 else cols)
+            en = " and ".join([", ".join(cols[:-1]), cols[-1]] if len(cols) > 1 else cols)
+            f.params.update(contact_pt=f" A tabela tem {pt}: dado de contato, o primeiro a ser copiado.",
+                            contact_en=f" The table has {en}: contact data, the first thing people copy.")
     for t, (rel, ln) in sql_tables.items():
         if t not in sql_rls:
             out.append(Finding("APP004", "high", rel, ln, {"table": t.split(".", 1)[1]}))
