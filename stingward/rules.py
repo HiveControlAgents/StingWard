@@ -99,6 +99,21 @@ RULES = {
                "This key bypasses every access rule (RLS). With it anyone can read and delete the whole database.{local}",
                "Rotate it in the Supabase dashboard (Settings > API), keep service_role server-side only and use the anon key in the frontend."),
     },
+    "SEC005": {
+        "group": "secrets",
+        "pt": ("{kind} de carteira de cripto no código{note}",
+               "Quem tiver isso controla a carteira: move tudo o que ela guarda e, com a EIP-7702, ainda assina a entrega dela a "
+               "um contrato próprio. Basta acesso ao repositório, ao histórico do git ou ao site publicado para copiar.",
+               "Uma chave de carteira não se revoga: passe tudo agora para uma carteira nova. Guarde a chave nova só no servidor, "
+               "num cofre de segredos ou num serviço de chaves (KMS, carteira MPC), nunca no código nem numa variável "
+               "NEXT_PUBLIC_ ou VITE_, e apague a antiga do histórico do git."),
+        "en": ("Crypto wallet {kind} in code{note}",
+               "Whoever has it controls the wallet: they can move everything it holds and, with EIP-7702, also sign it over to a "
+               "contract of their own. Access to the repository, its git history or the published site is enough to copy it.",
+               "A wallet key cannot be revoked: move everything to a new wallet now. Keep the new key only on the server, in a "
+               "secret manager or a key service (KMS, an MPC wallet), never in the code or in a NEXT_PUBLIC_ or VITE_ variable, "
+               "and purge the old one from the git history."),
+    },
     # ------------------------------------------------------------------ apps feitos com IA
     "APP001": {
         "group": "app",
@@ -407,6 +422,21 @@ RULES = {
                "Use a function made for passwords: bcrypt, scrypt or Argon2 (argon2-cffi and bcrypt in Python, bcrypt in Node), or "
                "leave login to an auth provider."),
     },
+    "COD012": {
+        "group": "code",
+        "pt": ("Carteira de cripto entregue a um contrato escolhido por {source} (EIP-7702, {sink})",
+               "A autorização EIP-7702 faz a sua carteira passar a rodar o código do contrato indicado. Quem escolhe o contrato "
+               "aponta para um dele e leva tudo o que a carteira guarda numa transação só, sem precisar da chave.",
+               "Delegue só para um contrato fixo no código, que você conhece e auditou (a implementação oficial da sua carteira "
+               "inteligente, por exemplo), e confira o endereço numa lista antes de assinar. Nunca assine a autorização com um "
+               "endereço que vem do pedido, do modelo ou de uma ferramenta."),
+        "en": ("Crypto wallet handed to a contract chosen by {source} (EIP-7702, {sink})",
+               "An EIP-7702 authorization makes your wallet run the code of the contract it names. Whoever picks the contract "
+               "points it at their own and takes everything the wallet holds in a single transaction, without ever needing the key.",
+               "Delegate only to a contract fixed in your code that you know and have audited (your smart wallet's official "
+               "implementation, for example), and check the address against an allowlist before signing. Never sign the "
+               "authorization with an address that comes from the request, the model or a tool."),
+    },
     # ------------------------------------------------------------------ agentes, skills, MCP
     "AGT001": {
         "group": "agents",
@@ -623,6 +653,7 @@ STANDARDS = {
     "SEC002": ["CWE-538"],
     "SEC003": ["CWE-538"],
     "SEC004": ["CWE-798"],
+    "SEC005": ["CWE-798", "CWE-522"],
     "APP001": ["CWE-200", "LLM02:2026"],
     "APP002": ["CWE-522", "LLM02:2026"],
     "APP003": ["CWE-942"],
@@ -651,6 +682,7 @@ STANDARDS = {
     "COD009": ["CWE-601"],
     "COD010": ["CWE-338"],
     "COD011": ["CWE-916"],
+    "COD012": ["CWE-829", "CWE-284"],
     "AGT001": ["CWE-250", "LLM03:2026", "ASI03"],
     "AGT002": ["CWE-494", "ASI05"],
     "AGT003": ["CWE-494", "LLM04:2026", "ASI04", "AST07"],

@@ -42,6 +42,13 @@ DISCORD = "https://discord.com/api/webhooks/" + "112233445566778899/" + "Zq8W3e5
 SLACK_HOOK = "https://hooks.slack.com/services/" + "T01ABCDEF/B02GHIJKL/" + "q8W3e5R7t9Y1u3I5o7P9a1S3"
 URL_PW = "postgres://app:" + "S3cr3tPassw0rd" + "@db.internal:5432/app"
 LINEAR = "lin_api_" + "Zq8W3e5R7t9Y1u3I5o7P9a1S3d5F7g9H0jK2"
+EVM_KEY = "32c8c0744a7e4c16" + "7354842bdad2b662" + "4942e856a80e5dc9" + "45ebf4a74a338742"
+HARDHAT_KEY = "ac0974bec39a17e3" + "6ba4a6b4d238ff94" + "4bacb478cbed5efc" + "ae784d7bf4f2ff80"  # conta 0 do Hardhat
+SEED = " ".join(["legal", "winner", "thank", "year", "wave", "sausage", "worth", "useful", "legal", "winner", "thank",
+                 "yellow"])  # vetor de teste da BIP-39: soma de verificação válida
+JUNK = " ".join(["test"] * 11 + ["junk"])  # frase das contas de teste do Hardhat e do Anvil
+SOL_B58 = "JonhFnaJQTneBkc9KN4hYE17znFgDLUd" + "y8iViC9h8RasLeMRXnLogPpFjUDZ9KwK" + "dUEJeo7kx67RHoJLATdpWxvT"
+SOL_BYTES = ", ".join(str((i * 37 + 11) % 256) for i in range(64))
 
 
 def jwt(payload):
@@ -261,6 +268,56 @@ class SecretRules(RuleTest):
         f = self.scan({"lib/supabase.ts": f'export const sb = createClient(url, "{anon}")\nconst t = "{auth}"\n'})
         self.assertSilent(f)
 
+    def test_sec005_wallet_keys_and_recovery_phrases(self):
+        f = self.scan({
+            "src/wallet.ts": 'import { privateKeyToAccount } from "viem/accounts"\n'
+                             f'export const account = privateKeyToAccount("0x{EVM_KEY}")\n',
+            "scripts/deploy.py": f'DEPLOYER_KEY = "{EVM_KEY}"\n',
+            "lib/hd.js": f'const w = ethers.Wallet.fromPhrase("{SEED}")\n',
+            "bot/config.py": f'MNEMONIC = "{SEED}"\n',
+            "src/sol.ts": f"const kp = Keypair.fromSecretKey(Uint8Array.from([{SOL_BYTES}]))\n",
+            "src/sol58.ts": f'const kp = Keypair.fromSecretKey(bs58.decode("{SOL_B58}"))\n',
+            "id.json": f"[{SOL_BYTES}]\n",
+        })
+        self.assertEqual(sorted(brief(x for x in f if x.rule.startswith("SEC"))), [
+            ("SEC005", "bot/config.py", 1, "critical"), ("SEC005", "id.json", 1, "critical"),
+            ("SEC005", "lib/hd.js", 1, "critical"), ("SEC005", "scripts/deploy.py", 1, "critical"),
+            ("SEC005", "src/sol.ts", 1, "critical"), ("SEC005", "src/sol58.ts", 1, "critical"),
+            ("SEC005", "src/wallet.ts", 2, "critical")])
+        key = next(x for x in f if x.file == "src/wallet.ts")
+        phrase = next(x for x in f if x.file == "lib/hd.js")
+        self.assertEqual(texts("SEC005", "en", key.params)[0], "Crypto wallet private key in code")
+        self.assertEqual(texts("SEC005", "pt", phrase.params)[0], "Frase de recuperação de carteira de cripto no código")
+        self.assertIn("cannot be revoked", texts("SEC005", "en", key.params)[2])
+
+    def test_sec005_hashes_signatures_and_prose_stay_silent(self):
+        bad_checksum = SEED.rsplit(" ", 1)[0] + " year"
+        f = self.scan({
+            "src/hash.ts": f'const CHECKSUM = "{EVM_KEY}"\nconst txHash = "0x{EVM_KEY}"\n',
+            "src/sig.ts": f"const url = `https://explorer.solana.com/tx/{SOL_B58}` // wallet transfer\n",
+            "src/env.ts": "const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`)\n",
+            "lib/words.js": f'const mnemonic = "{bad_checksum}"\n',
+            "README.md": "Keep your recovery phrase offline, write these twelve words down, store them\n"
+                         "keep your recovery phrase offline write these twelve words down store them\n",
+            "app/settings.py": f'SECRET_KEY = "{EVM_KEY}"\n',
+        })
+        self.assertSilent(f, "SEC005")
+        self.assertFires(f, "SEC001", "app/settings.py", 1, "high")  # chave do Flask/Django: segredo, mas não de carteira
+
+    def test_sec005_public_test_accounts_and_test_folders_are_low(self):
+        f = self.scan({
+            "hardhat.config.ts": f'export default {{ networks: {{ localhost: {{ accounts: [{{ privateKey: "0x{HARDHAT_KEY}" }}] }} }} }}\n',
+            "scripts/local.ts": f'const w = Wallet.fromPhrase("{JUNK}")\n',
+            "test/fixtures.ts": f'export const signer = new Wallet("0x{EVM_KEY}")\n',
+        })
+        self.assertEqual(sorted(brief(x for x in f if x.rule == "SEC005")), [
+            ("SEC005", "hardhat.config.ts", 1, "low"), ("SEC005", "scripts/local.ts", 1, "low"),
+            ("SEC005", "test/fixtures.ts", 1, "low")])
+        titles = {x.file: texts("SEC005", "en", x.params)[0] for x in f if x.rule == "SEC005"}
+        self.assertEqual(titles["hardhat.config.ts"], "Crypto wallet private key in code (public Hardhat/Anvil test account)")
+        self.assertEqual(titles["scripts/local.ts"], "Crypto wallet recovery phrase in code (public Hardhat/Anvil test account)")
+        self.assertEqual(titles["test/fixtures.ts"], "Crypto wallet private key in code")
+
 
 # =========================================================================== apps feitos com IA
 
@@ -278,6 +335,10 @@ class AppRules(RuleTest):
         self.assertFires(f, "APP001", "src/ai.ts", 2, "critical")
         self.assertFires(f, "APP001", "lib/db.js", 3, "critical")
         self.assertFires(f, "APP001", "app.config.ts", 1, "critical")
+        w = self.scan({"src/web3.ts": "const signer = new Wallet(import.meta.env.VITE_WALLET_KEY)\n",
+                       "lib/hd.ts": "const w = Wallet.fromPhrase(process.env.NEXT_PUBLIC_MNEMONIC)\n"})
+        self.assertFires(w, "APP001", "src/web3.ts", 1, "critical")
+        self.assertFires(w, "APP001", "lib/hd.ts", 1, "critical")
         hit = next(x for x in f if x.file == "src/ai.ts")
         self.assertEqual((hit.params["var"], hit.params["prefix"]), ("VITE_ANTHROPIC_API_KEY", "VITE_"))
         self.assertEqual(len([x for x in f if x.rule == "APP001"]), 4)

@@ -25,6 +25,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [SEC002](#sec002) | `.env` no git | 🟠 |
 | [SEC003](#sec003) | `.env` fora do `.gitignore` | 🟡 |
 | [SEC004](#sec004) | Chave `service_role` do Supabase no código | 🔴 |
+| [SEC005](#sec005) | Chave ou frase de carteira de cripto no código | 🔴 |
 | [APP001](#app001) | Segredo exposto ao navegador por prefixo público | 🔴 |
 | [APP002](#app002) | SDK de IA rodando no navegador | 🟠 |
 | [APP003](#app003) | CORS aberto para qualquer origem | 🟠 |
@@ -53,6 +54,7 @@ Padrões: [CWE](https://cwe.mitre.org), [OWASP Top 10 para Aplicações com LLM 
 | [COD009](#cod009) | Redirecionamento para um endereço que veio da requisição | 🟡 |
 | [COD010](#cod010) | Número aleatório previsível usado num segredo | 🔵 |
 | [COD011](#cod011) | Senha guardada com hash rápido | 🟡 |
+| [COD012](#cod012) | Carteira entregue a um contrato escolhido de fora (EIP-7702) | 🔴 |
 | [AGT001](#agt001) | Permissão de agente ampla demais | 🟠 |
 | [AGT002](#agt002) | Hook ou servidor MCP que baixa e executa código | 🟠 |
 | [AGT003](#agt003) | Servidor MCP sem versão fixa | 🟡 |
@@ -154,6 +156,14 @@ A chave `service_role` passa por cima do Row Level Security: quem tem a chave l�
 
 **Como corrigir:** use só no servidor, nunca no front-end, e gere outra no painel do Supabase.
 **Padrões:** `CWE-798`
+
+<a id="sec005"></a>
+### SEC005 · Chave ou frase de carteira de cripto no código
+
+Chave privada EVM (64 dígitos hexadecimais, com ou sem `0x`) ao lado de `privateKeyToAccount`, `new Wallet`, `Account.from_key` ou de um nome como `PRIVATE_KEY` ou `DEPLOYER_KEY`; frase de recuperação de 12 a 24 palavras da BIP-39 cuja última palavra traz a soma de verificação certa, numa linha que fala de mnemonic, phrase, seed ou words (uma frase comum nunca passa na soma); chave secreta da Solana (64 números, como no `id.json` da CLI, ou 87 a 88 letras em base58 ao lado de `fromSecretKey` ou `bs58.decode`; uma assinatura de transação do mesmo tamanho num link de explorador não entra). Os mesmos 64 dígitos sem esse contexto são um hash e não entram. As contas de teste públicas do Hardhat e do Anvil (a frase "test test ... junk") são baixas. Quem tem a chave move tudo o que a carteira guarda e, com a EIP-7702, ainda assina a entrega da carteira a um contrato próprio. Um `.env` no git com uma delas é alto. O valor nunca aparece: os relatórios mostram só os primeiros caracteres.
+
+**Como corrigir:** chave de carteira não se revoga: passe tudo para uma carteira nova, guarde a chave nova só no servidor (cofre de segredos, KMS ou carteira MPC) e apague a antiga do histórico do git.
+**Padrões:** `CWE-798` · `CWE-522`
 
 ## Apps feitos com IA
 
@@ -390,6 +400,14 @@ MD5, SHA-1 ou SHA-2 (`hashlib.sha256(password...)`, `createHash("sha256").update
 
 **Como corrigir:** use uma função feita para senhas: bcrypt, scrypt ou Argon2 (argon2-cffi e bcrypt no Python, bcrypt no Node), ou deixe o login com um provedor de autenticação.
 **Padrões:** `CWE-916`
+
+<a id="cod012"></a>
+### COD012 · Carteira entregue a um contrato escolhido de fora (EIP-7702)
+
+Uma autorização EIP-7702 (`signAuthorization` ou `prepareAuthorization` no viem, `wallet.authorize` no ethers, `sign_authorization` no eth-account e no web3.py) cujo endereço de contrato vem da requisição, da resposta do modelo de IA ou de um argumento de ferramenta que o modelo escolhe. A autorização assinada faz a carteira rodar o código desse contrato, então quem escolhe o endereço aponta para um contrato dele e esvazia a carteira numa transação só, sem nunca ver a chave. O esvaziamento de uma carteira quente da Binance em 29 de outubro de 2026 usou uma delegação EIP-7702 para o contrato do atacante.
+
+**Como corrigir:** delegue só para um contrato fixo no código, que você conhece e auditou, e confira o endereço numa lista antes de assinar.
+**Padrões:** `CWE-829` · `CWE-284`
 
 ## Agentes e MCP
 

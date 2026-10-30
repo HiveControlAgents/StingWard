@@ -25,6 +25,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [SEC002](#sec002) | `.env` committed to git | 🟠 |
 | [SEC003](#sec003) | `.env` missing from `.gitignore` | 🟡 |
 | [SEC004](#sec004) | Supabase `service_role` key in code | 🔴 |
+| [SEC005](#sec005) | Crypto wallet key or recovery phrase in code | 🔴 |
 | [APP001](#app001) | Secret exposed to the browser through a public env prefix | 🔴 |
 | [APP002](#app002) | AI SDK running in the browser | 🟠 |
 | [APP003](#app003) | CORS open to any origin | 🟠 |
@@ -53,6 +54,7 @@ Standards: [CWE](https://cwe.mitre.org), [OWASP Top 10 for LLM Applications 2026
 | [COD009](#cod009) | Redirect to an address taken from the request | 🟡 |
 | [COD010](#cod010) | Predictable random number used for a secret | 🔵 |
 | [COD011](#cod011) | Password hashed with a fast hash | 🟡 |
+| [COD012](#cod012) | Wallet handed to an outside-chosen contract (EIP-7702) | 🔴 |
 | [AGT001](#agt001) | Agent permission too broad | 🟠 |
 | [AGT002](#agt002) | Hook or MCP server downloads and runs remote code | 🟠 |
 | [AGT003](#agt003) | MCP server without a pinned version | 🟡 |
@@ -154,6 +156,14 @@ The `service_role` key bypasses Row Level Security: whoever has it can read and 
 
 **Fix:** keep it only on the server, never in the frontend, and rotate it in the Supabase dashboard.
 **Standards:** `CWE-798`
+
+<a id="sec005"></a>
+### SEC005 · Crypto wallet key or recovery phrase in code
+
+An EVM private key (64 hex digits, with or without `0x`) next to `privateKeyToAccount`, `new Wallet`, `Account.from_key` or a name like `PRIVATE_KEY` or `DEPLOYER_KEY`; a recovery phrase of 12 to 24 BIP-39 words whose last word carries a valid checksum, on a line that mentions a mnemonic, phrase, seed or words (an ordinary sentence never passes the checksum); a Solana secret key (64 numbers, as in the CLI's `id.json`, or 87 to 88 base58 letters next to `fromSecretKey` or `bs58.decode`; a transaction signature of the same size in an explorer link is not reported). The same 64 digits without that context are a hash and are not reported. The public Hardhat and Anvil test accounts (the "test test ... junk" phrase) are low. Whoever has the key can move everything the wallet holds and, with EIP-7702, also sign the wallet over to a contract of their own. A committed `.env` with one of these is high. The value is never printed: reports show only the first characters.
+
+**Fix:** a wallet key cannot be revoked: move everything to a new wallet, keep the new key only on the server (secret manager, KMS or an MPC wallet) and purge the old one from the git history.
+**Standards:** `CWE-798` · `CWE-522`
 
 ## AI-built apps
 
@@ -390,6 +400,14 @@ MD5, SHA-1 or SHA-2 (`hashlib.sha256(password...)`, `createHash("sha256").update
 
 **Fix:** use a function made for passwords: bcrypt, scrypt or Argon2 (argon2-cffi and bcrypt in Python, bcrypt in Node), or leave login to an auth provider.
 **Standards:** `CWE-916`
+
+<a id="cod012"></a>
+### COD012 · Wallet handed to an outside-chosen contract (EIP-7702)
+
+An EIP-7702 authorization (`signAuthorization` or `prepareAuthorization` in viem, `wallet.authorize` in ethers, `sign_authorization` in eth-account and web3.py) whose contract address comes from the request, from the AI model's answer or from a tool argument the model picks. The signed authorization makes the wallet run that contract's code, so whoever picks the address can point it at their own contract and empty the wallet in one transaction, without ever seeing the key. The drain of a Binance hot wallet on 29 October 2026 used an EIP-7702 delegation to the attacker's contract.
+
+**Fix:** delegate only to a contract fixed in the code that you know and have audited, and check the address against an allowlist before signing.
+**Standards:** `CWE-829` · `CWE-284`
 
 ## Agents and MCP
 

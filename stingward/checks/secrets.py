@@ -104,6 +104,7 @@ KIND = {
     "pinecone_key": ("chave da API do Pinecone", "Pinecone API key"), "shopify_token": ("token do Shopify", "Shopify token"),
     "notion_token": ("token da API do Notion", "Notion API token"), "linear_key": ("chave da API do Linear", "Linear API key"),
     "resend_key": ("chave da API do Resend", "Resend API key"), "clerk_key": ("chave secreta do Clerk", "Clerk secret key"),
+    "wallet_key": ("Chave privada", "private key"), "seed_phrase": ("Frase de recuperação", "recovery phrase"),
 }
 
 
@@ -299,7 +300,7 @@ def mask(text: str) -> str:
     """Texto seguro para o relatório: token vira prefixo + reticências e o resto que o _redact reconhece vira [REDACTED:tipo]."""
     for _, rx in TOKEN_PATTERNS[1:]:
         text = rx.sub(lambda m: m.group(0)[:4] + "\u2026", text)
-    text = _mask_flags(_mask_loose(text))
+    text = _mask_flags(_mask_loose(_mask_wallet(text)))
     return redact.sanitize_text(text)
 
 
@@ -353,6 +354,127 @@ def _known(line, n, rel, low_conf, out, nxt=""):
             out.append(Finding("SEC001", "low" if low_conf else "high", rel, n, _kind(kind)))
 
 
+# Carteira de cripto: a chave privada não tem prefixo de serviço (64 dígitos hexadecimais, com ou sem 0x, igual a um
+# hash), então só conta com o contexto de carteira na mesma linha. Quem tem a chave move tudo o que a carteira guarda, e
+# com a EIP-7702 também assina a entrega da carteira a um contrato (o roubo da Binance em 29/10/2026).
+_HEX64 = re.compile(r"(?<![0-9A-Za-z_])(?:0x)?([0-9a-fA-F]{64})(?![0-9A-Za-z_])")
+_WALLET_CTX = re.compile(
+    r"(?i)privateKeyToAccount|\bWallet\s*\(|\bSigningKey\s*\(|\bfrom_?key\s*\(|wallet\.add\s*\(|"
+    r"(?:private|priv|wallet|signer|deployer|owner|operator|relayer|hot_?wallet|eth|evm)[_-]?key\b|"
+    r"(?-i:\b(?:PK|ETH_PK|DEPLOYER_PK|SIGNER_PK)\b)")
+# Frase de recuperação (BIP-39): 12 a 24 palavras da lista, a última com a soma de verificação (_bip39_ok). Aqui só a
+# sequência de palavras; _phrases procura a frase dentro dela.
+_PHRASE = re.compile(r"(?<![\w])(?:[a-z]{3,8} ){11,}[a-z]{3,8}(?![\w])")
+_PHRASE_CTX = re.compile(r"(?i)mnemonic|phrase|\bseed\b|\bwords\b|HDNodeWallet")
+# Solana: a chave secreta é uma lista de 64 números (o id.json da CLI) ou o mesmo em base58, com 87 ou 88 letras.
+_SOL_ARRAY = re.compile(r"\[\s*\d{1,3}(?:\s*,\s*\d{1,3}){31,63}\s*\]")
+_SOL_B58 = re.compile(r"(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{86,88}(?![1-9A-HJ-NP-Za-km-z])")
+_SOL_FILE = re.compile(r"\s*\[\s*\d{1,3}(?:\s*,\s*\d{1,3}){63}\s*\]\s*")
+# Só o que fala de chave: uma assinatura de transação da Solana também tem 64 bytes e 88 letras em base58.
+_SOL_CTX = re.compile(r"(?i)fromSecretKey|Keypair|secret[_-]?key|private[_-]?key|wallet[_-]?secret|bs58\.decode|base58")
+# Contas de teste públicas do Hardhat e do Anvil (frase "test test ... junk"): sha256 do hexadecimal, 16 primeiros
+# dígitos. Estão na documentação de todo mundo; só valem na rede local, a não ser que alguém mande dinheiro de verdade.
+_TEST_KEYS = {
+    "bc1a50966c9e6486", "8335c55334821eef", "b26ab6529d20ebeb", "64034b44c579b335", "4d3e46eec8244d1d",
+    "0aedba9d586f34f9", "28e543d3753fc9d1", "f070994a85994785", "38e69fdd19aefeb4", "967f21586cdf1248",
+    "0b33e0132123e78d", "84bc109b3d59b017", "85bde548053aab4b", "f1513114f60e5e95", "5330d388af894c9e",
+    "a2e06155cb1a424f", "4a67d7a0d8a16d6d", "b08bdfde9930d920", "cf1fc66f853151a4", "100546a8b020a55a"}
+_TEST_PHRASES = {" ".join(["test"] * 11 + ["junk"]), " ".join(["abandon"] * 11 + ["about"])}
+_TEST_NOTE = {"note_pt": " (conta de teste pública do Hardhat/Anvil)", "note_en": " (public Hardhat/Anvil test account)"}
+
+
+def _test_key(hexkey: str) -> bool:
+    return hashlib.sha256(hexkey.lower().encode()).hexdigest()[:16] in _TEST_KEYS
+
+
+_BIP39 = {}
+
+
+def _bip39_ok(words) -> bool:
+    """Frase BIP-39 válida: 12, 15, 18, 21 ou 24 palavras da lista, e os últimos bits batem com o sha256 do resto."""
+    if len(words) not in (12, 15, 18, 21, 24):
+        return False
+    if not _BIP39:
+        from ._bip39 import WORDS
+        _BIP39.update((w, i) for i, w in enumerate(WORDS))
+    n = 0
+    for w in words:
+        if w not in _BIP39:
+            return False
+        n = n << 11 | _BIP39[w]
+    cs = len(words) // 3
+    entropy = (n >> cs).to_bytes(cs * 4, "big")
+    return hashlib.sha256(entropy).digest()[0] >> (8 - cs) == n & ((1 << cs) - 1)
+
+
+def _phrases(line: str, budget: int = 400):
+    """(início, fim) de cada frase BIP-39 válida na linha, também no meio de uma frase comum ("use as palavras ... para
+    restaurar"). budget limita as janelas testadas, para uma linha enorme de palavras não travar."""
+    out = []
+    for m in itertools.islice(_PHRASE.finditer(line), 20):
+        words = [(w.start(), w.end()) for w in re.finditer(r"[a-z]+", m.group(0))]
+        i = 0
+        while i + 12 <= len(words) and budget > 0:
+            for n in (24, 21, 18, 15, 12):
+                if i + n > len(words):
+                    continue
+                budget -= 1
+                if _bip39_ok([m.group(0)[a:b] for a, b in words[i:i + n]]):
+                    out.append((m.start() + words[i][0], m.start() + words[i + n - 1][1]))
+                    i += n
+                    break
+            else:
+                i += 1
+    return out
+
+
+def wallet_secrets(line: str):
+    """(tipo, é de teste) de cada chave de carteira ou frase de recuperação na linha. Exige o contexto de carteira:
+    64 dígitos hexadecimais sozinhos são um hash, e 12 palavras soltas são uma frase."""
+    out = []
+    if _WALLET_CTX.search(line):
+        for m in itertools.islice(_HEX64.finditer(line), 20):
+            h = m.group(1)
+            if len(set(h.lower())) >= 10 and not _PLACEHOLDER.search(h):
+                out.append(("wallet_key", _test_key(h)))
+    if _PHRASE_CTX.search(line):
+        out += [("seed_phrase", line[a:b] in _TEST_PHRASES) for a, b in _phrases(line)]
+    if _SOL_CTX.search(line):
+        for rx in (_SOL_ARRAY, _SOL_B58):
+            for m in itertools.islice(rx.finditer(line), 5):
+                if rx is _SOL_B58 and not (re.search(r"\d", m.group(0)) and re.search(r"[a-z]", m.group(0))
+                                           and re.search(r"[A-Z]", m.group(0))):
+                    continue
+                out.append(("wallet_key", False))
+    return out
+
+
+def _wallet(line, n, rel, low_conf, out):
+    for kind, test in wallet_secrets(line):
+        if test:
+            out.append(Finding("SEC005", "low", rel, n, {**_kind(kind), **_TEST_NOTE}))
+        else:
+            out.append(Finding("SEC005", "low" if low_conf else "critical", rel, n, _kind(kind)))
+        return  # um achado por linha: a mesma chave costuma aparecer duas vezes (nome e valor)
+
+
+def _mask_wallet(text: str) -> str:
+    """O relatório não mostra chave de carteira nem frase de recuperação: some o valor e fica o começo."""
+    def hide(m):
+        return m.group(0)[:4] + "…"
+    out = []
+    for line in text.split("\n"):
+        if _WALLET_CTX.search(line) or "0x" in line:
+            line = _HEX64.sub(lambda m: hide(m) if _WALLET_CTX.search(line) or m.group(0).startswith("0x") else m.group(0), line)
+        for a, b in reversed(_phrases(line)):
+            line = line[:a] + line[a:b].split(" ", 1)[0] + " …" + line[b:]
+        if _SOL_CTX.search(line):
+            line = _SOL_ARRAY.sub("[…]", line)
+        line = _SOL_B58.sub(hide, line)
+        out.append(line)
+    return "\n".join(out)
+
+
 # Valores que não são segredo: caminho de configuração (image_generation.automatic1111.api_auth), nome de variável
 # (DUCKLAKE_S3_SECRET, MOCK_ACCESS_TOKEN) e chave pública por desenho (sb_publishable_, pk_live_ e pk_test_ do Stripe).
 _NOT_SECRET = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){2,}|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|(?:sb_publishable_|pk_(?:live|test)_)\S*")
@@ -391,6 +513,9 @@ def scan_text(text: str, rel: str, generic: bool = True, sample: bool = False):
     low_conf = bool(re.search(r"(?i)(^|/)(tests?|__tests__|spec|fixtures?|examples?|mocks?|docs?)(/|$)|\.(test|spec)\.", rel))
     markdown = rel.lower().endswith((".md", ".mdx", ".mdc"))
     out, fence = [], False
+    if rel.endswith(".json") and _SOL_FILE.fullmatch(text):  # id.json da CLI da Solana: só a lista de 64 números
+        out.append(Finding("SEC005", "low" if low_conf else "critical", rel, 1, _kind("wallet_key")))
+        return out
     # split("\n") e não splitlines(): \f e \v contariam como quebra e a linha do achado sairia errada.
     lines = text.split("\n")
     for n, line in enumerate(lines, 1):
@@ -402,9 +527,11 @@ def scan_text(text: str, rel: str, generic: bool = True, sample: bool = False):
             # Linha enorme (bundle minificado): só formatos conhecidos, um achado por tipo.
             found = []
             _known(line, n, rel, low_conf, found, nxt)
+            _wallet(line, n, rel, low_conf, found)
             out += list({(f.rule, f.params.get("kind_en")): f for f in found}.values())
             continue
         _known(line, n, rel, low_conf, out, nxt)
+        _wallet(line, n, rel, low_conf, out)
         if generic:
             _generic(line, n, rel, low_conf or sample or fence, out)
     return out
@@ -440,6 +567,11 @@ def _env_has_secret(text: str) -> bool:
             continue
         if key == "DOTENV_ME" and val.startswith("me_"):  # login do dotenv-vault: baixa todos os ambientes
             return True
+        wallet = wallet_secrets(f"{key}={val}")
+        if wallet:
+            if any(not test for _, test in wallet):
+                return True
+            continue  # conta de teste pública do Hardhat/Anvil
         toks = _tokens(val)
         # A chave anon do Supabase vai para o navegador de propósito; o SEC001 também não a conta. A service_role
         # padrão do Supabase local (_demo_key) também não abre nada fora da máquina.

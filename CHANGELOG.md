@@ -4,6 +4,11 @@ All notable changes to Stingward. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+- SEC005, crypto wallet key or recovery phrase in code: an Ethereum-style private key (64 hex digits next to `privateKeyToAccount`, `new Wallet(`, `Account.from_key`, `PRIVATE_KEY`, `DEPLOYER_KEY` and similar), a recovery phrase (12 to 24 BIP-39 words whose last word carries a valid checksum, so ordinary sentences never match) and a Solana secret key (`Keypair.fromSecretKey` with 64 numbers or base58, and the CLI's `id.json`). Critical, with a fix that fits a wallet: a wallet key cannot be revoked, so the money moves to a new wallet. The public Hardhat and Anvil test accounts (`test test ... junk`) and keys under test folders are low. A committed `.env` with a wallet key or phrase counts as a secret for SEC002, and `NEXT_PUBLIC_MNEMONIC` or `VITE_WALLET_KEY` is APP001.
+- COD012, wallet handed to a contract someone else picks (EIP-7702): the contract address of an EIP-7702 authorization comes from the request, the AI model's answer or a tool argument (`signAuthorization` and `prepareAuthorization` in viem, `wallet.authorize` in ethers, `sign_authorization` in eth-account and web3.py). Whoever picks the contract points the wallet at their own and drains it in one transaction. An EIP-7702 delegation to the attacker's contract is how a Binance hot wallet was emptied on 2026-10-29. Critical. A fixed address, a constant or an environment variable stays silent.
+- Reports hide wallet keys, recovery phrases and Solana keys wherever they show a line.
+
 ### Changed
 - APP005 and APP017 rate a read as high when the table has a text column for an email or a phone number (`email`, `phone_number`, `whatsapp`, `celular`...), in `create table` or `alter table ... add column`: anyone who can read the whole table can copy everyone's contact data, usually the first thing people scrape. The finding names the columns. Other reads stay medium for sensitive tables and low for the rest.
 

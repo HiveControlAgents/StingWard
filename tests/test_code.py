@@ -903,6 +903,57 @@ class CodeRules(Checks):
         js = "const crypto = require('crypto')\nconst etag = crypto.createHash('sha256').update(body).digest('hex')\n"
         self.silent({"util.py": py, "util.js": js})
 
+    # ------------------------------------------------------------------ COD012 delegação EIP-7702
+
+    def test_cod012_wallet_delegated_to_a_contract_someone_else_picks(self):
+        viem = ("import { createWalletClient, http } from 'viem'\n"
+                "export async function POST(req: Request) {\n"
+                "  const { contract } = await req.json()\n"
+                "  const a = await client.signAuthorization({ account, contractAddress: contract })\n"
+                "  const contractAddress = new URL(req.url).searchParams.get('impl')\n"
+                "  const b = await client.prepareAuthorization({ contractAddress, nonce: 1 })\n"
+                "  return Response.json({ a, b })\n}\n")
+        ethers = (EXPRESS + "const { ethers } = require('ethers')\n"
+                  "app.post('/delegate', async (req, res) => {\n"
+                  "  res.json(await wallet.authorize({ address: req.body.impl }))\n})\n")
+        model = ("import OpenAI from 'openai'\nconst openai = new OpenAI()\n"
+                 "export async function pick(prompt) {\n"
+                 "  const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'user', content: prompt }] })\n"
+                 "  return walletClient.signAuthorization({ contractAddress: r.choices[0].message.content })\n}\n")
+        tool = ("import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'\n"
+                "const server = new McpServer({ name: 'wallet' })\n"
+                "server.tool('delegate', { contract: z.string() }, async ({ contract }) => {\n"
+                "  await walletClient.signAuthorization({ contractAddress: contract })\n"
+                "  return { content: [{ type: 'text', text: 'ok' }] }\n})\n")
+        py = (FLASK + "@app.post('/delegate')\ndef delegate():\n"
+              "    target = request.json['contract']\n"
+              "    return acct.sign_authorization({'chainId': 1, 'address': target, 'nonce': 0})\n")
+        f = run({"app/api/delegate/route.ts": viem, "server.js": ethers, "lib/pick.js": model, "mcp.js": tool, "app.py": py})
+        self.assertEqual(got(f), [("COD012", "app.py", 6, "critical"), ("COD012", "app/api/delegate/route.ts", 4, "critical"),
+                                  ("COD012", "app/api/delegate/route.ts", 6, "critical"), ("COD012", "lib/pick.js", 5, "critical"),
+                                  ("COD012", "mcp.js", 4, "critical"), ("COD012", "server.js", 5, "critical")])
+        by = {(x.file, x.line): x for x in f if x.rule == "COD012"}
+        self.assertEqual(texts("COD012", "en", by["app/api/delegate/route.ts", 4].params)[0],
+                         "Crypto wallet handed to a contract chosen by request input (EIP-7702, signAuthorization())")
+        self.assertEqual(by["server.js", 5].params["sink"], "authorize()")
+        self.assertEqual(by["lib/pick.js", 5].params["source_en"], "the AI model's answer")
+        self.assertEqual(by["mcp.js", 4].params["source_en"], "a tool argument the model picks")
+        self.assertEqual(by["app.py", 6].params["sink"], "sign_authorization()")
+
+    def test_cod012_fixed_contract_and_other_authorize_calls_stay_silent(self):
+        viem = ("const IMPL = '0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B'\n"
+                "export async function POST(req: Request) {\n"
+                "  const body = await req.json()\n"
+                "  await client.signAuthorization({ contractAddress: IMPL, nonce: body.nonce })\n"
+                "  await client.signAuthorization({ contractAddress: process.env.DELEGATE_IMPL, meta: { address: body.a } })\n"
+                "  await client.prepareAuthorization({ account, contractAddress: '0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B' })\n"
+                "  return Response.json({})\n}\n")
+        oauth = (EXPRESS + "app.post('/login', (req, res) => passport.authorize({ address: req.body.next })(req, res))\n")
+        py = (FLASK + "IMPL = '0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B'\n@app.post('/delegate')\ndef delegate():\n"
+              "    acct.sign_authorization({'chainId': request.json['chain'], 'address': IMPL, 'nonce': 0})\n"
+              "    return acct.sign_authorization(dict(address=IMPL, chainId=1, nonce=0))\n")
+        self.silent({"app/api/delegate/route.ts": viem, "auth.js": oauth, "app.py": py})
+
     # ------------------------------------------------------------------ APP009 saída do modelo
 
     def test_app009_portuguese_titles_read_right(self):

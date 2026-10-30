@@ -1,2 +1,6 @@
 Stingward
 Copyright 2026 Isaque Moutta
+
+This product includes the BIP-39 English wordlist (stingward/checks/_bip39.py) from
+https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt, by Marek Palatinus, Pavol Rusnak,
+Aaron Voisine and Sean Bowe, licensed under the BSD 2-Clause License.
