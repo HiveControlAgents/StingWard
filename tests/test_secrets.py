@@ -432,6 +432,51 @@ class Masking(Case):
                 self.assertFast(secrets._mask_loose, text, limit=0.5)
 
 
+class WalletSecrets(Case):
+    KEY = "32c8c0744a7e4c16" + "7354842bdad2b662" + "4942e856a80e5dc9" + "45ebf4a74a338742"
+    HARDHAT = "ac0974bec39a17e3" + "6ba4a6b4d238ff94" + "4bacb478cbed5efc" + "ae784d7bf4f2ff80"
+    SEED = " ".join(["legal", "winner", "thank", "year", "wave", "sausage", "worth", "useful", "legal", "winner",
+                     "thank", "yellow"])
+    SOL = "JonhFnaJQTneBkc9KN4hYE17znFgDLUd" + "y8iViC9h8RasLeMRXnLogPpFjUDZ9KwK" + "dUEJeo7kx67RHoJLATdpWxvT"
+    BYTES = ", ".join(str((i * 37 + 11) % 256) for i in range(64))
+
+    def test_reports_never_show_wallet_keys_or_phrases(self):
+        cases = {
+            f'privateKeyToAccount("0x{self.KEY}")': self.KEY[8:40],
+            f"PRIVATE_KEY={self.KEY}": self.KEY[8:40],
+            f"Bash(cast send --private-key 0x{self.KEY} 0xabc)": self.KEY[8:40],
+            f'MNEMONIC="{self.SEED}"': "winner thank year",
+            f"use the words {self.SEED} to restore": "winner thank year",
+            f"Keypair.fromSecretKey(bs58.decode('{self.SOL}'))": self.SOL[10:50],
+            f"secretKey: [{self.BYTES}]": self.BYTES[10:60],
+        }
+        for line, part in cases.items():
+            with self.subTest(line=line[:30]):
+                self.assertNotIn(part, secrets.mask(line))
+
+    def test_masking_leaves_hashes_and_prose_alone(self):
+        for line in (f'const sha256 = "{self.KEY}"', "keep your recovery phrase offline write these twelve words down store them",
+                     "git push -u origin main"):
+            with self.subTest(line=line[:30]):
+                self.assertEqual(secrets.mask(line), line)
+
+    def test_committed_env_with_a_wallet_secret(self):
+        def sev(text):
+            files = {".env": text}
+            return [f.severity for f in scan_files(files, tracked=files) if f.rule == "SEC002"]
+        self.assertEqual(sev(f"RPC_URL=http://127.0.0.1:8545\nMNEMONIC={self.SEED}\n"), ["high"])
+        self.assertEqual(sev(f"RPC_URL=http://127.0.0.1:8545\nDEPLOYER_KEY=0x{self.KEY}\n"), ["high"])
+        # A conta 0 do Hardhat só vale na rede local: o .env com ela e nada mais é de baixo risco.
+        self.assertEqual(sev(f"RPC_URL=http://127.0.0.1:8545\nPRIVATE_KEY=0x{self.HARDHAT}\n"), ["low"])
+
+    def test_wallet_detection_is_linear(self):
+        for text in ("PRIVATE_KEY=" + "ab" * 40000, "mnemonic " + "abandon " * 20000, "secretKey [" + "1," * 40000,
+                     "Keypair " + "A1b" * 30000):
+            with self.subTest(text=text[:12]):
+                self.assertFast(secrets.wallet_secrets, text, limit=0.5)
+                self.assertFast(secrets.mask, text, limit=0.5)
+
+
 # =========================================================================== .env no git
 
 def jwt(payload):

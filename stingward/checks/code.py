@@ -33,7 +33,8 @@ _PER_FILE = 40  # achados por arquivo: um arquivo gerado não enche o relatório
 _STR_PARTS = 40  # pedaços de um texto montado com += que ainda vale a pena remontar
 _PIECES = 400  # partes remontadas por texto, somando os textos montados que ele usa
 
-_SRC = {REQ: ("dados da requisição", "request input"), PARAM: ("um argumento da função", "a function argument")}
+_SRC = {REQ: ("dados da requisição", "request input"), PARAM: ("um argumento da função", "a function argument"),
+        LLM: ("a resposta do modelo de IA", "the AI model's answer"), TOOL: ("um argumento de ferramenta que o modelo escolhe", "a tool argument the model picks")}
 
 
 def _src(origin):
@@ -1247,6 +1248,7 @@ class _Py:
         self.tls(call, d, last, ln)
         self.files(call, d, last, env, fn, ln)
         self.urls(call, d, last, env, fn, ln)
+        self.delegation(call, last, env, ln)
         self.html(call, d, last, env, ln)
         self.models(call, d, last, env, ln)
         self.prompt(call, d, env, ln)
@@ -1635,6 +1637,22 @@ class _Py:
             return True
         part = self.lead_part(node, env, 0, True, True)
         return part is not None and REQ in self.origins(part, env) and not self.host_header(part)
+
+    def delegation(self, call, last, env, ln):
+        """EIP-7702 no eth-account/web3.py: sign_authorization({"address": contrato, "chainId": ..., "nonce": ...})."""
+        if last != "sign_authorization":
+            return
+        auth = _arg(call, 0, "transaction_dict", "authorization")
+        if not isinstance(auth, ast.Dict):
+            return
+        target = next((v for k, v in zip(auth.keys, auth.values)
+                       if isinstance(k, ast.Constant) and k.value in ("address", "contractAddress")), None)
+        if target is None or _const_str(target):
+            return
+        o = self.origins(target, env)
+        src = REQ if o & REQ_ANY else LLM if LLM in o else TOOL if TOOL in o else None
+        if src:
+            self.out.add("COD012", "critical", ln, dict(_src(src), sink="sign_authorization()"))
 
     def urls(self, call, d, last, env, fn, ln):
         f = call.func
@@ -2648,6 +2666,11 @@ _FS_IMPORT = re.compile(r"""from\s+['"](?:node:)?fs(?:/promises)?['"]|require\(\
 _JS_FETCH = re.compile(r"(?:fetch|got|ky|needle|ofetch|\$fetch)\s*\(|axios\s*(?:\.\s*(?:get|post|put|patch|delete|head|request))?\s*\(|"
                        r"(?:got|ky|superagent|needle)\s*\.\s*(?:get|post|put|patch|delete)\s*\(|https?\s*\.\s*(?:get|request)\s*\(")
 _JS_BARE_FETCH = re.compile(r"(?:fetch|got|ky|needle|ofetch|\$fetch)\s*\(")
+# EIP-7702: assinar a autorização entrega a carteira ao contrato indicado, que passa a gastar tudo o que ela tem (o roubo
+# da Binance em 29/10/2026 foi uma delegação assim). viem: signAuthorization/prepareAuthorization({ contractAddress });
+# ethers 6.14+: wallet.authorize({ address }).
+_JS_7702 = re.compile(r"\b(?:signAuthorization|prepareAuthorization)\s*\(|\.\s*authorize\s*\(")
+_JS_7702_KEY = re.compile(r"(?<![\w$.])(contractAddress|address)\s*(:|(?=[,}\s]))")
 _JS_REDIRECT = re.compile(r"(?:res|reply|response|ctx|c|h)\s*\.\s*redirect\s*\(|(?:NextResponse|Response)\s*\.\s*redirect\s*\(|"
                           r"(?:redirect|permanentRedirect)\s*\(|location\s*\.\s*(?:assign|replace)\s*\(|"
                           r"router\s*\.\s*(?:push|replace)\s*\(|(?:window\s*\.\s*)?location(?:\s*\.\s*href)?\s*=(?![=>])")
@@ -3146,6 +3169,8 @@ class _Js:
             rules.append((_JS_RPC, self.rpc))
         if req and self.server and self.sb_trusting():
             rules.append((_SB_SINK, self.sb_trust))
+        if (src or tool) and ("Authorization" in mask or "authorize" in mask and "ethers" in code):
+            rules.append((_JS_7702, self.delegation))
         if req:
             if any(t in mask for t in ("redirect", "Redirect", "location", "router")):
                 rules.append((_JS_REDIRECT, self.redirect))
@@ -3985,6 +4010,33 @@ class _Js:
             self.out.add("COD008", sev, self.line(m.start()), {"sink": re.sub(r"\s", "", m.group(0)).rstrip("(") + "()"})
         elif TOOL in o and not self.use_client:
             self.out.tool("url", False, self.line(m.start()))
+
+    def delegation(self, m):
+        """EIP-7702: o contrato que recebe a carteira vem da requisição, do modelo ou de um argumento de ferramenta."""
+        g = m.group(0)
+        if g.startswith(".") and "ethers" not in self.code or not g.startswith(".") and not self.lead_ok(m.start()):
+            return
+        args = self.args(m.end())
+        if not args:
+            return
+        a, b = args[0]
+        span = (a, b)
+        if self.mask[a] == "{":
+            span, depth = None, 0
+            for k in _JS_7702_KEY.finditer(self.mask, a + 1, b):
+                seg = self.mask[a + 1:k.start()]
+                if seg.count("{") + seg.count("(") + seg.count("[") != seg.count("}") + seg.count(")") + seg.count("]"):
+                    continue  # chave de um objeto de dentro
+                span = (k.end(), self.expr_end(k.end())) if k.group(2) == ":" else k.span(1)
+                if k.group(1) == "contractAddress":
+                    break
+            if span is None:
+                return
+        o = self.origins(*span)
+        src = REQ if REQ in o else LLM if LLM in o else TOOL if TOOL in o else None
+        if src:
+            sink = re.sub(r"\s", "", g).lstrip(".").rstrip("(") + "()"
+            self.out.add("COD012", "critical", self.line(m.start()), dict(_src(src), sink=sink))
 
     def redirect(self, m):
         g = m.group(0)

@@ -336,7 +336,7 @@ class Entry:
 # ou comando, que entrega o servidor ou a máquina; 3 acesso aberto aos dados; 4 o resto. No empate, a ordem da
 # varredura: regra, arquivo e linha. Por regra ou prefixo; regra sem entrada fica no fim (4).
 PRIORITY = {
-    "SEC": 1, "APP001": 1, "APP002": 1,
+    "SEC": 1, "APP001": 1, "APP002": 1, "COD012": 1,
     "COD002": 2, "COD003": 2, "COD004": 2, "APP012": 2, "APP013": 2, "AGT002": 2, "SKL002": 2, "SKL009": 2, "SKL011": 2,
     "APP004": 3, "APP005": 3, "APP006": 3, "APP008": 3, "APP015": 3, "APP016": 3, "APP017": 3, "COD001": 3,
 }
@@ -462,6 +462,8 @@ IMPACT = {
                "Every copy of the repository carries the keys in this file, including old clones and forks you no longer control."),
     "SEC003": ("Um git add descuidado publica as chaves desse arquivo junto com o código.",
                "One careless git add publishes the keys in this file along with the code."),
+    "SEC005": ("Quem copiar a chave esvazia a carteira na hora, e uma transação na blockchain não se desfaz.",
+               "Whoever copies it can empty the wallet at once, and a blockchain transaction cannot be undone."),
     "SEC004": ("Quem tiver essa chave lê, altera e apaga o banco inteiro, passando por cima de todas as regras de acesso.",
                "Anyone with this key can read, change and delete the whole database, skipping every access rule."),
     "APP001": ("Qualquer visitante do site pode copiar {var} e usar como se fosse você: estourar a fatura do serviço ou chegar aos dados que a chave protege.",
@@ -526,6 +528,8 @@ IMPACT = {
                "A link with your site's address sends people to a fake page, and your name makes the scam believable."),
     "COD010": ("Quem ataca consegue adivinhar o próximo token ou código e entrar em contas que não são dele.",
                "An attacker can guess the next token or code and get into accounts that are not theirs."),
+    "COD012": ("Quem escolhe o contrato leva tudo o que a carteira guarda numa transação só, sem nunca ver a chave.",
+               "Whoever picks the contract takes everything the wallet holds in one transaction, without ever seeing the key."),
     "COD011": ("Se o banco vazar, as senhas são descobertas em pouco tempo, e quem repete a senha em outros sites perde essas contas também.",
                "If the database leaks, the passwords are cracked quickly, and people who reuse them lose those other accounts too."),
     "APP009": ("Uma instrução escondida numa página, num arquivo ou numa mensagem que o modelo leia vira comando no seu servidor ou no navegador dos seus usuários.",
@@ -818,6 +822,7 @@ RULE_NAME = {
     "SEC002": (".env no git", ".env committed to git"),
     "SEC003": (".env fora do .gitignore", ".env missing from .gitignore"),
     "SEC004": ("Chave service_role do Supabase no código", "Supabase service_role key in code"),
+    "SEC005": ("Chave ou frase de carteira de cripto no código", "Crypto wallet key or recovery phrase in code"),
     "APP001": ("Segredo exposto ao navegador por prefixo público",
                "Secret exposed to the browser through a public env prefix"),
     "APP002": ("SDK de IA rodando no navegador", "AI SDK running in the browser"),
@@ -849,6 +854,7 @@ RULE_NAME = {
                "Redirect to an address taken from the request"),
     "COD010": ("Número aleatório previsível usado num segredo", "Predictable random number used for a secret"),
     "COD011": ("Senha guardada com hash rápido", "Password hashed with a fast hash"),
+    "COD012": ("Carteira entregue a um contrato escolhido de fora (EIP-7702)", "Wallet handed to an outside-chosen contract (EIP-7702)"),
     "AGT001": ("Permissão de agente ampla demais", "Agent permission too broad"),
     "AGT002": ("Hook ou servidor MCP que baixa e executa código", "Hook or MCP server downloads and runs remote code"),
     "AGT003": ("Servidor MCP sem versão fixa", "MCP server without a pinned version"),
